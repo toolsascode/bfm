@@ -1,0 +1,305 @@
+.PHONY: help build up down restart logs ps clean clean-all health status shell
+.DEFAULT_GOAL := help
+
+# Docker Compose file location
+COMPOSE_FILE := docker-compose.yml
+
+# Service names
+BFM_SERVICE := bfm
+BFM_WORKER_SERVICE := bfm-worker
+FFM_SERVICE := ffm
+POSTGRES_SERVICE := postgres
+KAFKA_SERVICE := kafka
+PULSAR_SERVICE := pulsar
+
+# Colors for output
+GREEN := \033[0;32m
+YELLOW := \033[0;33m
+RED := \033[0;31m
+NC := \033[0m # No Color
+
+help: ## Show this help message
+	@echo "$(GREEN)MOPS (Migration Operations) - Available Commands:$(NC)"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
+	@echo ""
+
+# ============================================================================
+# Service Management
+# ============================================================================
+
+up: ## Start all services in detached mode
+	@echo "$(GREEN)Starting all services...$(NC)"
+	docker compose -f $(COMPOSE_FILE) up -d --remove-orphans
+	@echo "$(GREEN)Services started!$(NC)"
+	@make ps
+
+up-build: ## Build and start all services
+	@echo "$(GREEN)Building and starting all services...$(NC)"
+	docker compose -f $(COMPOSE_FILE) up -d --build --remove-orphans
+	@make ps
+
+down: ## Stop all services
+	@echo "$(YELLOW)Stopping all services...$(NC)"
+	docker compose -f $(COMPOSE_FILE) down
+
+down-volumes: ## Stop all services and remove volumes
+	@echo "$(RED)Stopping all services and removing volumes...$(NC)"
+	docker compose -f $(COMPOSE_FILE) down -v
+
+restart: ## Restart all services
+	@echo "$(YELLOW)Restarting all services...$(NC)"
+	docker compose -f $(COMPOSE_FILE) restart
+	@make ps
+
+restart-bfm: ## Restart BFM server only
+	@echo "$(YELLOW)Restarting BFM server...$(NC)"
+	docker compose -f $(COMPOSE_FILE) restart $(BFM_SERVICE)
+
+restart-worker: ## Restart BFM worker only
+	@echo "$(YELLOW)Restarting BFM worker...$(NC)"
+	docker compose -f $(COMPOSE_FILE) restart $(BFM_WORKER_SERVICE)
+
+restart-ffm: ## Restart FFM frontend only
+	@echo "$(YELLOW)Restarting FFM frontend...$(NC)"
+	docker compose -f $(COMPOSE_FILE) restart $(FFM_SERVICE)
+
+# ============================================================================
+# Building
+# ============================================================================
+
+build: ## Build all service images
+	@echo "$(GREEN)Building all service images...$(NC)"
+	docker compose -f $(COMPOSE_FILE) build
+
+build-bfm: ## Build BFM server image
+	@echo "$(GREEN)Building BFM server image...$(NC)"
+	docker compose -f $(COMPOSE_FILE) build $(BFM_SERVICE)
+
+build-worker: ## Build BFM worker image
+	@echo "$(GREEN)Building BFM worker image...$(NC)"
+	docker compose -f $(COMPOSE_FILE) build $(BFM_WORKER_SERVICE)
+
+build-ffm: ## Build FFM frontend image
+	@echo "$(GREEN)Building FFM frontend image...$(NC)"
+	docker compose -f $(COMPOSE_FILE) build $(FFM_SERVICE)
+
+build-no-cache: ## Build all images without cache
+	@echo "$(GREEN)Building all images without cache...$(NC)"
+	docker compose -f $(COMPOSE_FILE) build --no-cache
+
+# ============================================================================
+# Logs
+# ============================================================================
+
+logs: ## Show logs from all services
+	docker compose -f $(COMPOSE_FILE) logs -f
+
+logs-bfm: ## Show logs from BFM server
+	docker compose -f $(COMPOSE_FILE) logs -f $(BFM_SERVICE)
+
+logs-worker: ## Show logs from BFM worker
+	docker compose -f $(COMPOSE_FILE) logs -f $(BFM_WORKER_SERVICE)
+
+logs-ffm: ## Show logs from FFM frontend
+	docker compose -f $(COMPOSE_FILE) logs -f $(FFM_SERVICE)
+
+logs-postgres: ## Show logs from PostgreSQL
+	docker compose -f $(COMPOSE_FILE) logs -f $(POSTGRES_SERVICE)
+
+logs-kafka: ## Show logs from Kafka
+	docker compose -f $(COMPOSE_FILE) logs -f $(KAFKA_SERVICE)
+
+logs-pulsar: ## Show logs from Pulsar
+	docker compose -f $(COMPOSE_FILE) logs -f $(PULSAR_SERVICE)
+
+# ============================================================================
+# Status and Health
+# ============================================================================
+
+ps: ## Show status of all services
+	@echo "$(GREEN)Service Status:$(NC)"
+	@docker compose -f $(COMPOSE_FILE) ps
+
+status: ps ## Alias for ps
+
+health: ## Check health of all services
+	@echo "$(GREEN)Health Check:$(NC)"
+	@echo ""
+	@echo "$(YELLOW)BFM Server:$(NC)"
+	@curl -s http://localhost:7070/api/v1/health | jq . || echo "  Not responding"
+	@echo ""
+	@echo "$(YELLOW)FFM Frontend:$(NC)"
+	@curl -s -o /dev/null -w "  HTTP Status: %{http_code}\n" http://localhost:3000 || echo "  Not responding"
+	@echo ""
+	@echo "$(YELLOW)PostgreSQL:$(NC)"
+	@docker compose -f $(COMPOSE_FILE) exec -T $(POSTGRES_SERVICE) pg_isready -U postgres 2>/dev/null && echo "  ✓ Ready" || echo "  ✗ Not ready"
+	@echo ""
+	@echo "$(YELLOW)Kafka:$(NC)"
+	@docker compose -f $(COMPOSE_FILE) exec -T $(KAFKA_SERVICE) kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1 && echo "  ✓ Ready" || echo "  ✗ Not ready"
+
+# ============================================================================
+# Shell Access
+# ============================================================================
+
+shell-bfm: ## Open shell in BFM server container
+	docker compose -f $(COMPOSE_FILE) exec $(BFM_SERVICE) /bin/sh
+
+shell-worker: ## Open shell in BFM worker container
+	docker compose -f $(COMPOSE_FILE) exec $(BFM_WORKER_SERVICE) /bin/sh
+
+shell-postgres: ## Open PostgreSQL shell
+	docker compose -f $(COMPOSE_FILE) exec $(POSTGRES_SERVICE) psql -U postgres -d migration_state
+
+shell-kafka: ## Open shell in Kafka container
+	docker compose -f $(COMPOSE_FILE) exec $(KAFKA_SERVICE) /bin/bash
+
+# ============================================================================
+# Database Operations
+# ============================================================================
+
+db-migrate: ## Run database migrations (placeholder - implement as needed)
+	@echo "$(YELLOW)Running database migrations...$(NC)"
+	@echo "  Use the FFM frontend at http://localhost:3000 to execute migrations"
+	@echo "  Or use: curl -X POST http://localhost:7070/api/v1/migrate"
+
+db-reset: ## Reset database (WARNING: This will delete all data!)
+	@echo "$(RED)WARNING: This will delete all migration state data!$(NC)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose -f $(COMPOSE_FILE) exec -T $(POSTGRES_SERVICE) psql -U postgres -d migration_state -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"; \
+		echo "$(GREEN)Database reset complete!$(NC)"; \
+	fi
+
+# ============================================================================
+# Queue Operations
+# ============================================================================
+
+kafka-topics: ## List Kafka topics
+	docker compose -f $(COMPOSE_FILE) exec $(KAFKA_SERVICE) kafka-topics --bootstrap-server localhost:9092 --list
+
+kafka-create-topic: ## Create Kafka topic for migrations (if not exists)
+	docker compose -f $(COMPOSE_FILE) exec $(KAFKA_SERVICE) kafka-topics --create --if-not-exists --bootstrap-server localhost:9092 --topic bfm-migrations --partitions 3 --replication-factor 1
+
+kafka-fix-permissions: ## Fix Kafka volume permissions (run if you see permission errors)
+	@echo "$(YELLOW)Fixing Kafka volume permissions...$(NC)"
+	docker compose -f $(COMPOSE_FILE) stop $(KAFKA_SERVICE) || true
+	docker compose -f $(COMPOSE_FILE) run --rm --user root $(KAFKA_SERVICE) chown -R appuser:appuser /tmp/kraft-combined-logs
+	docker compose -f $(COMPOSE_FILE) run --rm --user root $(KAFKA_SERVICE) chmod -R 755 /tmp/kraft-combined-logs
+	@echo "$(GREEN)Permissions fixed! Restarting Kafka...$(NC)"
+	docker compose -f $(COMPOSE_FILE) up -d $(KAFKA_SERVICE)
+
+kafka-reset: ## Reset Kafka volume (WARNING: This will delete all Kafka data!)
+	@echo "$(RED)WARNING: This will delete all Kafka data!$(NC)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose -f $(COMPOSE_FILE) stop $(KAFKA_SERVICE) || true; \
+		docker volume rm bfm_bfm-kafka-data 2>/dev/null || true; \
+		echo "$(GREEN)Kafka volume reset! Restarting Kafka...$(NC)"; \
+		docker compose -f $(COMPOSE_FILE) up -d $(KAFKA_SERVICE); \
+	fi
+
+kafka-consumers: ## List Kafka consumer groups
+	docker compose -f $(COMPOSE_FILE) exec $(KAFKA_SERVICE) kafka-consumer-groups --bootstrap-server localhost:9092 --list
+
+# ============================================================================
+# Cleanup
+# ============================================================================
+
+clean: ## Stop and remove containers (keeps volumes)
+	@echo "$(YELLOW)Cleaning up containers...$(NC)"
+	docker compose -f $(COMPOSE_FILE) down
+
+clean-all: ## Stop and remove containers, volumes, and images
+	@echo "$(RED)WARNING: This will remove all containers, volumes, and images!$(NC)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose -f $(COMPOSE_FILE) down -v --rmi all; \
+		echo "$(GREEN)Cleanup complete!$(NC)"; \
+	fi
+
+clean-logs: ## Clean Docker logs (requires sudo on some systems)
+	@echo "$(YELLOW)Cleaning Docker logs...$(NC)"
+	@sudo truncate -s 0 /var/lib/docker/containers/*/*-json.log 2>/dev/null || echo "  Note: May require sudo or may not be applicable on all systems"
+
+prune: ## Remove unused Docker resources
+	@echo "$(YELLOW)Pruning unused Docker resources...$(NC)"
+	docker system prune -f
+
+# ============================================================================
+# Development
+# ============================================================================
+
+dev: up ## Start all services for development
+	@echo "$(GREEN)Development environment ready!$(NC)"
+	@echo ""
+	@echo "  BFM Server:    http://localhost:7070"
+	@echo "  FFM Frontend:   http://localhost:3000"
+	@echo "  PostgreSQL:     localhost:5433"
+	@echo "  Kafka:          localhost:9092"
+	@echo ""
+	@echo "  View logs:      make logs"
+	@echo "  Check status:   make ps"
+
+dev-logs: ## Show logs from all services (development)
+	docker compose -f $(COMPOSE_FILE) logs -f
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+test-api: ## Test BFM API health endpoint
+	@echo "$(GREEN)Testing BFM API...$(NC)"
+	@curl -s http://localhost:7070/api/v1/health | jq . || echo "$(RED)API not responding$(NC)"
+
+test-frontend: ## Test FFM frontend
+	@echo "$(GREEN)Testing FFM frontend...$(NC)"
+	@curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:3000
+
+test-all: test-api test-frontend ## Run all tests
+	@echo "$(GREEN)All tests complete!$(NC)"
+
+# ============================================================================
+# Quick Actions
+# ============================================================================
+
+quick-start: build up ## Quick start: build and start all services
+	@make health
+
+quick-stop: down ## Quick stop: stop all services
+
+quick-restart: restart ## Quick restart: restart all services
+
+# ============================================================================
+# Information
+# ============================================================================
+
+info: ## Show system information
+	@echo "$(GREEN)MOPS System Information:$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Docker Compose Version:$(NC)"
+	@docker compose version
+	@echo ""
+	@echo "$(YELLOW)Docker Version:$(NC)"
+	@docker --version
+	@echo ""
+	@echo "$(YELLOW)Service Status:$(NC)"
+	@make ps
+	@echo ""
+	@echo "$(YELLOW)Network Information:$(NC)"
+	@docker network inspect bfm-network 2>/dev/null | jq -r '.[0].Containers | to_entries[] | "  \(.key): \(.value.IPv4Address)"' || echo "  Network not found"
+
+version: ## Show version information
+	@echo "$(GREEN)MOPS Version Information:$(NC)"
+	@echo "  BFM: Backend For Migrations"
+	@echo "  FFM: Frontend For Migrations"
+	@echo ""
+	@echo "Docker Compose:"
+	@docker compose version
+	@echo ""
+	@echo "Docker:"
+	@docker --version
+

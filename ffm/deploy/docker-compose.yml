@@ -1,0 +1,31 @@
+x-default-logging: &logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "5m"
+      max-file: "2"
+      tag: "{{.Name}}"
+services:
+  ffm:
+    <<: *logging
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: ffm-frontend
+    ports:
+      - "4040:80"
+    environment:
+      - VITE_BFM_API_URL=${VITE_BFM_API_URL:-/api}
+      - VITE_BFM_API_TOKEN=${VITE_BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
+      - VITE_AUTH_ENABLED=${VITE_AUTH_ENABLED:-true}
+      - VITE_AUTH_USERNAME=${VITE_AUTH_USERNAME:-admin}
+      - VITE_AUTH_PASSWORD=${VITE_AUTH_PASSWORD:-admin123}
+    depends_on:
+      - bfm-server
+    networks:
+      - bfm-network
+    restart: unless-stopped
+
+  # Note: The BFM server is defined in bfm/deploy/docker-compose.yml
+  # The bfm-network is also defined there and will be shared via the include mechanism
+

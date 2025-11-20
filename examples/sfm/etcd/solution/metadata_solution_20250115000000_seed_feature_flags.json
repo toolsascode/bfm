@@ -1,0 +1,12 @@
+[
+  {
+    "operation": "put",
+    "key": "solution/feature_flags/zero_downtime",
+    "value": "enabled"
+  },
+  {
+    "operation": "put",
+    "key": "solution/feature_flags/audit_logging",
+    "value": "enabled"
+  }
+]
