@@ -1,0 +1,10 @@
+[
+  {
+    "operation": "delete",
+    "key": "solution/feature_flags/zero_downtime"
+  },
+  {
+    "operation": "delete",
+    "key": "solution/feature_flags/audit_logging"
+  }
+]

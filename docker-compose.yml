@@ -1,0 +1,30 @@
+# Main docker-compose file for the MOPS (Migration Operations) stack
+# This orchestrates BFM (Backend For Migrations) and FFM (Frontend For Migrations)
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose down            # Stop all services
+#   docker compose ps              # List running services
+#   docker compose logs -f bfm     # View BFM server logs
+#   docker compose logs -f bfm-worker  # View BFM worker logs
+#   docker compose logs -f ffm     # View FFM frontend logs
+
+include:
+  # BFM Servers (server and worker)
+  - path: ./bfm/deploy/docker-compose.servers.yml
+  # BFM Server with infrastructure (PostgreSQL, Kafka, Pulsar)
+  - path: ./bfm/deploy/docker-compose.yml
+  # BFM Worker for processing queued migrations
+  - path: ./bfm/deploy/docker-compose.worker.yml
+  # FFM Frontend web interface
+  - path: ./ffm/deploy/docker-compose.yml
+
+# Note: Networks and volumes are defined in the individual compose files.
+# The 'bfm-network' network is shared across all services and is defined
+# in bfm/deploy/docker-compose.yml. All included compose files reference
+# this same network, ensuring all services can communicate.
+#
+# Volumes defined in individual compose files:
+#   - bfm-postgres-data (from bfm/deploy/docker-compose.yml)
+#   - bfm-kafka-data (from bfm/deploy/docker-compose.yml)
+#   - bfm-pulsar-data (from bfm/deploy/docker-compose.yml)

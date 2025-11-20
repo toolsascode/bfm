@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package migration;
+
+option go_package = "mops/bfm/internal/api/protobuf";
+
+// MigrationService provides migration operations via gRPC
+service MigrationService {
+  // Migrate executes database migrations
+  rpc Migrate(MigrateRequest) returns (MigrateResponse);
+  
+  // StreamMigrate executes migrations with streaming progress updates
+  rpc StreamMigrate(MigrateRequest) returns (stream MigrateProgress);
+}
+
+// MigrationTarget specifies which migrations to execute
+message MigrationTarget {
+  string backend = 1;        // Backend type filter
+  string schema = 2;         // Schema filter (optional)
+  repeated string tables = 3; // Table filters (optional, empty = all)
+  string version = 4;        // Version filter (optional, empty = latest)
+  string connection = 5;     // Connection name filter
+}
+
+// MigrateRequest represents a migration request
+message MigrateRequest {
+  MigrationTarget target = 1;
+  string connection = 2;
+  string schema = 3;         // Optional
+  string environment = 4;     // For dynamic schemas
+  bool dry_run = 5;          // Optional, default false
+}
+
+// MigrateResponse represents a migration response
+message MigrateResponse {
+  bool success = 1;
+  repeated string applied = 2;
+  repeated string skipped = 3;
+  repeated string errors = 4;
+}
+
+// MigrateProgress represents progress updates during migration
+message MigrateProgress {
+  string migration_id = 1;
+  string status = 2;         // "pending", "running", "success", "failed"
+  string message = 3;
+  int32 progress = 4;        // 0-100
+}
+

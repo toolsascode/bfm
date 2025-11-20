@@ -1,0 +1,160 @@
+x-default-logging: &logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "5m"
+      max-file: "2"
+      tag: "{{.Name}}"
+
+services:
+  postgres:
+    <<: *logging
+    image: postgres:16-alpine
+    container_name: bfm-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=migration_state
+    ports:
+      - "5433:5432"
+    volumes:
+      - bfm-postgres-data:/var/lib/postgresql/data
+    networks:
+      - bfm-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    <<: *logging
+    image: apache/kafka:3.7.1
+    container_name: bfm-kafka
+    environment:
+      # KRaft mode configuration (serverless Kafka without ZooKeeper)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:19092"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://localhost:19092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_AUTO_CREATE_TOPICS_CONFIG_CLEANUP_POLICY: "delete"
+      KAFKA_AUTO_CREATE_TOPICS_CONFIG_RETENTION_MS: "10000"
+      KAFKA_LOG4J_ROOT_LOGLEVEL: "WARN"
+      # Cluster ID for KRaft
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      # Storage configuration
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Performance tuning for development
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      # JVM settings
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+    ports:
+      - 19092:19092 # External Kafka protocol
+      - 9092:9092 # Internal Kafka protocol (for container network)
+      - 9093:9093 # Controller port
+    volumes:
+      - bfm-kafka-data:/var/lib/kafka/data
+    networks:
+      - bfm-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || nc -z localhost 9092 || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 512M
+
+  kafka-frontend:
+    <<: *logging
+    image: provectuslabs/kafka-ui:latest
+    container_name: bfm-kafka-frontend
+    ports:
+      - "8088:8080"
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=kafka
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_METRICS_TYPE=DISABLED
+      - KAFKA_CLUSTERS_0_READONLY=false
+      - LOGGING_LEVEL_ROOT=WARN
+      - LOGGING_LEVEL_COM_PROVECTUS=WARN
+    networks:
+      - bfm-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  etcd:
+    <<: *logging
+    image: quay.io/coreos/etcd:latest
+    container_name: bfm-etcd
+    ports:
+      - "2379:2379"
+    networks:
+      - bfm-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2379/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  greptimedb:
+    <<: *logging
+    image: greptimedb/greptimedb:latest
+    container_name: bfm-greptimedb
+    ports:
+      - "4001:4001"
+    networks:
+      - bfm-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    volumes:
+      - bfm-greptimedb-data:/var/lib/greptimedb
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+
+volumes:
+  bfm-postgres-data:
+  bfm-kafka-data:
+  bfm-greptimedb-data:
+networks:
+  bfm-network:
+    driver: bridge
+
