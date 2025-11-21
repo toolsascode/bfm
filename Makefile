@@ -296,6 +296,36 @@ prune: ## Remove unused Docker resources
 	docker system prune -f
 
 # ============================================================================
+# GitHub Actions
+# ============================================================================
+
+github-cache-list: ## List GitHub Actions caches
+	@echo "$(GREEN)Listing GitHub Actions caches...$(NC)"
+	@if ! command -v gh &> /dev/null; then \
+		echo "$(RED)Error: GitHub CLI (gh) is not installed$(NC)"; \
+		echo "  Install it from: https://cli.github.com/"; \
+		exit 1; \
+	fi
+	@gh cache list || echo "$(YELLOW)Note: Make sure you're authenticated with 'gh auth login'$(NC)"
+
+github-cache-delete: ## Delete all GitHub Actions caches (interactive)
+	@echo "$(RED)WARNING: This will delete all GitHub Actions caches!$(NC)"
+	@if ! command -v gh &> /dev/null; then \
+		echo "$(RED)Error: GitHub CLI (gh) is not installed$(NC)"; \
+		echo "  Install it from: https://cli.github.com/"; \
+		exit 1; \
+	fi
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		echo "$(YELLOW)Deleting all GitHub Actions caches...$(NC)"; \
+		gh cache list --limit 1000 | grep -v "^key\|^---" | awk '{print $$1}' | xargs -I {} gh cache delete {} || echo "$(YELLOW)No caches found or error occurred$(NC)"; \
+		echo "$(GREEN)Cache cleanup complete!$(NC)"; \
+	fi
+
+github-cache-clean: github-cache-delete ## Alias for github-cache-delete
+
+# ============================================================================
 # Development
 # ============================================================================
 
