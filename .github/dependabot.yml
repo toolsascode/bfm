@@ -1,0 +1,60 @@
+version: 2
+updates:
+  # Go modules in api directory
+  - package-ecosystem: "gomod"
+    directory: "/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    reviewers:
+      - "toolsascode"
+    assignees:
+      - "toolsascode"
+
+  # npm packages in ffm directory
+  - package-ecosystem: "npm"
+    directory: "/ffm"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "frontend"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    reviewers:
+      - "toolsascode"
+    assignees:
+      - "toolsascode"
+
+  # GitHub Actions workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    reviewers:
+      - "toolsascode"
+    assignees:
+      - "toolsascode"
+

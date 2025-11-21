@@ -8,9 +8,9 @@ WORKDIR /build
 # Install tooling needed to generate gRPC code
 RUN apk add --no-cache bash=5.2.37-r0 protobuf-dev=29.4-r0 protoc=29.4-r0
 
-# Install Go protobuf plugins
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# Install Go protobuf plugins (pinned versions for reproducibility)
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.77.0
 
 # Copy bfm go mod files
 COPY api/go.mod api/go.sum ./

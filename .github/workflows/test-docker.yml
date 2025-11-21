@@ -72,31 +72,82 @@ jobs:
 
       - name: Test container health
         run: |
-          # Start container in background with required environment variables
-          CONTAINER_ID=$(docker run -d -p 7070:7070 -p 9090:9090 \
+          # Create a Docker network for container communication
+          NETWORK_NAME="bfm-test-network"
+          docker network create $NETWORK_NAME || true
+          
+          # Start PostgreSQL container
+          POSTGRES_CONTAINER=$(docker run -d \
+            --network $NETWORK_NAME \
+            --name bfm-postgres-test \
+            -e POSTGRES_PASSWORD=test-password \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_DB=migration_state \
+            postgres:16-alpine)
+          
+          # Wait for PostgreSQL to be ready
+          echo "Waiting for PostgreSQL to be ready..."
+          for i in {1..30}; do
+            if docker exec $POSTGRES_CONTAINER pg_isready -U postgres > /dev/null 2>&1; then
+              echo "PostgreSQL is ready!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "PostgreSQL failed to start"
+              docker logs $POSTGRES_CONTAINER
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Start BfM container in background with required environment variables
+          BFM_CONTAINER=$(docker run -d \
+            --network $NETWORK_NAME \
+            -p 7070:7070 \
+            -p 9090:9090 \
             -e BFM_API_TOKEN=test-token-for-ci \
+            -e BFM_STATE_BACKEND=postgresql \
+            -e BFM_STATE_DB_HOST=bfm-postgres-test \
+            -e BFM_STATE_DB_PORT=5432 \
             -e BFM_STATE_DB_PASSWORD=test-password \
-            -e BFM_STATE_DB_HOST=localhost \
             -e BFM_STATE_DB_USERNAME=postgres \
             -e BFM_STATE_DB_NAME=migration_state \
+            -e BFM_STATE_SCHEMA=public \
             bfm:test)
           
-          # Wait for container to be ready
-          sleep 10
+          # Wait for BfM container to be ready
+          echo "Waiting for BfM Server to be ready..."
+          for i in {1..60}; do
+            if curl -s http://localhost:7070/health > /dev/null 2>&1; then
+              echo "BfM Server is ready!"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "BfM Server failed to start"
+              docker logs $BFM_CONTAINER
+              exit 1
+            fi
+            sleep 2
+          done
           
           # Check if container is running
-          if ! docker ps | grep -q $CONTAINER_ID; then
-            echo "Container failed to start"
-            docker logs $CONTAINER_ID
+          if ! docker ps | grep -q $BFM_CONTAINER; then
+            echo "BfM container failed to start"
+            docker logs $BFM_CONTAINER
             exit 1
           fi
           
           # Check if binaries exist
-          docker exec $CONTAINER_ID test -f /app/bin/bfm-server || exit 1
-          docker exec $CONTAINER_ID test -f /app/bin/bfm-worker || exit 1
-          docker exec $CONTAINER_ID test -f /app/bin/bfm-cli || exit 1
+          docker exec $BFM_CONTAINER test -f /app/bin/bfm-server || exit 1
+          docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker || exit 1
+          docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli || exit 1
+          
+          # Test health endpoint
+          curl -f http://localhost:7070/health || exit 1
           
           # Cleanup
-          docker stop $CONTAINER_ID
-          docker rm $CONTAINER_ID
+          echo "Cleaning up containers..."
+          docker stop $BFM_CONTAINER $POSTGRES_CONTAINER || true
+          docker rm $BFM_CONTAINER $POSTGRES_CONTAINER || true
+          docker network rm $NETWORK_NAME || true
 

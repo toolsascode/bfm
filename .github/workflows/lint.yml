@@ -19,6 +19,17 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
       - name: Install protoc
         run: |
@@ -32,8 +43,8 @@ jobs:
       - name: Install Go protobuf plugins
         working-directory: api
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.77.0
 
       - name: Generate protobuf code
         working-directory: api
