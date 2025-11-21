@@ -72,8 +72,14 @@ jobs:
 
       - name: Test container health
         run: |
-          # Start container in background
-          CONTAINER_ID=$(docker run -d -p 7070:7070 -p 9090:9090 bfm:test)
+          # Start container in background with required environment variables
+          CONTAINER_ID=$(docker run -d -p 7070:7070 -p 9090:9090 \
+            -e BFM_API_TOKEN=test-token-for-ci \
+            -e BFM_STATE_DB_PASSWORD=test-password \
+            -e BFM_STATE_DB_HOST=localhost \
+            -e BFM_STATE_DB_USERNAME=postgres \
+            -e BFM_STATE_DB_NAME=migration_state \
+            bfm:test)
           
           # Wait for container to be ready
           sleep 10

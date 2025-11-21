@@ -41,12 +41,16 @@ jobs:
           export PATH="${PATH}:$(go env GOPATH)/bin"
           cd internal/api/protobuf && ./generate.sh
 
+      - name: Install golangci-lint
+        run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: api
-          args: --timeout=5m
+        working-directory: api
+        run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
+          golangci-lint run --timeout=5m
 
   dockerfile-lint:
     name: Dockerfile Linting

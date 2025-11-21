@@ -77,16 +77,18 @@ checksum:
 #           - ca-certificates
 
 # Homebrew tap configuration
-brews:
-  - name: bfm
-    tap: toolsascode/homebrew-tap
-    homepage: "https://github.com/toolsascode/bfm"
-    description: "BfM - Backend for Migrations CLI"
-    license: "MIT"
-    test: |
-      system "#{bin}/bfm version"
-    install: |
-      bin.install "bfm"
+homebrew:
+  name: bfm
+  repository:
+    owner: toolsascode
+    name: homebrew-tap
+  homepage: "https://github.com/toolsascode/bfm"
+  description: "BfM - Backend for Migrations CLI"
+  license: "MIT"
+  test: |
+    system "#{bin}/bfm version"
+  install: |
+    bin.install "bfm"
 
 # Scoop configuration
 scoops:
@@ -122,17 +124,17 @@ scoops:
 
 # Winget configuration
 winget:
-  - identifier: toolsascode.BfM
-    name: BfM
-    publisher: toolsascode
-    description: "BfM (Backend for Migrations) is a CLI tool for managing database migrations."
-    homepage: "https://github.com/toolsascode/bfm"
-    license: "MIT"
-    license_url: "https://github.com/toolsascode/bfm/blob/main/LICENSE"
-    tags:
-      - migration
-      - database
-      - cli
+  package_identifier: toolsascode.BfM
+  name: BfM
+  publisher: toolsascode
+  description: "BfM (Backend for Migrations) is a CLI tool for managing database migrations."
+  homepage: "https://github.com/toolsascode/bfm"
+  license: "MIT"
+  license_url: "https://github.com/toolsascode/bfm/blob/main/LICENSE"
+  tags:
+    - migration
+    - database
+    - cli
 
 # FPM (for Apt and Yum)
 nfpms:

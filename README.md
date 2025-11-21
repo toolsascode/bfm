@@ -8,7 +8,9 @@ Backend For Migrations (BfM)
 </p>
 
 <p align="center">
-<a href="https://pkg.go.dev/bfm/api/migrations"><img src="https://pkg.go.dev/badge/bfm/api/migrations.svg" alt="Go Reference"></a>
+
+[![Go Reference](https://pkg.go.dev/badge/bfm/api/migrations.svg)](https://pkg.go.dev/bfm/api/migrations) [![Release CLI](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml) [![Release Docker](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml)
+
 </p>
 
 BfM is a comprehensive database migration system that supports multiple backends (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
