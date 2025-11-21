@@ -10,7 +10,7 @@ RUN apk add --no-cache bash=5.2.37-r0 protobuf-dev=29.4-r0 protoc=29.4-r0
 
 # Install Go protobuf plugins (pinned versions for reproducibility)
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10 && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.77.0
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
 
 # Copy bfm go mod files
 COPY api/go.mod api/go.sum ./
