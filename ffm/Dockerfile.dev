@@ -1,0 +1,25 @@
+# Development Dockerfile for FFM with Vite hot-reload
+# This is ONLY for development - production uses Dockerfile
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies (will be overridden by volume mount, but useful for initial setup)
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code (will be mounted as volume in docker-compose)
+# This copy is for initial setup, actual development uses volume mount
+COPY . .
+
+# Make start script executable
+RUN chmod +x /app/start.sh
+
+# Expose Vite dev server port
+EXPOSE 4040
+
+# Use entrypoint script that ensures dependencies are installed
+# Use sh to execute the script (not direct execution)
+CMD ["sh", "/app/start.sh"]
+

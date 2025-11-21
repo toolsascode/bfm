@@ -10,7 +10,7 @@ These examples illustrate how to structure migrations for the Backend For Migrat
 
 Each backend includes:
 
-1. A Go file that registers the migration via `mops/bfm/migrations`.
+1. A Go file that registers the migration via `bfm/api/migrations`.
 2. An `Up` payload (`.sql` or `.json`).
 3. A `Down` payload that safely rolls the change back.
 

@@ -102,8 +102,8 @@ package core
 
 import (
     _ "embed"
-    "mops/bfm/internal/executor"
-    "mops/bfm/internal/registry"
+    "bfm/api/internal/executor"
+    "bfm/api/internal/registry"
 )
 
 //go:embed core_users_20250101120000_create_users.sql

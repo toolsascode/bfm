@@ -1,0 +1,102 @@
+  
+x-default-logging: &logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "5m"
+      max-file: "2"
+      tag: "{{.Name}}"
+
+services:
+  bfm-worker:
+    <<: *logging
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile
+    container_name: bfm-worker
+    command: ["./bfm-worker"]
+    environment:
+      # Server Configuration
+      - BFM_HTTP_PORT=7070
+      - BFM_GRPC_PORT=9090
+      - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
+      - BFM_SFM_PATH=${BFM_SFM_PATH:-/app/sfm}
+      # State Database Configuration
+      - BFM_STATE_BACKEND=postgresql
+      - BFM_STATE_DB_HOST=${BFM_STATE_DB_HOST:-postgres}
+      - BFM_STATE_DB_PORT=5432
+      - BFM_STATE_DB_USERNAME=${BFM_STATE_DB_USERNAME:-postgres}
+      - BFM_STATE_DB_PASSWORD=${BFM_STATE_DB_PASSWORD:-postgres}
+      - BFM_STATE_DB_NAME=${BFM_STATE_DB_NAME:-migration_state}
+      - BFM_STATE_SCHEMA=${BFM_STATE_SCHEMA:-public}
+      
+      # Core Backend Connection
+      - CORE_BACKEND=postgresql
+      - CORE_DB_HOST=${CORE_DB_HOST:-postgres}
+      - CORE_DB_PORT=5432
+      - CORE_DB_USERNAME=${CORE_DB_USERNAME:-dashcloud}
+      - CORE_DB_PASSWORD=${CORE_DB_PASSWORD:-dashcloud}
+      - CORE_DB_NAME=${CORE_DB_NAME:-dashcloud}
+      - CORE_SCHEMA=core
+      
+      # Guard Backend Connection
+      - GUARD_BACKEND=postgresql
+      - GUARD_DB_HOST=${GUARD_DB_HOST:-postgres}
+      - GUARD_DB_PORT=5432
+      - GUARD_DB_USERNAME=${GUARD_DB_USERNAME:-dashcloud}
+      - GUARD_DB_PASSWORD=${GUARD_DB_PASSWORD:-dashcloud}
+      - GUARD_DB_NAME=${GUARD_DB_NAME:-dashcloud}
+      - GUARD_SCHEMA=guard
+      
+      # Organization Backend Connection
+      - ORG_BACKEND=postgresql
+      - ORG_DB_HOST=${ORG_DB_HOST:-postgres}
+      - ORG_DB_PORT=5432
+      - ORG_DB_USERNAME=${ORG_DB_USERNAME:-dashcloud}
+      - ORG_DB_PASSWORD=${ORG_DB_PASSWORD:-dashcloud}
+      - ORG_DB_NAME=${ORG_DB_NAME:-dashcloud}
+      
+      # Logs Backend Connection (GreptimeDB)
+      - LOGS_BACKEND=greptimedb
+      - LOGS_DB_HOST=${LOGS_DB_HOST:-greptimedb}
+      - LOGS_DB_PORT=${LOGS_DB_PORT:-4001}
+      - LOGS_DB_USERNAME=${LOGS_DB_USERNAME:-}
+      - LOGS_DB_PASSWORD=${LOGS_DB_PASSWORD:-}
+      - LOGS_DB_NAME=${LOGS_DB_NAME:-}
+      
+      # Metadata Backend Connection (Etcd)
+      - ETCD_BACKEND=etcd
+      - ETCD_DB_HOST=${METADATA_DB_HOST:-etcd}
+      - ETCD_DB_PORT=${METADATA_DB_PORT:-2379}
+      - ETCD_DB_USERNAME=${METADATA_DB_USERNAME:-}
+      - ETCD_DB_PASSWORD=${METADATA_DB_PASSWORD:-}
+      - ETCD_ENDPOINTS=${METADATA_ENDPOINTS:-etcd:2379}
+      - ETCD_PREFIX=/bfm/metadata/
+      
+      # Queue Configuration (REQUIRED for worker)
+      - BFM_QUEUE_ENABLED=true
+      - BFM_QUEUE_TYPE=${BFM_QUEUE_TYPE:-kafka}
+      
+      # Kafka Queue Configuration
+      - BFM_QUEUE_KAFKA_BROKERS=${BFM_QUEUE_KAFKA_BROKERS:-kafka:9092}
+      - BFM_QUEUE_KAFKA_TOPIC=${BFM_QUEUE_KAFKA_TOPIC:-bfm-migrations}
+      - BFM_QUEUE_KAFKA_GROUP_ID=${BFM_QUEUE_KAFKA_GROUP_ID:-bfm-migration-workers}
+      
+      # Pulsar Queue Configuration
+      - BFM_QUEUE_PULSAR_URL=${BFM_QUEUE_PULSAR_URL:-pulsar://pulsar:6650}
+      - BFM_QUEUE_PULSAR_TOPIC=${BFM_QUEUE_PULSAR_TOPIC:-bfm-migrations}
+      - BFM_QUEUE_PULSAR_SUBSCRIPTION=${BFM_QUEUE_PULSAR_SUBSCRIPTION:-bfm-migration-workers}
+    volumes:
+      - ../../examples/sfm:/app/sfm:ro
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - bfm-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 512M

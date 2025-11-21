@@ -1,4 +1,4 @@
-# Main docker-compose file for the MOPS (Migration Operations) stack
+# Main docker-compose file for the BfM (Migration Operations) stack
 # This orchestrates BFM (Backend For Migrations) and FFM (Frontend For Migrations)
 #
 # Usage:
@@ -11,11 +11,11 @@
 
 include:
   # BFM Servers (server and worker)
-  - path: ./bfm/deploy/docker-compose.servers.yml
+  - path: ./api/deploy/docker-compose.servers.yml
   # BFM Server with infrastructure (PostgreSQL, Kafka, Pulsar)
-  - path: ./bfm/deploy/docker-compose.yml
+  - path: ./api/deploy/docker-compose.yml
   # BFM Worker for processing queued migrations
-  - path: ./bfm/deploy/docker-compose.worker.yml
+  - path: ./api/deploy/docker-compose.worker.yml
   # FFM Frontend web interface
   - path: ./ffm/deploy/docker-compose.yml
 

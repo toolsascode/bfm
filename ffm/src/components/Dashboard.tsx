@@ -16,7 +16,6 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import './Dashboard.css';
 
 export default function Dashboard() {
   const [migrations, setMigrations] = useState<MigrationListItem[]>([]);
@@ -41,26 +40,71 @@ export default function Dashboard() {
       setHealthStatus(health.status);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load data';
+      setError(errorMsg);
+      // Error toast is handled by API interceptor, but we can add a specific message here if needed
     } finally {
       setLoading(false);
     }
   };
 
   if (loading && migrations.length === 0) {
-    return <div className="dashboard-loading">Loading dashboard...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="h-10 bg-gray-200 rounded animate-pulse w-1/2" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-32 bg-gray-200 rounded-lg animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-80 bg-gray-200 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="dashboard-error">Error: {error}</div>;
+    return <div className="text-center py-8 text-xl text-red-600">Error: {error}</div>;
   }
 
-  // Calculate statistics
+  // Calculate statistics based on status field
   const total = migrations.length;
-  const applied = migrations.filter((m) => m.applied).length;
-  const pending = total - applied;
+  const applied = migrations.filter((m) => m.status === 'success').length;
+  const pending = migrations.filter((m) => m.status === 'pending').length;
   const failed = migrations.filter((m) => m.status === 'failed').length;
-  const success = migrations.filter((m) => m.status === 'success').length;
+  const rolledBack = migrations.filter((m) => m.status === 'rolled_back').length;
+
+  // Calculate Overall Health Score
+  // Formula: (applied / total) * 100, with penalties for failed migrations
+  // Perfect score (100%) = all migrations applied successfully
+  // Penalties: -10% per failed migration, -5% per rolled back migration
+  const calculateHealthScore = (): number => {
+    if (total === 0) return 100; // No migrations = perfect health
+    
+    const baseScore = (applied / total) * 100;
+    const failedPenalty = (failed / total) * 10; // -10% per failed migration
+    const rolledBackPenalty = (rolledBack / total) * 5; // -5% per rolled back migration
+    
+    const score = Math.max(0, Math.min(100, baseScore - failedPenalty - rolledBackPenalty));
+    return Math.round(score);
+  };
+
+  const healthScore = calculateHealthScore();
+  const healthScoreColor = healthScore >= 80 ? 'text-bfm-green-dark' : healthScore >= 60 ? 'text-yellow-600' : 'text-red-600';
+  
+  // Prepare gauge chart data for Health Score
+  // Gauge chart uses a half-circle (180 degrees)
+  const gaugeData = [
+    { name: 'Score', value: healthScore, fill: healthScore >= 80 ? '#27ae60' : healthScore >= 60 ? '#f39c12' : '#e74c3c' },
+    { name: 'Remaining', value: 100 - healthScore, fill: '#e5e7eb' },
+  ];
+  
+  // Calculate needle angle (0-180 degrees, where 180° is left, 0° is right)
+  // Health score 0% = 180° (left), 100% = 0° (right)
+  const needleAngle = 180 - (healthScore / 100) * 180;
 
   // Group by backend
   const byBackend = migrations.reduce((acc, m) => {
@@ -74,12 +118,13 @@ export default function Dashboard() {
     return acc;
   }, {} as Record<string, number>);
 
-  // Status distribution
+  // Status distribution (filter out zero values)
   const statusData = [
     { name: 'Applied', value: applied, color: '#27ae60' },
     { name: 'Pending', value: pending, color: '#f39c12' },
     { name: 'Failed', value: failed, color: '#e74c3c' },
-  ];
+    { name: 'Rolled Back', value: rolledBack, color: '#e67e22' },
+  ].filter(item => item.value > 0);
 
   // Backend distribution
   const backendData = Object.entries(byBackend).map(([name, value]) => ({
@@ -93,72 +138,148 @@ export default function Dashboard() {
     value,
   }));
 
-  // Recent migrations
+  // Recent executions - show migrations that have been executed (not pending)
+  // Sort by applied_at if available, otherwise by migration_id
   const recentMigrations = migrations
-    .filter((m) => m.applied_at)
+    .filter((m) => m.status !== 'pending' && m.applied_at)
     .sort((a, b) => {
       const dateA = new Date(a.applied_at || 0).getTime();
       const dateB = new Date(b.applied_at || 0).getTime();
-      return dateB - dateA;
+      return dateB - dateA; // Most recent first
     })
     .slice(0, 5);
 
-  const COLORS = ['#3498db', '#9b59b6', '#e74c3c', '#f39c12', '#1abc9c'];
-
   return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <h1>Migration Dashboard</h1>
-        <div className={`health-status ${healthStatus}`}>
+    <div className="w-full px-4 md:px-6 lg:px-8 animate-fade-in">
+      <div className="flex justify-between items-center mb-8 animate-slide-up">
+        <h1 className="text-3xl font-semibold text-gray-800">Migration Dashboard</h1>
+        <div
+          className={`px-4 py-2 rounded font-medium transition-all ${
+            healthStatus === 'healthy'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }`}
+        >
           Status: {healthStatus === 'healthy' ? '✓ Healthy' : '✗ Unhealthy'}
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">{total}</div>
-          <div className="stat-label">Total Migrations</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 md:gap-6 mb-8">
+        <div className={`bg-white p-6 rounded-lg shadow-md text-center border-l-4 animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1`} style={{ animationDelay: '0.05s' }}>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Health Score</div>
+          <div className="relative" style={{ height: '100px' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={gaugeData}
+                  cx="50%"
+                  cy="90%"
+                  startAngle={180}
+                  endAngle={0}
+                  innerRadius={50}
+                  outerRadius={70}
+                  paddingAngle={0}
+                  dataKey="value"
+                >
+                  {gaugeData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Needle overlay using absolute positioning */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <svg width="100%" height="100%" viewBox="0 0 200 100" style={{ position: 'absolute', top: 0, left: 0 }}>
+                {/* Needle */}
+                <g transform="translate(100, 90)">
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2={Math.cos((180 - needleAngle) * Math.PI / 180) * 50}
+                    y2={-Math.sin((180 - needleAngle) * Math.PI / 180) * 50}
+                    stroke="#1f2937"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                  <circle cx="0" cy="0" r="4" fill="#1f2937" />
+                </g>
+              </svg>
+            </div>
+            <div className="absolute inset-0 flex items-end justify-center pb-1">
+              <div className={`text-2xl font-bold ${healthScoreColor}`}>{healthScore}%</div>
+            </div>
+          </div>
         </div>
-        <div className="stat-card success">
-          <div className="stat-value">{applied}</div>
-          <div className="stat-label">Applied</div>
+        
+        <div className="bg-white p-6 rounded-lg shadow-md text-center animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col justify-center items-center">
+          <div className="text-4xl font-bold text-gray-800 mb-2">{total}</div>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Total Migrations</div>
         </div>
-        <div className="stat-card warning">
-          <div className="stat-value">{pending}</div>
-          <div className="stat-label">Pending</div>
+        <div className="bg-white p-6 rounded-lg shadow-md text-center border-l-4 border-bfm-green animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col justify-center items-center" style={{ animationDelay: '0.1s' }}>
+          <div className="text-4xl font-bold text-bfm-green-dark mb-2">{applied}</div>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Applied</div>
         </div>
-        <div className="stat-card error">
-          <div className="stat-value">{failed}</div>
-          <div className="stat-label">Failed</div>
+        <div className="bg-white p-6 rounded-lg shadow-md text-center border-l-4 border-yellow-500 animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col justify-center items-center" style={{ animationDelay: '0.2s' }}>
+          <div className="text-4xl font-bold text-yellow-600 mb-2">{pending}</div>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Pending</div>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow-md text-center border-l-4 border-red-500 animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col justify-center items-center" style={{ animationDelay: '0.3s' }}>
+          <div className="text-4xl font-bold text-red-600 mb-2">{failed}</div>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Failed</div>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow-md text-center border-l-4 border-orange-500 animate-scale-in transition-all hover:shadow-lg hover:-translate-y-1 flex flex-col justify-center items-center" style={{ animationDelay: '0.4s' }}>
+          <div className="text-4xl font-bold text-orange-600 mb-2">{rolledBack}</div>
+          <div className="text-gray-500 text-sm uppercase tracking-wide">Rolled Back</div>
         </div>
       </div>
 
-      <div className="charts-grid">
-        <div className="chart-card">
-          <h3>Status Distribution</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
+        <div className="bg-white p-3 rounded-lg shadow-md">
+          <h3 className="mb-4 text-gray-800 text-lg font-semibold">Status Distribution</h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
                 data={statusData}
                 cx="50%"
                 cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
+                labelLine={true}
+                label={({ name, value, percent }) => {
+                  // Only show label if slice is large enough (>= 5%)
+                  if (percent >= 0.05) {
+                    return `${name}\n${value} (${(percent * 100).toFixed(0)}%)`;
+                  }
+                  return '';
+                }}
+                outerRadius={90}
+                innerRadius={30}
                 fill="#8884d8"
                 dataKey="value"
+                paddingAngle={2}
               >
                 {statusData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip 
+                formatter={(value: number, name: string) => [
+                  `${value} (${((value / total) * 100).toFixed(1)}%)`,
+                  name
+                ]}
+              />
+              <Legend 
+                verticalAlign="bottom" 
+                height={36}
+                formatter={(value: string) => {
+                  const entry = statusData.find(d => d.name === value);
+                  return entry ? `${value} (${entry.value})` : value;
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="chart-card">
-          <h3>Migrations by Backend</h3>
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="mb-4 text-gray-800 text-lg font-semibold">Migrations by Backend</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={backendData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -170,8 +291,8 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        <div className="chart-card">
-          <h3>Migrations by Connection</h3>
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="mb-4 text-gray-800 text-lg font-semibold">Migrations by Connection</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={connectionData}>
               <CartesianGrid strokeDasharray="3 3" />
@@ -184,43 +305,68 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="recent-migrations">
-        <h2>Recent Migrations</h2>
-        <table className="migrations-table">
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="mb-4 text-gray-800 text-xl font-semibold">Recent Migrations</h2>
+        <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th>Migration ID</th>
-              <th>Schema</th>
-              <th>Table</th>
-              <th>Backend</th>
-              <th>Status</th>
-              <th>Applied At</th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Migration ID
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Schema
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Table
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Backend
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Status
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Applied At
+              </th>
             </tr>
           </thead>
           <tbody>
             {recentMigrations.length === 0 ? (
               <tr>
-                <td colSpan={6} className="no-data">
+                <td colSpan={6} className="text-center text-gray-500 py-8">
                   No migrations applied yet
                 </td>
               </tr>
             ) : (
               recentMigrations.map((migration) => (
-                <tr key={migration.migration_id}>
-                  <td>
-                    <Link to={`/migrations/${migration.migration_id}`}>
+                <tr key={migration.migration_id} className="hover:bg-gray-50">
+                  <td className="p-3 border-b border-gray-200">
+                    <Link
+                      to={`/migrations/${migration.migration_id}`}
+                      className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline"
+                    >
                       {migration.migration_id}
                     </Link>
                   </td>
-                  <td>{migration.schema}</td>
-                  <td>{migration.table}</td>
-                  <td>{migration.backend}</td>
-                  <td>
-                    <span className={`status-badge status-${migration.status}`}>
-                      {migration.status}
+                  <td className="p-3 border-b border-gray-200">{migration.schema}</td>
+                  <td className="p-3 border-b border-gray-200">{migration.table}</td>
+                  <td className="p-3 border-b border-gray-200">{migration.backend}</td>
+                  <td className="p-3 border-b border-gray-200">
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                        migration.status === 'success'
+                          ? 'bg-green-100 text-green-800'
+                          : migration.status === 'failed'
+                          ? 'bg-red-100 text-red-800'
+                          : migration.status === 'rolled_back'
+                          ? 'bg-orange-100 text-orange-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      {migration.status === 'rolled_back' ? 'Rolled Back' : migration.status}
                     </span>
                   </td>
-                  <td>
+                  <td className="p-3 border-b border-gray-200">
                     {migration.applied_at
                       ? format(new Date(migration.applied_at), 'yyyy-MM-dd HH:mm:ss')
                       : '-'}

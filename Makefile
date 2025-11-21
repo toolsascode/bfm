@@ -19,7 +19,7 @@ RED := \033[0;31m
 NC := \033[0m # No Color
 
 help: ## Show this help message
-	@echo "$(GREEN)MOPS (Migration Operations) - Available Commands:$(NC)"
+	@echo "$(GREEN)BfM (Migration Operations) - Available Commands:$(NC)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
@@ -130,7 +130,7 @@ health: ## Check health of all services
 	@curl -s http://localhost:7070/api/v1/health | jq . || echo "  Not responding"
 	@echo ""
 	@echo "$(YELLOW)FFM Frontend:$(NC)"
-	@curl -s -o /dev/null -w "  HTTP Status: %{http_code}\n" http://localhost:3000 || echo "  Not responding"
+	@curl -s -o /dev/null -w "  HTTP Status: %{http_code}\n" http://localhost:4040 || echo "  Not responding"
 	@echo ""
 	@echo "$(YELLOW)PostgreSQL:$(NC)"
 	@docker compose -f $(COMPOSE_FILE) exec -T $(POSTGRES_SERVICE) pg_isready -U postgres 2>/dev/null && echo "  ✓ Ready" || echo "  ✗ Not ready"
@@ -158,10 +158,36 @@ shell-kafka: ## Open shell in Kafka container
 # Database Operations
 # ============================================================================
 
+# ============================================================================
+# CLI Tools
+# ============================================================================
+
+build-cli: ## Build BfM CLI tool
+	@echo "$(GREEN)Building BfM CLI...$(NC)"
+	@cd api && go build -o ../bfm-cli ./cmd/cli
+	@echo "$(GREEN)CLI built successfully: ./bfm-cli$(NC)"
+
+build-migrations: build-cli ## Build migration .go files from examples
+	@echo "$(GREEN)Building migration files...$(NC)"
+	@./bfm-cli build examples/sfm
+	@echo "$(GREEN)Migration files built successfully!$(NC)"
+
+build-migrations-verbose: build-cli ## Build migration files with verbose output
+	@echo "$(GREEN)Building migration files (verbose)...$(NC)"
+	@./bfm-cli build examples/sfm --verbose
+
+build-migrations-dry-run: build-cli ## Show what would be generated (dry run)
+	@echo "$(YELLOW)Dry run - showing what would be generated...$(NC)"
+	@./bfm-cli build examples/sfm --dry-run
+
+# ============================================================================
+# Database Operations
+# ============================================================================
+
 db-migrate: ## Run database migrations (placeholder - implement as needed)
 	@echo "$(YELLOW)Running database migrations...$(NC)"
-	@echo "  Use the FFM frontend at http://localhost:3000 to execute migrations"
-	@echo "  Or use: curl -X POST http://localhost:7070/api/v1/migrate"
+	@echo "  Use the FFM frontend at http://localhost:4040 to execute migrations"
+	@echo "  Or use: curl -X POST http://localhost:7070/api/v1/migrations/up"
 
 db-reset: ## Reset database (WARNING: This will delete all data!)
 	@echo "$(RED)WARNING: This will delete all migration state data!$(NC)"
@@ -237,7 +263,7 @@ dev: up ## Start all services for development
 	@echo "$(GREEN)Development environment ready!$(NC)"
 	@echo ""
 	@echo "  BFM Server:    http://localhost:7070"
-	@echo "  FFM Frontend:   http://localhost:3000"
+	@echo "  FFM Frontend:   http://localhost:4040"
 	@echo "  PostgreSQL:     localhost:5433"
 	@echo "  Kafka:          localhost:9092"
 	@echo ""
@@ -246,6 +272,78 @@ dev: up ## Start all services for development
 
 dev-logs: ## Show logs from all services (development)
 	docker compose -f $(COMPOSE_FILE) logs -f
+
+dev-bfm: ## Start BFM backend with hot-reload (requires air)
+	@echo "$(GREEN)Starting BFM with hot-reload...$(NC)"
+	@echo "$(YELLOW)Note: Make sure 'air' is installed: go install github.com/cosmtrek/air@latest$(NC)"
+	@cd bfm && air
+
+dev-ffm: ## Start FFM frontend with hot-reload
+	@echo "$(GREEN)Starting FFM with hot-reload...$(NC)"
+	@cd ffm && npm run dev
+
+dev-local: ## Start both BFM and FFM locally with hot-reload (requires air and npm)
+	@echo "$(GREEN)Starting local development with hot-reload...$(NC)"
+	@echo "$(YELLOW)Starting BFM backend...$(NC)"
+	@cd bfm && air &
+	@echo "$(YELLOW)Starting FFM frontend...$(NC)"
+	@cd ffm && npm run dev
+	@echo "$(GREEN)Both services running with hot-reload!$(NC)"
+	@echo "$(YELLOW)Press Ctrl+C to stop both services$(NC)"
+
+# ============================================================================
+# Docker Development (with hot-reload)
+# ============================================================================
+
+COMPOSE_DEV_FILE := docker-compose.dev.yml
+
+dev-docker: dev-docker-build ## Start all services in Docker with hot-reload
+	@echo "$(GREEN)Starting development environment with hot-reload in Docker...$(NC)"
+	docker compose -f $(COMPOSE_DEV_FILE) up -d
+	@echo "$(GREEN)Development environment ready!$(NC)"
+	@echo ""
+	@echo "  BFM Server:    http://localhost:7070"
+	@echo "  FFM Frontend:  http://localhost:4040"
+	@echo "  PostgreSQL:    localhost:5433"
+	@echo ""
+	@echo "  View logs:     make dev-docker-logs"
+	@echo "  Stop:          make dev-docker-down"
+	@make dev-docker-ps
+
+dev-docker-build: ## Build development Docker images
+	@echo "$(GREEN)Building development images...$(NC)"
+	docker compose -f $(COMPOSE_DEV_FILE) build
+
+dev-docker-down: ## Stop development Docker services
+	@echo "$(YELLOW)Stopping development services...$(NC)"
+	docker compose -f $(COMPOSE_DEV_FILE) down
+
+dev-docker-logs: ## Show logs from development services
+	docker compose -f $(COMPOSE_DEV_FILE) logs -f
+
+dev-docker-logs-bfm: ## Show logs from BFM server (dev)
+	docker compose -f $(COMPOSE_DEV_FILE) logs -f bfm-server
+
+dev-docker-logs-ffm: ## Show logs from FFM frontend (dev)
+	docker compose -f $(COMPOSE_DEV_FILE) logs -f ffm
+
+dev-docker-ps: ## Show status of development services
+	@echo "$(GREEN)Development Service Status:$(NC)"
+	@docker compose -f $(COMPOSE_DEV_FILE) ps
+
+dev-docker-restart: ## Restart development services
+	@echo "$(YELLOW)Restarting development services...$(NC)"
+	docker compose -f $(COMPOSE_DEV_FILE) restart
+	@make dev-docker-ps
+
+dev-docker-clean: ## Stop and remove development containers and volumes
+	@echo "$(RED)WARNING: This will remove all development containers and volumes!$(NC)"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker compose -f $(COMPOSE_DEV_FILE) down -v; \
+		echo "$(GREEN)Cleanup complete!$(NC)"; \
+	fi
 
 # ============================================================================
 # Testing
@@ -257,7 +355,7 @@ test-api: ## Test BFM API health endpoint
 
 test-frontend: ## Test FFM frontend
 	@echo "$(GREEN)Testing FFM frontend...$(NC)"
-	@curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:3000
+	@curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:4040
 
 test-all: test-api test-frontend ## Run all tests
 	@echo "$(GREEN)All tests complete!$(NC)"
@@ -278,7 +376,7 @@ quick-restart: restart ## Quick restart: restart all services
 # ============================================================================
 
 info: ## Show system information
-	@echo "$(GREEN)MOPS System Information:$(NC)"
+	@echo "$(GREEN)BfM System Information:$(NC)"
 	@echo ""
 	@echo "$(YELLOW)Docker Compose Version:$(NC)"
 	@docker compose version
@@ -293,7 +391,7 @@ info: ## Show system information
 	@docker network inspect bfm-network 2>/dev/null | jq -r '.[0].Containers | to_entries[] | "  \(.key): \(.value.IPv4Address)"' || echo "  Network not found"
 
 version: ## Show version information
-	@echo "$(GREEN)MOPS Version Information:$(NC)"
+	@echo "$(GREEN)BfM Version Information:$(NC)"
 	@echo "  BFM: Backend For Migrations"
 	@echo "  FFM: Frontend For Migrations"
 	@echo ""

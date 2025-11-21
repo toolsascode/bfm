@@ -14,8 +14,15 @@ export class AuthService {
 
   constructor() {
     // Check if already authenticated (from localStorage)
-    const authStatus = localStorage.getItem('auth_authenticated');
-    this.isAuthenticated = authStatus === 'true' && !AUTH_ENABLED;
+    if (!AUTH_ENABLED) {
+      // Auth disabled, always authenticated
+      this.isAuthenticated = true;
+      localStorage.setItem('auth_authenticated', 'true');
+    } else {
+      // Auth enabled, check localStorage
+      const authStatus = localStorage.getItem('auth_authenticated');
+      this.isAuthenticated = authStatus === 'true';
+    }
   }
 
   isAuthEnabled(): boolean {
