@@ -3,6 +3,9 @@
 
 set -e
 
+# Add Go bin to PATH if not already there
+export PATH="${PATH}:$(go env GOPATH)/bin"
+
 # Check if protoc is installed
 if ! command -v protoc &> /dev/null; then
     echo "Error: protoc is not installed"

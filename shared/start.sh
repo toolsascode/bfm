@@ -62,15 +62,27 @@ echo -e "${GREEN}BfM Server started (PID: $SERVER_PID)${NC}"
 
 # Wait for server to be ready
 echo -e "${YELLOW}Waiting for BfM Server to be ready...${NC}"
-for i in {1..30}; do
+SERVER_STARTED=false
+for i in {1..60}; do
     if curl -s http://localhost:7070/health > /dev/null 2>&1; then
         echo -e "${GREEN}BfM Server is ready!${NC}"
+        SERVER_STARTED=true
         break
     fi
-    if [ $i -eq 30 ]; then
-        echo -e "${RED}Error: BfM Server failed to start within 30 seconds${NC}"
-        cleanup
-        exit 1
+    # Check if server process is still running
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        echo -e "${RED}Error: BfM Server process (PID: $SERVER_PID) has exited${NC}"
+        # Don't exit immediately - let the wait loop continue to show logs
+        SERVER_STARTED=false
+    fi
+    if [ $i -eq 60 ]; then
+        if [ "$SERVER_STARTED" != "true" ]; then
+            echo -e "${RED}Error: BfM Server failed to start within 60 seconds${NC}"
+            echo -e "${YELLOW}Server process status:${NC}"
+            ps aux | grep bfm-server || echo "Server process not found"
+            cleanup
+            exit 1
+        fi
     fi
     sleep 1
 done

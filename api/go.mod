@@ -1,6 +1,6 @@
 module bfm/api
 
-go 1.24.0
+go 1.25.4
 
 require (
 	github.com/apache/pulsar-client-go v0.17.0

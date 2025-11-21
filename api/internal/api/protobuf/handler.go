@@ -82,13 +82,6 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 		Connection: req.Target.Connection,
 	}
 
-	// Resolve schema (use schema_name if provided for dynamic schemas)
-	schema := req.Schema
-	if schema == "" && req.SchemaName != "" {
-		// For dynamic schemas, use schema_name value directly as schema name
-		schema = req.SchemaName
-	}
-
 	// Get migrations matching target
 	migrations, err := s.executor.GetRegistry().FindByTarget(target)
 	if err != nil {
@@ -125,14 +118,14 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 		if err != nil {
 			progress.Status = "failed"
 			progress.Message = fmt.Sprintf("Error checking status: %v", err)
-			stream.Send(progress)
+			_ = stream.Send(progress)
 			continue
 		}
 
 		if applied {
 			progress.Status = "skipped"
 			progress.Message = "Migration already applied"
-			stream.Send(progress)
+			_ = stream.Send(progress)
 			continue
 		}
 
@@ -145,7 +138,7 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 			if err != nil {
 				progress.Status = "failed"
 				progress.Message = fmt.Sprintf("Failed to get connection config: %v", err)
-				stream.Send(progress)
+				_ = stream.Send(progress)
 				continue
 			}
 
@@ -153,14 +146,14 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 			if backend == nil {
 				progress.Status = "failed"
 				progress.Message = fmt.Sprintf("Backend %s not found", connectionConfig.Backend)
-				stream.Send(progress)
+				_ = stream.Send(progress)
 				continue
 			}
 
 			if err := backend.Connect(connectionConfig); err != nil {
 				progress.Status = "failed"
 				progress.Message = fmt.Sprintf("Failed to connect: %v", err)
-				stream.Send(progress)
+				_ = stream.Send(progress)
 				continue
 			}
 
@@ -176,12 +169,12 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 			}
 
 			err = backend.ExecuteMigration(stream.Context(), backendMigration)
-			backend.Close()
+			_ = backend.Close()
 
 			if err != nil {
 				progress.Status = "failed"
 				progress.Message = err.Error()
-				stream.Send(progress)
+				_ = stream.Send(progress)
 				continue
 			}
 
@@ -201,12 +194,12 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 				AppliedAt:    time.Now().Format(time.RFC3339),
 				ErrorMessage: "",
 			}
-			s.executor.GetStateTracker().RecordMigration(stream.Context(), record)
+			_ = s.executor.GetStateTracker().RecordMigration(stream.Context(), record)
 		}
 
 		progress.Status = "success"
 		progress.Message = "Migration completed successfully"
-		stream.Send(progress)
+		_ = stream.Send(progress)
 	}
 
 	return nil

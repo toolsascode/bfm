@@ -2,13 +2,7 @@ name: Lint
 
 on:
   push:
-    branches:
-      - main
-      - develop
   pull_request:
-    branches:
-      - main
-      - develop
 
 permissions:
   contents: read
@@ -25,13 +19,49 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Download dependencies
+        working-directory: api
+        run: go mod download
+
+      - name: Install Go protobuf plugins
+        working-directory: api
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.10
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+
+      - name: Generate protobuf code
+        working-directory: api
+        run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
+          cd internal/api/protobuf && ./generate.sh
+
+      - name: Install golangci-lint
+        run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: api
-          args: --timeout=5m
+        working-directory: api
+        run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
+          golangci-lint run --timeout=5m
 
   dockerfile-lint:
     name: Dockerfile Linting
@@ -41,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Hadolint
-        uses: hadolint/hadolint-action@v3
+        uses: hadolint/hadolint-action@v3.3.0
         with:
           dockerfile: docker/Dockerfile
           failure-threshold: warning
@@ -55,11 +85,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run yamllint
-        uses: karancode/yamllint-github-action@v2
+        uses: reviewdog/action-yamllint@v1
         with:
-          file_or_dir: .
-          config_file: .yamllint.yml
-          format: github
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-check
         continue-on-error: true
 
   workflow-lint:

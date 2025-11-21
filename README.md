@@ -7,6 +7,12 @@ Backend For Migrations (BfM)
 </span>
 </p>
 
+<p align="center">
+
+[![Go Reference](https://pkg.go.dev/badge/bfm/api/migrations.svg)](https://pkg.go.dev/bfm/api/migrations) [![Release CLI](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml) [![Release Docker](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml)
+
+</p>
+
 BfM is a comprehensive database migration system that supports multiple backends (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
 
 ## Features
@@ -66,81 +72,322 @@ CORE_SCHEMA=core
 
 ## Development
 
-### Hot-Reload Setup (Development Only)
+For development environment setup, local development, and hot-reload configuration, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-Both `bfm` (backend) and `ffm` (frontend) support hot-reload for faster development.
+## Production Deployment
 
-**Note:** Hot-reload tools are only used during local development. Production builds use standard build processes and do not include hot-reload functionality.
+### Using Docker Image
 
-#### Backend (bfm) - Using Air
+BfM provides a production-ready Docker image that includes:
+- BfM API Server (HTTP on port 7070, gRPC on port 9090)
+- BfM Worker (optional, enabled via `BFM_QUEUE_ENABLED=true`)
+- BfM CLI tool (available inside container)
+- FfM Frontend (served via the API server)
 
-Install Air (if not already installed):
-```bash
-go install github.com/cosmtrek/air@latest
-```
+#### Building the Production Image
 
-Or using Homebrew (macOS):
-```bash
-brew install air
-```
-
-Start the backend with hot-reload:
-```bash
-cd bfm
-air
-```
-
-The `.air.toml` configuration file is already set up in the `bfm` directory. Air will automatically rebuild and restart the server when you make changes to Go files.
-
-#### Frontend (ffm) - Using Vite
-
-Vite has built-in Hot Module Replacement (HMR). Start the development server:
+Build the standalone production Docker image:
 
 ```bash
-cd ffm
-npm run dev
+# Using Makefile
+make prod-build
+
+# Or manually
+docker build -t bfm-production:latest -f docker/Dockerfile .
 ```
 
-### Docker Development with Hot-Reload
+#### Running with Docker Compose (Recommended)
 
-For development in Docker with hot-reload support:
+The easiest way to run BfM in production is using the standalone Docker Compose configuration:
+
+1. **Create environment file:**
 
 ```bash
-# Start all services with hot-reload in Docker
-make dev-docker
-
-# View logs
-make dev-docker-logs
-
-# Stop services
-make dev-docker-down
+# Copy and edit environment variables
+cp .env.example .env
 ```
 
-This uses `docker-compose.dev.yml` which:
-- Mounts source code as volumes for live updates
-- Runs Air in the BFM container for Go hot-reload
-- Runs Vite dev server in the FFM container for frontend hot-reload
-- Automatically rebuilds and restarts on code changes
+2. **Configure environment variables:**
 
-See `docs/DEVELOPMENT.md` for detailed development setup instructions.
+Set the following required variables in your `.env` file:
 
-The frontend will automatically reload when you make changes to React components, CSS, or TypeScript files.
+```bash
+# API Authentication
+BFM_API_TOKEN=your-secure-random-token-here
+
+# State Database
+BFM_STATE_DB_PASSWORD=your-secure-password
+BFM_STATE_DB_USERNAME=postgres
+
+# Backend Connections (configure as needed)
+CORE_DB_HOST=your-postgres-host
+CORE_DB_PASSWORD=your-password
+CORE_DB_NAME=your-database
+
+# Optional: Queue Configuration
+BFM_QUEUE_ENABLED=false  # Set to true to enable worker
+```
+
+3. **Start the service:**
+
+```bash
+# Using Makefile
+make standalone-up
+
+# Or manually
+docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+4. **Verify the service:**
+
+```bash
+# Check health
+curl http://localhost:7070/health
+
+# Check service status
+make standalone-ps
+# or
+docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml ps
+```
+
+5. **View logs:**
+
+```bash
+# Using Makefile
+make standalone-logs
+
+# Or manually
+docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml logs -f
+```
+
+6. **Stop the service:**
+
+```bash
+# Using Makefile
+make standalone-down
+
+# Or manually
+docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml down
+```
+
+#### Running with Docker Run
+
+For more control, you can run the container directly:
+
+```bash
+docker run -d \
+  --name bfm-production \
+  -p 7070:7070 \
+  -p 9090:9090 \
+  -e BFM_API_TOKEN=your-secure-token \
+  -e BFM_STATE_DB_HOST=postgres \
+  -e BFM_STATE_DB_PASSWORD=your-password \
+  -e CORE_DB_HOST=your-postgres-host \
+  -e CORE_DB_PASSWORD=your-password \
+  -v /path/to/your/sfm:/app/sfm:ro \
+  bfm-production:latest
+```
+
+#### Accessing the Services
+
+Once running, you can access:
+
+- **Frontend UI**: http://localhost:7070
+- **HTTP API**: http://localhost:7070/api/v1
+- **gRPC API**: localhost:9090
+- **Health Check**: http://localhost:7070/health
+
+#### Using the CLI Inside Container
+
+The BfM CLI is available inside the production container:
+
+```bash
+# Execute CLI commands
+docker exec bfm-standalone /app/bin/bfm-cli --help
+docker exec bfm-standalone /app/bin/bfm-cli version
+
+# Build migration files from SFM directory
+docker exec bfm-standalone /app/bin/bfm-cli build /app/sfm --verbose
+```
+
+### BfM CLI Tool
+
+The BfM CLI is a command-line tool for generating migration `.go` files from SQL/JSON scripts.
+
+## How to install?
+
+### Go Install
+
+```shell
+go install github.com/toolsascode/bfm@latest
+```
+
+### Via Github
+
+- [Latest version](https://github.com/toolsascode/bfm/releases/latest)
+
+```shell
+curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | bash
+```
+
+Or 
+
+```shell
+curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | sudo bash
+```
+
+### Homebrew
+
+```shell
+brew install toolsascode/tap/bfm
+```
+
+### Scoop
+
+1. Run **PowerShell as an Administrator** and:
+2. To add this bucket, run `scoop bucket add bfm-scoop https://github.com/toolsascode/scoop-bucket`.
+3. To install, do `scoop install bfm`.
+
+#### Building the CLI
+
+```bash
+# Using Makefile
+make build-cli
+
+# Or manually
+cd api && go build -o ../bfm-cli ./cmd/cli
+```
+
+#### CLI Commands
+
+**Version:**
+
+```bash
+./bfm-cli version
+```
+
+**Build Migration Files:**
+
+Generate `.go` files from migration scripts in the SFM directory:
+
+```bash
+# Basic usage
+./bfm-cli build examples/sfm
+
+# With verbose output
+./bfm-cli build examples/sfm --verbose
+
+# Dry run (show what would be generated)
+./bfm-cli build examples/sfm --dry-run
+
+# Custom output directory
+./bfm-cli build examples/sfm --output /path/to/output
+
+# Custom path
+./bfm-cli build /path/to/sfm --verbose
+```
+
+#### SFM Directory Structure
+
+The CLI expects migration scripts in the following structure:
+
+```
+{sfm_path}/
+  {backend}/
+    {connection}/
+      {version}_{name}.up.sql
+      {version}_{name}.down.sql
+      # OR for etcd
+      {version}_{name}.up.json
+      {version}_{name}.down.json
+```
+
+Example:
+
+```
+examples/sfm/
+  postgresql/
+    core/
+      20250101120000_create_users.up.sql
+      20250101120000_create_users.down.sql
+  greptimedb/
+    logs/
+      20250101120000_create_metrics.up.sql
+      20250101120000_create_metrics.down.sql
+  etcd/
+    metadata/
+      20250101120000_init_config.up.json
+      20250101120000_init_config.down.json
+```
+
+The CLI will generate corresponding `.go` files that embed the SQL/JSON and register migrations in the global registry.
+
+#### Using CLI in Production
+
+In production environments, you can:
+
+1. **Build migrations as part of CI/CD:**
+
+```bash
+# In your build pipeline
+./bfm-cli build /path/to/migrations --output /path/to/generated
+go build -o bfm-server ./cmd/server
+```
+
+2. **Use in Docker builds:**
+
+```dockerfile
+# Copy migration scripts
+COPY migrations/sfm /app/sfm
+
+# Generate .go files
+RUN /app/bin/bfm-cli build /app/sfm
+
+# Build server with generated migrations
+RUN go build -o bfm-server ./cmd/server
+```
+
+3. **Validate migrations before deployment:**
+
+```bash
+# Dry run to check for errors
+./bfm-cli build /path/to/migrations --dry-run --verbose
+```
+
+### Production Best Practices
+
+1. **Security:**
+   - Use strong, randomly generated API tokens
+   - Store credentials in secret management systems (e.g., HashiCorp Vault, AWS Secrets Manager)
+   - Enable TLS/HTTPS via reverse proxy (nginx, Traefik)
+   - Restrict network access to BfM API
+
+2. **High Availability:**
+   - Run multiple BfM instances behind a load balancer
+   - Use PostgreSQL replication for state database
+   - Implement distributed locking to prevent concurrent migrations
+   - Monitor health endpoints
+
+3. **Monitoring:**
+   - Set up health check monitoring (`GET /health`)
+   - Collect logs via centralized logging (ELK, Loki, etc.)
+   - Track migration execution metrics
+   - Alert on migration failures
+
+4. **Backup:**
+   - Regularly backup the state database
+   - Version control all migration scripts
+   - Test restore procedures
+
+5. **Migration Management:**
+   - Always test migrations in staging first
+   - Use dry-run mode before applying migrations
+   - Keep migration scripts idempotent
+   - Document complex migrations
+
+See `docs/DEPLOYMENT.md` for more detailed deployment instructions.
 
 ## Usage
-
-### Starting the Server (without hot-reload)
-
-```bash
-cd bfm/cmd/server
-go run main.go
-```
-
-### Starting the Server (with hot-reload - recommended for development)
-
-```bash
-cd bfm
-air
-```
 
 ### HTTP API
 
@@ -185,21 +432,33 @@ GET /health
 
 ## Migration Scripts
 
-Migration scripts are located in `/bfm/sfm` and follow the naming convention:
-`{schema}_{table}_{version}_{name}.go`
+Migration scripts are located in `sfm/{backend}/{connection}/` and follow the naming convention:
+`{version}_{name}.up.sql` and `{version}_{name}.down.sql`
 
-Each migration file:
-
-1. Embeds SQL files using `//go:embed`
-2. Registers itself in the global registry via `init()`
-3. Includes both up and down migrations
+The BfM CLI generates corresponding `.go` files with the format `{version}_{name}.go` that:
+1. Embed SQL/JSON files using `//go:embed`
+2. Register themselves in the global registry via `init()`
+3. Include both up and down migrations
 
 Example structure:
 
 ```
-sfm/postgresql/core/core_users_20250101120000_create_users.go
-sfm/postgresql/core/core_users_20250101120000_create_users.sql
-sfm/postgresql/core/core_users_20250101120000_create_users_down.sql
+sfm/
+  postgresql/
+    core/
+      20250101120000_create_users.up.sql
+      20250101120000_create_users.down.sql
+      20250101120000_create_users.go  # Generated by CLI
+  greptimedb/
+    logs/
+      20250101120000_create_metrics.up.sql
+      20250101120000_create_metrics.down.sql
+      20250101120000_create_metrics.go  # Generated by CLI
+  etcd/
+    metadata/
+      20250101120000_init_config.up.json
+      20250101120000_init_config.down.json
+      20250101120000_init_config.go  # Generated by CLI
 ```
 
 ## Migration from Existing System
@@ -212,4 +471,4 @@ To migrate from the existing GORM AutoMigrate system:
 4. Register migrations via `init()` functions
 5. Run migrations via HTTP API or Protobuf API
 
-See `MIGRATION_GUIDE.md` for detailed instructions.
+See `docs/MIGRATION_GUIDE.md` for detailed instructions.

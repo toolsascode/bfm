@@ -81,13 +81,13 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 
 	// Create indexes for migrations_list
 	indexSQL1 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_migration_id ON %s (migration_id)", listTableName)
-	t.db.ExecContext(ctxVal, indexSQL1)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL1)
 
 	indexSQL2 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_connection_backend ON %s (connection, backend)", listTableName)
-	t.db.ExecContext(ctxVal, indexSQL2)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL2)
 
 	indexSQL3 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_schema_table ON %s (schema, table_name)", listTableName)
-	t.db.ExecContext(ctxVal, indexSQL3)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL3)
 
 	// Create migrations_history table
 	historyTableName := "migrations_history"
@@ -121,13 +121,13 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 
 	// Create indexes for migrations_history
 	indexSQL4 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_migration_id ON %s (migration_id)", historyTableName)
-	t.db.ExecContext(ctxVal, indexSQL4)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL4)
 
 	indexSQL5 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_applied_at ON %s (applied_at DESC)", historyTableName)
-	t.db.ExecContext(ctxVal, indexSQL5)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL5)
 
 	indexSQL6 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_status ON %s (status)", historyTableName)
-	t.db.ExecContext(ctxVal, indexSQL6)
+	_, _ = t.db.ExecContext(ctxVal, indexSQL6)
 
 	// Migrate existing data from bfm_migrations if it exists
 	if err := t.migrateExistingData(ctxVal, listTableName, historyTableName); err != nil {
@@ -287,7 +287,6 @@ func (t *Tracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationF
 		if filters.Version != "" {
 			query += fmt.Sprintf(" AND version = $%d", argIndex)
 			args = append(args, filters.Version)
-			argIndex++
 		}
 	}
 
@@ -297,7 +296,7 @@ func (t *Tracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationF
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*state.MigrationRecord
 	for rows.Next() {
@@ -379,7 +378,6 @@ func (t *Tracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilt
 		if filters.Version != "" {
 			query += fmt.Sprintf(" AND version = $%d", argIndex)
 			args = append(args, filters.Version)
-			argIndex++
 		}
 	}
 
@@ -387,7 +385,7 @@ func (t *Tracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilt
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migrations list: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []*state.MigrationListItem
 	for rows.Next() {
@@ -514,12 +512,12 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 	}
 
 	// Check if old table exists
-	checkTableSQL := fmt.Sprintf(`
+	checkTableSQL := `
 		SELECT EXISTS (
 			SELECT FROM information_schema.tables 
 			WHERE table_schema = $1 AND table_name = 'bfm_migrations'
 		)
-	`)
+	`
 
 	var tableExists bool
 	schemaName := "public"
@@ -545,7 +543,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 	if err != nil {
 		return fmt.Errorf("failed to query old table: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Track which migrations we've seen to avoid duplicates in list table
 	seenMigrations := make(map[string]bool)

@@ -1,7 +1,5 @@
 package migrations
 
-// GoFileTemplate is the template for generating migration .go files
-// It is used by both the CLI tool and the loader to create migration files
 const GoFileTemplate = `package {{.PackageName}}
 
 import (

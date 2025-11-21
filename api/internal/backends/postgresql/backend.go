@@ -110,7 +110,7 @@ func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.Migr
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Execute migration SQL
 	// If schema is specified, set search_path or use schema-qualified names

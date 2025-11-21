@@ -65,7 +65,7 @@ func (c *Consumer) Consume(ctx context.Context, handler queue.JobHandler) error 
 			if err := json.Unmarshal(msg.Payload(), &job); err != nil {
 				logger.Errorf("Failed to unmarshal job from Pulsar message: %v", err)
 				// Acknowledge and continue processing other messages
-				c.consumer.Ack(msg)
+				_ = c.consumer.Ack(msg)
 				continue
 			}
 
