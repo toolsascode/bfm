@@ -106,7 +106,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to create queue: %v", err)
 	}
-	defer q.Close()
+	defer func() { _ = q.Close() }()
 
 	// Create worker
 	w := worker.NewWorker(exec, q)

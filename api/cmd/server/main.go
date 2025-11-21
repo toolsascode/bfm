@@ -48,7 +48,7 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Failed to initialize state tracker: %v", err)
 	}
-	defer stateTracker.Close()
+	defer func() { _ = stateTracker.Close() }()
 
 	logger.Info("Initializing BFM server...")
 
@@ -74,7 +74,7 @@ func main() {
 		if err != nil {
 			logger.Fatalf("Failed to create queue: %v", err)
 		}
-		defer q.Close()
+		defer func() { _ = q.Close() }()
 
 		exec.SetQueue(q)
 		logger.Info("Queue enabled - migrations will be queued for async execution")

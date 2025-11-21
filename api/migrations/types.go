@@ -2,6 +2,7 @@ package migrations
 
 import "bfm/api/internal/backends"
 
-// MigrationScript is a public alias for backends.MigrationScript
-// This allows migration files outside the bfm module to use this type
+// MigrationScript represents a database migration script with up and down SQL.
+// MigrationScript is a public alias for backends.MigrationScript that allows
+// migration files outside the bfm module to use this type when registering migrations.
 type MigrationScript = backends.MigrationScript

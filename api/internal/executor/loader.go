@@ -317,9 +317,8 @@ func (l *Loader) scanAndLoad() error {
 		if needsLoad && l.registry != nil {
 			if err := l.loadMigrationFromFile(path, backend, connection, version, name); err != nil {
 				logger.Warnf("Failed to load migration from %s: %v", path, err)
-			} else {
-				// Migration loaded successfully, it will be registered in database by loadMigrationFromFile
 			}
+			// Migration loaded successfully, it will be registered in database by loadMigrationFromFile
 		}
 
 		return nil
@@ -463,7 +462,7 @@ func (l *Loader) ensureGoFileExists(backend, connection, version, name string) (
 		logger.Warnf("Cannot create .go file %s (filesystem may be read-only): %v", goFilePath, err)
 		return "", nil
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Execute template
 	err = tmpl.Execute(file, struct {

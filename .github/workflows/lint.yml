@@ -38,6 +38,7 @@ jobs:
       - name: Generate protobuf code
         working-directory: api
         run: |
+          export PATH="${PATH}:$(go env GOPATH)/bin"
           cd internal/api/protobuf && ./generate.sh
 
       - name: Run golangci-lint

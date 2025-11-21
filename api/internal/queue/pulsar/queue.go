@@ -21,7 +21,7 @@ func NewQueue(url, topic, subscriptionName string) (*Queue, error) {
 
 	consumer, err := NewConsumer(url, topic, subscriptionName)
 	if err != nil {
-		producer.Close()
+		_ = producer.Close()
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 

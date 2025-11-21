@@ -29,10 +29,10 @@ func NewQueue(config *QueueConfig) (queue.Queue, error) {
 	switch queueType {
 	case "kafka":
 		if len(config.KafkaBrokers) == 0 {
-			return nil, fmt.Errorf("Kafka brokers are required")
+			return nil, fmt.Errorf("kafka brokers are required")
 		}
 		if config.KafkaTopic == "" {
-			return nil, fmt.Errorf("Kafka topic is required")
+			return nil, fmt.Errorf("kafka topic is required")
 		}
 		if config.KafkaGroupID == "" {
 			config.KafkaGroupID = "bfm-migration-workers"
@@ -41,10 +41,10 @@ func NewQueue(config *QueueConfig) (queue.Queue, error) {
 
 	case "pulsar":
 		if config.PulsarURL == "" {
-			return nil, fmt.Errorf("Pulsar URL is required")
+			return nil, fmt.Errorf("pulsar URL is required")
 		}
 		if config.PulsarTopic == "" {
-			return nil, fmt.Errorf("Pulsar topic is required")
+			return nil, fmt.Errorf("pulsar topic is required")
 		}
 		if config.PulsarSubscription == "" {
 			config.PulsarSubscription = "bfm-migration-workers"

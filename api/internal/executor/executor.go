@@ -18,8 +18,8 @@ import (
 type contextKey string
 
 const (
-	executedByKey      contextKey = "executed_by"
-	executionMethodKey contextKey = "execution_method"
+	executedByKey       contextKey = "executed_by"
+	executionMethodKey  contextKey = "execution_method"
 	executionContextKey contextKey = "execution_context"
 )
 
@@ -230,7 +230,7 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 	if err := backend.Connect(connectionConfig); err != nil {
 		return nil, fmt.Errorf("failed to connect to backend: %w", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	// Process each migration
 	for _, migration := range migrations {
@@ -418,7 +418,7 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 	if err := backend.Connect(connectionConfig); err != nil {
 		return nil, fmt.Errorf("failed to connect to backend: %w", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	// Execute down migration for each schema
 	for _, schema := range schemas {
@@ -460,7 +460,7 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 		err = backend.ExecuteMigration(ctx, downMigration)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: %v", schema, err))
-			
+
 			// Extract execution context
 			executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
@@ -479,7 +479,7 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 				ExecutionMethod:  executionMethod,
 				ExecutionContext: executionContext,
 			}
-			e.stateTracker.RecordMigration(ctx, record)
+			_ = e.stateTracker.RecordMigration(ctx, record)
 			continue
 		}
 
@@ -558,7 +558,7 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackR
 	if err := backend.Connect(connectionConfig); err != nil {
 		return nil, fmt.Errorf("failed to connect to backend: %w", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	// Execute rollback SQL
 	if migration.DownSQL == "" {
@@ -569,20 +569,20 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackR
 		}, nil
 	}
 
-		// Create a rollback migration script
-		rollbackMigration := &backends.MigrationScript{
-			Schema:     migration.Schema,
-			Version:    migration.Version,
-			Name:       migration.Name + "_rollback",
-			Connection: migration.Connection,
-			Backend:    migration.Backend,
-			UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
-			DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
-		}
+	// Create a rollback migration script
+	rollbackMigration := &backends.MigrationScript{
+		Schema:     migration.Schema,
+		Version:    migration.Version,
+		Name:       migration.Name + "_rollback",
+		Connection: migration.Connection,
+		Backend:    migration.Backend,
+		UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
+		DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
+	}
 
 	// Execute rollback
-		err = backend.ExecuteMigration(ctx, rollbackMigration)
-		if err != nil {
+	err = backend.ExecuteMigration(ctx, rollbackMigration)
+	if err != nil {
 		// Extract execution context
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
@@ -601,36 +601,36 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackR
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
 		}
-		e.stateTracker.RecordMigration(ctx, record)
+		_ = e.stateTracker.RecordMigration(ctx, record)
 
-			return &RollbackResult{
-				Success: false,
-				Message: "rollback failed",
-				Errors:  []string{err.Error()},
-			}, nil
-		}
+		return &RollbackResult{
+			Success: false,
+			Message: "rollback failed",
+			Errors:  []string{err.Error()},
+		}, nil
+	}
 
-		// Extract execution context
-		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
+	// Extract execution context
+	executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
-		// Remove migration from state (mark as not applied)
-		// We'll delete the record or mark it as rolled back
-		// For now, we'll create a rollback record
-		record := &state.MigrationRecord{
-			MigrationID:      migrationID + "_rollback",
-			Schema:           migration.Schema,
-			Table:            "",
-			Version:          migration.Version,
-			Connection:       migration.Connection,
-			Backend:          migration.Backend,
-			Status:           "rolled_back",
-			AppliedAt:        time.Now().Format(time.RFC3339),
-			ErrorMessage:     "",
-			ExecutedBy:       executedBy,
-			ExecutionMethod:  executionMethod,
-			ExecutionContext: executionContext,
-		}
-	e.stateTracker.RecordMigration(ctx, record)
+	// Remove migration from state (mark as not applied)
+	// We'll delete the record or mark it as rolled back
+	// For now, we'll create a rollback record
+	record := &state.MigrationRecord{
+		MigrationID:      migrationID + "_rollback",
+		Schema:           migration.Schema,
+		Table:            "",
+		Version:          migration.Version,
+		Connection:       migration.Connection,
+		Backend:          migration.Backend,
+		Status:           "rolled_back",
+		AppliedAt:        time.Now().Format(time.RFC3339),
+		ErrorMessage:     "",
+		ExecutedBy:       executedBy,
+		ExecutionMethod:  executionMethod,
+		ExecutionContext: executionContext,
+	}
+	_ = e.stateTracker.RecordMigration(ctx, record)
 
 	return &RollbackResult{
 		Success: true,

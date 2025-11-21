@@ -2,14 +2,12 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"bfm/api/internal/api/http/dto"
 	"bfm/api/internal/auth"
-	"bfm/api/internal/backends"
 	"bfm/api/internal/executor"
 	"bfm/api/internal/state"
 
@@ -542,11 +540,12 @@ func (h *Handler) Health(c *gin.Context) {
 }
 
 // getMigrationID generates a migration ID
-func (h *Handler) getMigrationID(migration *backends.MigrationScript) string {
-	// If schema is provided, include it in the ID for uniqueness
-	// Format: {schema}_{connection}_{version}_{name} or {connection}_{version}_{name}
-	if migration.Schema != "" {
-		return fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
-	}
-	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
-}
+// This function is kept for potential future use
+// func (h *Handler) getMigrationID(migration *backends.MigrationScript) string {
+// 	// If schema is provided, include it in the ID for uniqueness
+// 	// Format: {schema}_{connection}_{version}_{name} or {connection}_{version}_{name}
+// 	if migration.Schema != "" {
+// 		return fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+// 	}
+// 	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+// }

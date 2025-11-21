@@ -1,15 +1,15 @@
 # Development Dockerfile for BFM with Air hot-reload
 # This is ONLY for development - production uses Dockerfile
 
-FROM golang:1.24-alpine
+FROM golang:1.25.4-alpine
 
 WORKDIR /app
 
 # Install Air for hot-reload and other development tools
-# Use Air v1.49.0 which supports Go 1.24 (latest requires Go 1.25+)
+# Use latest Air which supports Go 1.25+
 # Add Go bin to PATH so air command is available
 ENV PATH=$PATH:/go/bin
-RUN go install github.com/cosmtrek/air@v1.49.0 && \
+RUN go install github.com/cosmtrek/air@latest && \
     apk add --no-cache bash protobuf-dev git make wget
 
 # Copy go mod files first for better caching

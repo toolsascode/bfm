@@ -33,7 +33,7 @@ func ExtractToken(authHeader string) (string, error) {
 	}
 
 	if strings.ToLower(parts[0]) != "bearer" {
-		return "", errors.New("Authorization header must use Bearer scheme")
+		return "", errors.New("authorization header must use Bearer scheme")
 	}
 
 	return parts[1], nil
