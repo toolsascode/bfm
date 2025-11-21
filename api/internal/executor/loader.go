@@ -8,18 +8,20 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"bfm/api/internal/backends"
 	"bfm/api/internal/logger"
 	"bfm/api/internal/registry"
+	"bfm/api/migrations"
 )
 
 // Loader loads migration scripts from the SFM directory
 type Loader struct {
 	sfmPath      string
 	registry     registry.Registry
-	executor     *Executor // Optional executor for registering scanned migrations
+	executor     *Executor            // Optional executor for registering scanned migrations
 	seenFiles    map[string]time.Time // Track files we've seen and their mod times
 	mu           sync.RWMutex
 	watchContext context.Context
@@ -74,6 +76,28 @@ func (l *Loader) scanAndLoadAll() error {
 	if _, err := os.Stat(l.sfmPath); os.IsNotExist(err) {
 		logger.Warnf("SFM directory does not exist: %s", l.sfmPath)
 		return nil
+	}
+
+	// First, scan for SQL/JSON files and auto-create .go files if needed
+	// Also loads migrations directly from SQL/JSON if .go file creation fails
+	if migrations, err := l.findMigrationFilesFromSQLOrJSON(); err != nil {
+		logger.Warnf("Failed to scan for SQL/JSON migration files: %v", err)
+	} else {
+		createdCount := 0
+		loadedCount := 0
+		for goFilePath := range migrations {
+			if goFilePath != "" {
+				createdCount++
+			} else {
+				loadedCount++
+			}
+		}
+		if createdCount > 0 {
+			logger.Infof("Auto-created %d .go file(s) from SQL/JSON files", createdCount)
+		}
+		if loadedCount > 0 {
+			logger.Infof("Loaded %d migration(s) directly from SQL/JSON files (read-only filesystem)", loadedCount)
+		}
 	}
 
 	var loadedCount int
@@ -198,6 +222,28 @@ func (l *Loader) scanAndLoad() error {
 		return nil // Directory doesn't exist, skip
 	}
 
+	// First, scan for SQL/JSON files and auto-create .go files if needed
+	// Also loads migrations directly from SQL/JSON if .go file creation fails
+	if migrations, err := l.findMigrationFilesFromSQLOrJSON(); err != nil {
+		logger.Warnf("Failed to scan for SQL/JSON migration files: %v", err)
+	} else {
+		createdCount := 0
+		loadedCount := 0
+		for goFilePath := range migrations {
+			if goFilePath != "" {
+				createdCount++
+			} else {
+				loadedCount++
+			}
+		}
+		if createdCount > 0 {
+			logger.Infof("Auto-created %d .go file(s) from SQL/JSON files", createdCount)
+		}
+		if loadedCount > 0 {
+			logger.Infof("Loaded %d migration(s) directly from SQL/JSON files (read-only filesystem)", loadedCount)
+		}
+	}
+
 	// Walk through the SFM directory structure
 	// Structure: sfm/{backend}/{connection}/{version}_{name}.go
 	newFiles := make(map[string]time.Time)
@@ -295,7 +341,7 @@ func (l *Loader) scanAndLoad() error {
 func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version, name string) error {
 	// Determine file extensions based on backend
 	var upExt, downExt string
-	if backend == "etcd" {
+	if backend == "etcd" || backend == "mongodb" {
 		upExt = ".up.json"
 		downExt = ".down.json"
 	} else {
@@ -340,7 +386,7 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 	if l.executor != nil {
 		// Generate migration ID (format: {connection}_{version}_{name} since schema is dynamic)
 		migrationID := fmt.Sprintf("%s_%s_%s", connection, version, name)
-		
+
 		// Register in database (schema and table are empty for now, will be set on execution)
 		ctx := context.Background()
 		if err := l.executor.RegisterScannedMigration(ctx, migrationID, "", "", version, name, connection, backend); err != nil {
@@ -353,12 +399,190 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 	return nil
 }
 
-// isNumeric checks if a string contains only digits
-func isNumeric(s string) bool {
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
+// ensureGoFileExists checks if a .go file exists for the given migration files.
+// If the .go file doesn't exist but the .up.sql/.up.json and .down.sql/.down.json files do,
+// it automatically creates the .go file.
+// Returns the goFilePath if it exists or was created, or an empty string if creation failed
+// (e.g., read-only filesystem). The error indicates whether SQL/JSON files are missing.
+func (l *Loader) ensureGoFileExists(backend, connection, version, name string) (string, error) {
+	// Determine file extensions based on backend
+	var upExt, downExt string
+	if backend == "etcd" || backend == "mongodb" {
+		upExt = ".up.json"
+		downExt = ".down.json"
+	} else {
+		upExt = ".up.sql"
+		downExt = ".down.sql"
 	}
-	return true
+
+	// Build directory path
+	dir := filepath.Join(l.sfmPath, backend, connection)
+	baseName := fmt.Sprintf("%s_%s", version, name)
+	goFilePath := filepath.Join(dir, baseName+".go")
+	upFile := filepath.Join(dir, baseName+upExt)
+	downFile := filepath.Join(dir, baseName+downExt)
+
+	// Check if .go file already exists
+	if _, err := os.Stat(goFilePath); err == nil {
+		return goFilePath, nil // .go file exists, no need to create
+	}
+
+	// Check if .up file exists
+	if _, err := os.Stat(upFile); os.IsNotExist(err) {
+		return "", fmt.Errorf("up migration file does not exist: %s", upFile)
+	}
+
+	// Check if .down file exists (required per user requirement)
+	if _, err := os.Stat(downFile); os.IsNotExist(err) {
+		return "", fmt.Errorf("down migration file does not exist: %s", downFile)
+	}
+
+	// Try to create directory if it doesn't exist (may fail on read-only filesystem)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		// If directory creation fails, it might be read-only filesystem
+		// Return empty string (no .go file) but no error (SQL/JSON files exist)
+		logger.Warnf("Cannot create directory %s (filesystem may be read-only): %v", dir, err)
+		return "", nil
+	}
+
+	// Parse template
+	tmpl, err := template.New("goFile").Parse(migrations.GoFileTemplate)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	// Prepare template data
+	upFileName := filepath.Base(upFile)
+	downFileName := filepath.Base(downFile)
+
+	// Create .go file
+	file, err := os.Create(goFilePath)
+	if err != nil {
+		// If file creation fails (e.g., read-only filesystem), return empty string
+		// but no error since SQL/JSON files exist and can be loaded directly
+		logger.Warnf("Cannot create .go file %s (filesystem may be read-only): %v", goFilePath, err)
+		return "", nil
+	}
+	defer file.Close()
+
+	// Execute template
+	err = tmpl.Execute(file, struct {
+		PackageName  string
+		UpFileName   string
+		DownFileName string
+		Version      string
+		Name         string
+		Connection   string
+		Backend      string
+	}{
+		PackageName:  connection,
+		UpFileName:   upFileName,
+		DownFileName: downFileName,
+		Version:      version,
+		Name:         name,
+		Connection:   connection,
+		Backend:      backend,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate file %s: %w", goFilePath, err)
+	}
+
+	logger.Infof("Auto-generated .go file: %s", goFilePath)
+	return goFilePath, nil
+}
+
+// findMigrationFilesFromSQLOrJSON scans for .up.sql or .up.json files and creates corresponding .go files
+// Also loads migrations directly from SQL/JSON files if .go file creation fails (e.g., read-only filesystem)
+// Returns a map of goFilePath -> (backend, connection, version, name)
+// If goFilePath is empty, the migration was loaded directly from SQL/JSON files
+func (l *Loader) findMigrationFilesFromSQLOrJSON() (map[string][]string, error) {
+	migrations := make(map[string][]string) // goFilePath -> [backend, connection, version, name]
+
+	err := filepath.Walk(l.sfmPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Look for .up.sql or .up.json files
+		var isUpFile bool
+		var upExt string
+		if strings.HasSuffix(path, ".up.sql") {
+			isUpFile = true
+			upExt = ".up.sql"
+		} else if strings.HasSuffix(path, ".up.json") {
+			isUpFile = true
+			upExt = ".up.json"
+		}
+
+		if !isUpFile {
+			return nil
+		}
+
+		// Verify directory structure: sfm/{backend}/{connection}/{version}_{name}.up.{sql|json}
+		relPath, err := filepath.Rel(l.sfmPath, path)
+		if err != nil {
+			return err
+		}
+
+		parts := strings.Split(relPath, string(filepath.Separator))
+		if len(parts) < 3 {
+			return nil
+		}
+
+		filename := parts[len(parts)-1]
+		filenameWithoutExt := strings.TrimSuffix(filename, upExt)
+
+		// Verify filename format: {version}_{name}.up.{sql|json} where version is 14 digits
+		versionRegex := regexp.MustCompile(`^(\d{14})_(.+)$`)
+		matches := versionRegex.FindStringSubmatch(filenameWithoutExt)
+		if len(matches) != 3 {
+			return nil
+		}
+
+		version := matches[1]
+		name := matches[2]
+		backend := parts[0]
+		connection := parts[1]
+
+		// Check if .go file exists, if not try to create it
+		goFilePath, err := l.ensureGoFileExists(backend, connection, version, name)
+		if err != nil {
+			// Error means SQL/JSON files are missing, skip this migration
+			logger.Warnf("Failed to ensure .go file exists for %s: %v", path, err)
+			return nil // Continue with other files
+		}
+
+		// If goFilePath is empty, .go file creation failed (e.g., read-only filesystem)
+		// but SQL/JSON files exist, so load migration directly
+		if goFilePath == "" {
+			// Load migration directly from SQL/JSON files
+			if l.registry != nil {
+				// Build the path to the .go file (even though it doesn't exist)
+				// loadMigrationFromFile will read SQL/JSON files directly
+				dir := filepath.Join(l.sfmPath, backend, connection)
+				baseName := fmt.Sprintf("%s_%s", version, name)
+				virtualGoPath := filepath.Join(dir, baseName+".go")
+
+				if err := l.loadMigrationFromFile(virtualGoPath, backend, connection, version, name); err != nil {
+					logger.Warnf("Failed to load migration directly from SQL/JSON for %s: %v", path, err)
+					return nil // Continue with other files
+				}
+				logger.Infof("Loaded migration directly from SQL/JSON: %s_%s (backend: %s, connection: %s)", version, name, backend, connection)
+			}
+			// Use empty string as key to indicate migration loaded without .go file
+			migrations[""] = []string{backend, connection, version, name}
+		} else {
+			// Store migration info with goFilePath
+			migrations[goFilePath] = []string{backend, connection, version, name}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error scanning for SQL/JSON migration files: %w", err)
+	}
+
+	return migrations, nil
 }

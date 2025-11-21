@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 
 # Docker Compose file location
-COMPOSE_FILE := docker-compose.yml
+COMPOSE_FILE := deploy/docker-compose.yml
 
 # Service names
 BFM_SERVICE := bfm
@@ -87,6 +87,46 @@ build-ffm: ## Build FFM frontend image
 build-no-cache: ## Build all images without cache
 	@echo "$(GREEN)Building all images without cache...$(NC)"
 	docker compose -f $(COMPOSE_FILE) build --no-cache
+
+prod-build: ## Build standalone production Docker image
+	@echo "$(GREEN)Building standalone production Docker image...$(NC)"
+	docker build -t bfm-production:latest -f docker/Dockerfile .
+	@echo "$(GREEN)Production image built successfully: bfm-production:latest$(NC)"
+
+# ============================================================================
+# Standalone Production (Docker Compose)
+# ============================================================================
+
+COMPOSE_STANDALONE_FILE := deploy/docker-compose.standalone.yml
+
+standalone-up: ## Start standalone production container
+	@echo "$(GREEN)Starting standalone production container...$(NC)"
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) up -d --remove-orphans --build --force-recreate
+	@echo "$(GREEN)Standalone container started!$(NC)"
+	@make standalone-ps
+
+standalone-down: ## Stop standalone production container
+	@echo "$(YELLOW)Stopping standalone production container...$(NC)"
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) down
+
+standalone-build: ## Build standalone production container
+	@echo "$(GREEN)Building standalone production container...$(NC)"
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) build
+
+standalone-logs: ## Show logs from standalone container
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) logs -f
+
+standalone-ps: ## Show status of standalone container
+	@echo "$(GREEN)Standalone Container Status:$(NC)"
+	@docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) ps
+
+standalone-restart: ## Restart standalone container
+	@echo "$(YELLOW)Restarting standalone container...$(NC)"
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) restart
+	@make standalone-ps
+
+standalone-shell: ## Open shell in standalone container
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) exec bfm-standalone /bin/sh
 
 # ============================================================================
 # Logs
@@ -295,7 +335,7 @@ dev-local: ## Start both BFM and FFM locally with hot-reload (requires air and n
 # Docker Development (with hot-reload)
 # ============================================================================
 
-COMPOSE_DEV_FILE := docker-compose.dev.yml
+COMPOSE_DEV_FILE := deploy/docker-compose.dev.yml
 
 dev-docker: dev-docker-build ## Start all services in Docker with hot-reload
 	@echo "$(GREEN)Starting development environment with hot-reload in Docker...$(NC)"
