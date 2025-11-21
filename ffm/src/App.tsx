@@ -4,15 +4,29 @@ import Login from './components/Login';
 import Layout from './components/Layout';
 import MigrationList from './components/MigrationList';
 import MigrationDetail from './components/MigrationDetail';
-import MigrationExecute from './components/MigrationExecute';
 import Dashboard from './components/Dashboard';
+import ToastContainer from './components/ToastContainer';
 import { authService } from './services/auth';
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.getAuthenticated());
+  // Initialize from auth service (which checks localStorage)
+  const [isAuthenticated, setIsAuthenticated] = useState(() => authService.getAuthenticated());
 
   useEffect(() => {
-    setIsAuthenticated(authService.getAuthenticated());
+    // Re-check authentication on mount/reload
+    const checkAuth = () => {
+      setIsAuthenticated(authService.getAuthenticated());
+    };
+    checkAuth();
+    
+    // Also check on storage events (in case of multiple tabs)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'auth_authenticated') {
+        checkAuth();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const handleLogin = () => {
@@ -27,32 +41,41 @@ function App() {
   if (!authService.isAuthEnabled()) {
     // Auth disabled, allow access
     return (
+      <>
+        <ToastContainer />
+        <Routes>
+          <Route path="/" element={<Layout onLogout={handleLogout} />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="migrations" element={<MigrationList />} />
+            <Route path="migrations/:id" element={<MigrationDetail />} />
+          </Route>
+        </Routes>
+      </>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <>
+        <ToastContainer />
+        <Login onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <ToastContainer />
       <Routes>
         <Route path="/" element={<Layout onLogout={handleLogout} />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="migrations" element={<MigrationList />} />
           <Route path="migrations/:id" element={<MigrationDetail />} />
-          <Route path="execute" element={<MigrationExecute />} />
         </Route>
       </Routes>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  return (
-    <Routes>
-      <Route path="/" element={<Layout onLogout={handleLogout} />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="migrations" element={<MigrationList />} />
-        <Route path="migrations/:id" element={<MigrationDetail />} />
-        <Route path="execute" element={<MigrationExecute />} />
-      </Route>
-    </Routes>
+    </>
   );
 }
 

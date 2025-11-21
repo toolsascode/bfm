@@ -12,7 +12,20 @@ export interface MigrateRequest {
   target?: MigrationTarget;
   connection: string;
   schema?: string;
-  environment?: string;
+  schema_name?: string;
+  dry_run?: boolean;
+}
+
+export interface MigrateUpRequest {
+  target?: MigrationTarget;
+  connection: string;
+  schemas?: string[]; // Array for dynamic schemas
+  dry_run?: boolean;
+}
+
+export interface MigrateDownRequest {
+  migration_id: string;
+  schemas?: string[]; // Array for dynamic schemas
   dry_run?: boolean;
 }
 
@@ -63,6 +76,26 @@ export interface MigrationStatusResponse {
   status?: string;
   applied_at?: string;
   error_message?: string;
+}
+
+export interface MigrationHistoryItem {
+  migration_id: string;
+  schema: string;
+  table: string;
+  version: string;
+  connection: string;
+  backend: string;
+  applied_at: string;
+  status: string;
+  error_message?: string;
+  executed_by?: string;
+  execution_method?: string;
+  execution_context?: string;
+}
+
+export interface MigrationHistoryResponse {
+  migration_id: string;
+  history: MigrationHistoryItem[];
 }
 
 export interface RollbackResponse {

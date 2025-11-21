@@ -1,14 +1,18 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError } from 'axios';
 import type {
   MigrateRequest,
+  MigrateUpRequest,
+  MigrateDownRequest,
   MigrateResponse,
   MigrationListResponse,
   MigrationDetailResponse,
   MigrationStatusResponse,
+  MigrationHistoryResponse,
   RollbackResponse,
   HealthResponse,
   MigrationListFilters,
 } from '../types/api';
+import { toastService } from './toast';
 
 class BFMApiClient {
   private client: AxiosInstance;
@@ -31,6 +35,8 @@ class BFMApiClient {
       baseURL: apiURL,
       headers: {
         'Content-Type': 'application/json',
+        'X-Client-Type': 'frontend', // Identify requests from FfM frontend
+        'X-Requested-With': 'FfM', // Additional identifier for manual executions
       },
     });
 
@@ -49,11 +55,78 @@ class BFMApiClient {
     // Add response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
-      (error) => {
+      (error: AxiosError) => {
+        // First, try to extract error message from response data
+        let errorMessage: string | null = null;
+        
+        if (error.response?.data) {
+          const data = error.response.data as any;
+          
+          // Log for debugging - show full error details
+          if (process.env.NODE_ENV === 'development') {
+            console.group('🔴 API Error Response');
+            console.error('Status:', error.response.status);
+            console.error('Data Type:', typeof data);
+            console.error('Data:', data);
+            if (typeof data === 'object' && data !== null) {
+              console.error('Data Keys:', Object.keys(data));
+              console.error('Stringified Data:', JSON.stringify(data, null, 2));
+            }
+            console.groupEnd();
+          }
+          
+          if (typeof data === 'string') {
+            errorMessage = data;
+          } else if (data?.error) {
+            errorMessage = typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error);
+          } else if (data?.message) {
+            errorMessage = data.message;
+          } else if (data?.error?.message) {
+            errorMessage = data.error.message;
+          } else if (typeof data === 'object') {
+            // Try to find any string value that might be an error message
+            const values = Object.values(data);
+            const stringValue = values.find(v => typeof v === 'string' && v.length > 0) as string | undefined;
+            if (stringValue) {
+              errorMessage = stringValue;
+            } else {
+              // Last resort: stringify the object
+              errorMessage = JSON.stringify(data);
+            }
+          }
+          
+          // Log extracted error message for debugging
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Extracted Error Message:', errorMessage);
+          }
+        }
+        
+        // Handle specific status codes
         if (error.response?.status === 401) {
           // Clear token on unauthorized
           this.clearToken();
+          toastService.error(errorMessage || 'Authentication failed. Please login again.');
+        } else if (error.response?.status === 403) {
+          toastService.error(errorMessage || 'You do not have permission to perform this action.');
+        } else if (error.response?.status === 404) {
+          toastService.warning(errorMessage || 'Resource not found.');
+        } else if (error.response?.status >= 500) {
+          // For 500 errors, show the actual error message if available
+          const messageToShow = errorMessage || 'Server error. Please try again later.';
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Showing error toast:', messageToShow);
+          }
+          toastService.error(messageToShow);
+        } else if (error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+          toastService.error('Network error. Please check your connection.');
+        } else if (errorMessage) {
+          // If we have an error message but no specific status handling, show it
+          toastService.error(errorMessage);
+        } else {
+          // Fallback
+          toastService.error('An error occurred. Please try again.');
         }
+        
         return Promise.reject(error);
       }
     );
@@ -96,8 +169,25 @@ class BFMApiClient {
     return response.data;
   }
 
+  async getMigrationHistory(migrationId: string): Promise<MigrationHistoryResponse> {
+    const response = await this.client.get<MigrationHistoryResponse>(
+      `/v1/migrations/${migrationId}/history`
+    );
+    return response.data;
+  }
+
   async migrate(request: MigrateRequest): Promise<MigrateResponse> {
     const response = await this.client.post<MigrateResponse>('/v1/migrate', request);
+    return response.data;
+  }
+
+  async migrateUp(request: MigrateUpRequest): Promise<MigrateResponse> {
+    const response = await this.client.post<MigrateResponse>('/v1/migrations/up', request);
+    return response.data;
+  }
+
+  async migrateDown(request: MigrateDownRequest): Promise<MigrateResponse> {
+    const response = await this.client.post<MigrateResponse>('/v1/migrations/down', request);
     return response.data;
   }
 

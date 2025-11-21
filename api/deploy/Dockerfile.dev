@@ -1,0 +1,38 @@
+# Development Dockerfile for BFM with Air hot-reload
+# This is ONLY for development - production uses Dockerfile
+
+FROM golang:1.24-alpine
+
+WORKDIR /app
+
+# Install Air for hot-reload and other development tools
+# Use Air v1.49.0 which supports Go 1.24 (latest requires Go 1.25+)
+# Add Go bin to PATH so air command is available
+ENV PATH=$PATH:/go/bin
+RUN go install github.com/cosmtrek/air@v1.49.0 && \
+    apk add --no-cache bash protobuf-dev git make wget
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy Air configuration
+COPY .air.toml ./
+
+# Copy source code (will be mounted as volume in docker-compose)
+# This copy is for initial setup, actual development uses volume mount
+COPY . .
+
+# Generate protobuf bindings
+RUN cd internal/api/protobuf && ./generate.sh || true
+
+# Create tmp directory for Air
+RUN mkdir -p tmp
+
+# Expose ports
+EXPOSE 7070 9090
+
+# Use Air for hot-reload
+# Air will watch for changes and rebuild automatically
+CMD ["air", "-c", ".air.toml"]
+

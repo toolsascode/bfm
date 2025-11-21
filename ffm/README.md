@@ -15,6 +15,7 @@ A modern web frontend for managing and monitoring database migrations via the BF
 
 - **React 18** with TypeScript
 - **Vite** for fast development and building
+- **Tailwind CSS** for styling and responsive design
 - **React Router** for navigation
 - **Axios** for API communication
 - **Recharts** for data visualization
@@ -56,11 +57,15 @@ VITE_AUTH_PASSWORD=admin123
 
 ### Development
 
+Start the development server with hot-reload (HMR):
+
 ```bash
 npm run dev
 ```
 
-The application will be available at `http://localhost:3000`
+The application will be available at `http://localhost:4040`
+
+**Hot Module Replacement (HMR)** is enabled by default. Changes to React components, CSS files, and TypeScript files will automatically reload in the browser without losing application state.
 
 ### Building for Production
 
@@ -98,12 +103,42 @@ The frontend communicates with the BFM server via HTTP API:
 
 The BFM API token should be set via the BFM server's `BFM_API_TOKEN` environment variable. The frontend will use this token for authentication.
 
+## Styling with Tailwind CSS
+
+This project uses **Tailwind CSS** for all styling. All components use Tailwind utility classes instead of custom CSS files.
+
+### Custom BfM Colors
+
+The following custom colors are available as Tailwind utilities:
+
+- `bfm-teal` / `bfm-teal-dark` - Teal accent colors
+- `bfm-green` / `bfm-green-dark` - Green accent colors
+- `bfm-blue` / `bfm-blue-dark` / `bfm-dark-blue` - Blue accent colors
+- `bfm-sidebar-bg` - Sidebar background color
+- `bfm-sidebar-hover` - Sidebar hover state
+- `bfm-active-accent` - Active navigation accent
+
+**Usage examples:**
+```tsx
+<div className="bg-bfm-teal text-white">Teal background</div>
+<button className="hover:bg-bfm-blue-dark">Blue button</button>
+```
+
+### Responsive Design
+
+All components are fully responsive with mobile-first design:
+- Mobile: Single column layouts, collapsible sidebar
+- Tablet: 2-column grids where appropriate
+- Desktop: Full multi-column layouts
+
+Breakpoints: `sm:` (640px), `md:` (768px), `lg:` (1024px), `xl:` (1280px)
+
 ## Project Structure
 
 ```
 ffm/
 ├── src/
-│   ├── components/       # React components
+│   ├── components/       # React components (all use Tailwind CSS)
 │   │   ├── Dashboard.tsx
 │   │   ├── Login.tsx
 │   │   ├── Layout.tsx
@@ -117,9 +152,11 @@ ffm/
 │   │   └── api.ts
 │   ├── App.tsx           # Main app component
 │   ├── main.tsx          # Entry point
-│   └── index.css         # Global styles
+│   └── index.css         # Tailwind directives and base styles
 ├── index.html
 ├── package.json
+├── tailwind.config.js    # Tailwind configuration
+├── postcss.config.js     # PostCSS configuration
 ├── tsconfig.json
 └── vite.config.ts
 ```
@@ -160,5 +197,5 @@ ffm/
 
 ## License
 
-See LICENSE file in the root of the mops project.
+See LICENSE file in the root of the bfm project.
 
