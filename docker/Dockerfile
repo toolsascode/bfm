@@ -6,11 +6,11 @@ FROM golang:1.24-alpine AS go-builder
 WORKDIR /build
 
 # Install tooling needed to generate gRPC code
-RUN apk add --no-cache bash protobuf-dev protoc
+RUN apk add --no-cache bash=5.2.37-r0 protobuf-dev=29.4-r0 protoc=29.4-r0
 
 # Install Go protobuf plugins
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.0
 
 # Copy bfm go mod files
 COPY api/go.mod api/go.sum ./
@@ -22,7 +22,9 @@ RUN go mod download
 COPY api/ .
 
 # Generate protobuf bindings for the migration service
-RUN cd internal/api/protobuf && ./generate.sh
+WORKDIR /build/internal/api/protobuf
+RUN ./generate.sh
+WORKDIR /build
 
 # Build the application binaries
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bfm-server ./cmd/server && \
@@ -51,15 +53,15 @@ RUN npm run build
 # ============================================================================
 # Stage 3: Production Runtime
 # ============================================================================
-FROM alpine:latest
+FROM alpine:3.19
 
 # Install required tools
 RUN apk --no-cache add \
-    ca-certificates \
-    tzdata \
-    bash \
-    sed \
-    curl \
+    ca-certificates=20250911-r0 \
+    tzdata=2025b-r0 \
+    bash=5.2.21-r0 \
+    sed=4.9-r2 \
+    curl=8.14.1-r2 \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app

@@ -30,9 +30,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       - name: Download dependencies
         working-directory: api
         run: go mod download
+
+      - name: Install Go protobuf plugins
+        working-directory: api
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.0
+
+      - name: Generate protobuf code
+        working-directory: api
+        run: |
+          cd internal/api/protobuf && ./generate.sh
 
       - name: Run tests
         working-directory: api
@@ -84,6 +100,52 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: api/go.sum
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install protoc
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+        continue-on-error: true
+
+      - name: Install protoc (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install protobuf
+        continue-on-error: true
+
+      - name: Install protoc (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install protoc -y
+        continue-on-error: true
+
+      - name: Download dependencies
+        working-directory: api
+        run: go mod download
+
+      - name: Install Go protobuf plugins
+        working-directory: api
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.0
+
+      - name: Generate protobuf code
+        working-directory: api
+        run: |
+          cd internal/api/protobuf && ./generate.sh
+        continue-on-error: true
 
       - name: Build CLI
         working-directory: api
