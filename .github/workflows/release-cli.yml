@@ -8,31 +8,34 @@ on:
 permissions:
   contents: write
   packages: write
+  # id-token: write
 
 jobs:
-  release:
-    name: Release CLI
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: api/go.mod
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+          go-version: stable
+      # More assembly might be required: Docker logins, GPG, etc.
+      # It all depends on your needs.
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
         with:
-          distribution: goreleaser
-          version: v2.2.0
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: Add package manager API keys if required
-          # SNAPCRAFT_LOGIN: ${{ secrets.SNAPCRAFT_LOGIN }}
-          # CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
 

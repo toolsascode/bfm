@@ -52,120 +52,30 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
 
-# Snapcraft configuration (Future feature)
-# snapcrafts:
-#   - id: default
-#     name: bfm
-#     summary: "BfM - Backend for Migrations CLI"
-#     description: |
-#       BfM (Backend for Migrations) is a CLI tool for managing database migrations.
-#       Generate migration .go files from SQL/JSON migration scripts.
-#       Supports PostgreSQL, GreptimeDB, and etcd backends.
-#     base: core22
-#     grade: stable
-#     confinement: strict
-#     apps:
-#       bfm:
-#         command: bfm
-#         plugs:
-#           - network
-#           - home
-#     parts:
-#       bfm:
-#         plugin: nil
-#         stage-packages:
-#           - ca-certificates
+signs:
+  - artifacts: checksum
+    cmd: gpg2
+    args:
+      - "--batch"
+      - "-u"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
 
-# Homebrew tap configuration
-homebrew:
-  name: bfm
-  repository:
-    owner: toolsascode
-    name: homebrew-tap
-  homepage: "https://github.com/toolsascode/bfm"
-  description: "BfM - Backend for Migrations CLI"
-  license: "MIT"
-  test: |
-    system "#{bin}/bfm version"
-  install: |
-    bin.install "bfm"
-
-# Scoop configuration
-scoops:
-  - name: bfm
-    repository:
-      owner: toolsascode
-      name: scoop-bucket
-    homepage: "https://github.com/toolsascode/bfm"
-    description: "BfM - Backend for Migrations CLI"
-    license: "MIT"
-    persist:
-      - "config"
-
-# Chocolatey configuration (Future feature)
-# chocolatys:
-#   - name: bfm
-#     title: "BfM CLI"
-#     summary: "BfM - Backend for Migrations CLI"
-#     description: |
-#       BfM (Backend for Migrations) is a CLI tool for managing database migrations.
-#       Generate migration .go files from SQL/JSON migration scripts.
-#       Supports PostgreSQL, GreptimeDB, and etcd backends.
-#     authors:
-#       - "toolsascode"
-#     project_url: "https://github.com/toolsascode/bfm"
-#     license_url: "https://github.com/toolsascode/bfm/blob/main/LICENSE"
-#     tags:
-#       - migration
-#       - database
-#       - cli
-#     maintainers:
-#       - "toolsascode"
-
-# Winget configuration
-winget:
-  package_identifier: toolsascode.BfM
-  name: BfM
-  publisher: toolsascode
-  description: "BfM (Backend for Migrations) is a CLI tool for managing database migrations."
-  homepage: "https://github.com/toolsascode/bfm"
-  license: "MIT"
-  license_url: "https://github.com/toolsascode/bfm/blob/main/LICENSE"
-  tags:
-    - migration
-    - database
-    - cli
-
-# FPM (for Apt and Yum)
-nfpms:
-  - id: deb
-    package_name: bfm
-    file_name_template: "{{ .ConventionalFileName }}"
-    formats:
-      - deb
-    dependencies:
-      - ca-certificates
-    description: "BfM - Backend for Migrations CLI"
-    homepage: "https://github.com/toolsascode/bfm"
-    maintainer: "toolsascode <toolsascode@users.noreply.github.com>"
-    license: "MIT"
-    vendor: "toolsascode"
-    section: "utils"
-    priority: "optional"
-    bindir: "/usr/bin"
-  - id: rpm
-    package_name: bfm
-    file_name_template: "{{ .ConventionalFileName }}"
-    formats:
-      - rpm
-    dependencies:
-      - ca-certificates
-    description: "BfM - Backend for Migrations CLI"
-    homepage: "https://github.com/toolsascode/bfm"
-    maintainer: "toolsascode <toolsascode@users.noreply.github.com>"
-    license: "MIT"
-    vendor: "toolsascode"
-    bindir: "/usr/bin"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^test\\("
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+      - go mod tidy
 
 # GitHub release configuration
 release:
@@ -177,12 +87,27 @@ release:
     ## What's Changed
     Full Changelog: https://github.com/toolsascode/bfm/compare/{{ .PreviousTag }}...{{ .Tag }}
 
-# Changelog configuration
-changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
+# https://github.com/settings/tokens/new?scopes=gist,public_repo&description=Homebrew
+brews:
+  - name: bfm
+    repository:
+      owner: toolsascode
+      name: homebrew-tap
+    homepage: "https://github.com/toolsascode/bfm"
+    description: "BfM - Backend for Migrations CLI"
+    license: "MIT"
+    test: |
+      system "#{bin}/bfm version"
+    install: |
+      bin.install "bfm"
 
+scoops:
+  - name: bfm
+    repository:
+      owner: toolsascode
+      name: scoop-bucket
+    homepage: "https://github.com/toolsascode/bfm"
+    description: "BfM - Backend for Migrations CLI"
+    license: "MIT"
+    persist:
+      - "config"

@@ -117,37 +117,81 @@ jobs:
           
           # Wait for BfM container to be ready
           echo "Waiting for BfM Server to be ready..."
+          SERVER_READY=false
           for i in {1..60}; do
-            if curl -s http://localhost:7070/health > /dev/null 2>&1; then
+            # Check if container is still running
+            if ! docker ps | grep -q $BFM_CONTAINER; then
+              echo "BfM container stopped unexpectedly"
+              docker logs $BFM_CONTAINER
+              exit 1
+            fi
+            # Check health endpoint
+            if curl -s -f http://localhost:7070/health > /dev/null 2>&1; then
               echo "BfM Server is ready!"
+              SERVER_READY=true
               break
             fi
             if [ $i -eq 60 ]; then
-              echo "BfM Server failed to start"
+              echo "BfM Server failed to start after 120 seconds"
               docker logs $BFM_CONTAINER
               exit 1
             fi
             sleep 2
           done
           
-          # Check if container is running
+          if [ "$SERVER_READY" != "true" ]; then
+            echo "BfM Server never became ready"
+            docker logs $BFM_CONTAINER
+            exit 1
+          fi
+          
+          # Check if container is still running
           if ! docker ps | grep -q $BFM_CONTAINER; then
-            echo "BfM container failed to start"
+            echo "BfM container stopped after health check"
             docker logs $BFM_CONTAINER
             exit 1
           fi
           
           # Check if binaries exist
-          docker exec $BFM_CONTAINER test -f /app/bin/bfm-server || exit 1
-          docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker || exit 1
-          docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli || exit 1
+          echo "Checking binaries..."
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-server; then
+            echo "ERROR: bfm-server binary not found"
+            docker logs $BFM_CONTAINER
+            exit 1
+          fi
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker; then
+            echo "ERROR: bfm-worker binary not found"
+            docker logs $BFM_CONTAINER
+            exit 1
+          fi
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli; then
+            echo "ERROR: bfm-cli binary not found"
+            docker logs $BFM_CONTAINER
+            exit 1
+          fi
+          echo "All binaries found!"
           
-          # Test health endpoint
-          curl -f http://localhost:7070/health || exit 1
+          # Test health endpoint one more time
+          echo "Testing health endpoint..."
+          if ! curl -s -f http://localhost:7070/health > /dev/null; then
+            echo "ERROR: Health endpoint check failed"
+            curl -v http://localhost:7070/health || true
+            docker logs $BFM_CONTAINER
+            exit 1
+          fi
+          echo "Health endpoint check passed!"
+          
+          # All tests passed
+          echo ""
+          echo "=========================================="
+          echo "All container health checks passed!"
+          echo "=========================================="
           
           # Cleanup
           echo "Cleaning up containers..."
           docker stop $BFM_CONTAINER $POSTGRES_CONTAINER || true
           docker rm $BFM_CONTAINER $POSTGRES_CONTAINER || true
           docker network rm $NETWORK_NAME || true
+          
+          echo "Cleanup completed successfully"
 
