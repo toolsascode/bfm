@@ -101,6 +101,7 @@ jobs:
           done
           
           # Start BfM container in background with required environment variables
+          echo "Starting BfM container..."
           BFM_CONTAINER=$(docker run -d \
             --network $NETWORK_NAME \
             -p 7070:7070 \
@@ -115,14 +116,22 @@ jobs:
             -e BFM_STATE_SCHEMA=public \
             bfm:test)
           
+          echo "BfM container started with ID: $BFM_CONTAINER"
+          
+          # Give container a moment to start
+          sleep 3
+          
           # Wait for BfM container to be ready
           echo "Waiting for BfM Server to be ready..."
           SERVER_READY=false
-          for i in {1..60}; do
+          for i in {1..90}; do
             # Check if container is still running
-            if ! docker ps | grep -q $BFM_CONTAINER; then
-              echo "BfM container stopped unexpectedly"
-              docker logs $BFM_CONTAINER
+            CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' $BFM_CONTAINER 2>/dev/null || echo "not-found")
+            if [ "$CONTAINER_STATUS" != "running" ]; then
+              echo "BfM container status: $CONTAINER_STATUS"
+              echo "Container stopped unexpectedly. Full logs:"
+              docker logs $BFM_CONTAINER 2>&1 || true
+              echo "Container exit code: $(docker inspect -f '{{.State.ExitCode}}' $BFM_CONTAINER 2>/dev/null || echo 'unknown')"
               exit 1
             fi
             # Check health endpoint
@@ -131,9 +140,15 @@ jobs:
               SERVER_READY=true
               break
             fi
-            if [ $i -eq 60 ]; then
-              echo "BfM Server failed to start after 120 seconds"
-              docker logs $BFM_CONTAINER
+            # Show progress every 10 iterations
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "Still waiting... (attempt $i/90)"
+              docker logs --tail 5 $BFM_CONTAINER 2>&1 || true
+            fi
+            if [ $i -eq 90 ]; then
+              echo "BfM Server failed to start after 180 seconds"
+              echo "Full container logs:"
+              docker logs $BFM_CONTAINER 2>&1 || true
               exit 1
             fi
             sleep 2

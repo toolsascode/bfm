@@ -214,6 +214,40 @@ docker exec bfm-standalone /app/bin/bfm-cli build /app/sfm --verbose
 
 The BfM CLI is a command-line tool for generating migration `.go` files from SQL/JSON scripts.
 
+## How to install?
+
+### Go Install
+
+```shell
+go install github.com/toolsascode/bfm@latest
+```
+
+### Via Github
+
+- [Latest version](https://github.com/toolsascode/bfm/releases/latest)
+
+```shell
+curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | bash
+```
+
+Or 
+
+```shell
+curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | sudo bash
+```
+
+### Homebrew
+
+```shell
+brew install toolsascode/tap/bfm
+```
+
+### Scoop
+
+1. Run **PowerShell as an Administrator** and:
+2. To add this bucket, run `scoop bucket add bfm-scoop https://github.com/toolsascode/scoop-bucket`.
+3. To install, do `scoop install bfm`.
+
 #### Building the CLI
 
 ```bash

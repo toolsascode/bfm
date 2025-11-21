@@ -38,15 +38,20 @@ builds:
         cd ../../..
 
 # Archive configuration
+# See: https://goreleaser.com/customization/archive/
 archives:
   - id: default
-    format_overrides:
-      - goos: windows
-        format: zip
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - LICENSE
+    # Override format for Windows to use zip
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
 
 # Checksums
 checksum:
@@ -88,18 +93,29 @@ release:
     Full Changelog: https://github.com/toolsascode/bfm/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 # https://github.com/settings/tokens/new?scopes=gist,public_repo&description=Homebrew
-brews:
+# Homebrew Cask configuration (migrated from deprecated brews)
+# See: https://goreleaser.com/customization/homebrew_casks/
+homebrew_casks:
   - name: bfm
+    # Binary name inside the cask
+    binaries:
+      - bfm
+    # Repository where the cask will be published
     repository:
       owner: toolsascode
       name: homebrew-tap
+    # Cask metadata
     homepage: "https://github.com/toolsascode/bfm"
     description: "BfM - Backend for Migrations CLI"
     license: "MIT"
-    test: |
-      system "#{bin}/bfm version"
-    install: |
-      bin.install "bfm"
+    # Post-install hook to remove quarantine attribute (required for unsigned binaries)
+    # This allows the binary to run on macOS without code signing/notarization
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bfm"]
+          end
 
 scoops:
   - name: bfm
