@@ -72,6 +72,8 @@ jobs:
 
       - name: Test container health
         run: |
+          set -e  # Exit on error
+          set -o pipefail  # Exit on pipe failure
           # Create a Docker network for container communication
           NETWORK_NAME="bfm-test-network"
           docker network create $NETWORK_NAME || true
@@ -169,32 +171,43 @@ jobs:
           
           # Check if binaries exist
           echo "Checking binaries..."
-          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-server; then
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-server 2>&1; then
             echo "ERROR: bfm-server binary not found"
-            docker logs $BFM_CONTAINER
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
-          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker; then
+          echo "✓ bfm-server binary found"
+          
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker 2>&1; then
             echo "ERROR: bfm-worker binary not found"
-            docker logs $BFM_CONTAINER
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
-          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli; then
+          echo "✓ bfm-worker binary found"
+          
+          if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli 2>&1; then
             echo "ERROR: bfm-cli binary not found"
-            docker logs $BFM_CONTAINER
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
+          echo "✓ bfm-cli binary found"
           echo "All binaries found!"
           
           # Test health endpoint one more time
           echo "Testing health endpoint..."
-          if ! curl -s -f http://localhost:7070/health > /dev/null; then
+          HEALTH_OUTPUT=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:7070/health 2>&1)
+          HTTP_CODE=$(echo "$HEALTH_OUTPUT" | grep "HTTP_CODE:" | cut -d: -f2)
+          if [ -z "$HTTP_CODE" ] || [ "$HTTP_CODE" != "200" ]; then
             echo "ERROR: Health endpoint check failed"
-            curl -v http://localhost:7070/health || true
-            docker logs $BFM_CONTAINER
+            echo "HTTP Code: ${HTTP_CODE:-unknown}"
+            echo "Response: $HEALTH_OUTPUT"
+            curl -v http://localhost:7070/health 2>&1 || true
+            echo "Container status:"
+            docker ps -a | grep $BFM_CONTAINER || true
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
-          echo "Health endpoint check passed!"
+          echo "✓ Health endpoint check passed (HTTP $HTTP_CODE)!"
           
           # All tests passed
           echo ""
@@ -202,11 +215,21 @@ jobs:
           echo "All container health checks passed!"
           echo "=========================================="
           
+          # Verify container is still running one final time
+          CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' $BFM_CONTAINER 2>/dev/null || echo "not-found")
+          if [ "$CONTAINER_STATUS" != "running" ]; then
+            echo "WARNING: Container status changed to: $CONTAINER_STATUS"
+            docker logs $BFM_CONTAINER 2>&1 || true
+          else
+            echo "✓ Container is still running"
+          fi
+          
           # Cleanup
           echo "Cleaning up containers..."
-          docker stop $BFM_CONTAINER $POSTGRES_CONTAINER || true
-          docker rm $BFM_CONTAINER $POSTGRES_CONTAINER || true
-          docker network rm $NETWORK_NAME || true
+          docker stop $BFM_CONTAINER $POSTGRES_CONTAINER 2>&1 || true
+          docker rm $BFM_CONTAINER $POSTGRES_CONTAINER 2>&1 || true
+          docker network rm $NETWORK_NAME 2>&1 || true
           
           echo "Cleanup completed successfully"
+          echo "Test completed successfully!"
 
