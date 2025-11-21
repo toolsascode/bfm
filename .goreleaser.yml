@@ -1,3 +1,4 @@
+version: 2
 project_name: bfm
 
 # Build configuration
@@ -62,9 +63,7 @@ checksum:
 # Homebrew tap configuration
 brews:
   - name: bfm
-    tap:
-      owner: toolsascode
-      name: homebrew-tap
+    tap: toolsascode/homebrew-tap
     homepage: "https://github.com/toolsascode/bfm"
     description: "BfM - Backend for Migrations CLI"
     license: "MIT"
@@ -76,7 +75,7 @@ brews:
 # Scoop configuration
 scoops:
   - name: bfm
-    bucket:
+    repository:
       owner: toolsascode
       name: scoop-bucket
     homepage: "https://github.com/toolsascode/bfm"
@@ -106,7 +105,7 @@ scoops:
 #       - "toolsascode"
 
 # Winget configuration
-wingets:
+winget:
   - identifier: toolsascode.BfM
     name: BfM
     publisher: toolsascode
@@ -148,7 +147,6 @@ nfpms:
     maintainer: "toolsascode <toolsascode@users.noreply.github.com>"
     license: "MIT"
     vendor: "toolsascode"
-    group: "Applications/System"
     bindir: "/usr/bin"
 
 # GitHub release configuration
