@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -155,6 +156,39 @@ func main() {
 
 	// Add /health endpoint to prevent 404s (uses same handler as /api/v1/health)
 	router.GET("/health", httpHandler.Health)
+
+	// Serve static files from frontend directory if it exists
+	frontendPath := os.Getenv("BFM_FRONTEND_PATH")
+	if frontendPath == "" {
+		frontendPath = "/app/frontend"
+	}
+
+	// Check if frontend directory exists
+	if _, err := os.Stat(frontendPath); err == nil {
+		// Serve static files for non-API routes
+		// Use NoRoute to catch all routes that don't match API endpoints
+		router.NoRoute(func(c *gin.Context) {
+			// Don't serve frontend for API routes
+			if strings.HasPrefix(c.Request.URL.Path, "/api") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Not found"})
+				return
+			}
+
+			// Try to serve the requested file if it exists
+			filePath := frontendPath + c.Request.URL.Path
+			if info, err := os.Stat(filePath); err == nil && !info.IsDir() {
+				c.File(filePath)
+				return
+			}
+
+			// For SPA routing, serve index.html for any route that doesn't match a file
+			c.File(frontendPath + "/index.html")
+		})
+
+		logger.Infof("Frontend static files will be served from %s", frontendPath)
+	} else {
+		logger.Warnf("Frontend directory not found at %s, skipping static file serving", frontendPath)
+	}
 
 	// Start HTTP server
 	httpServer := &http.Server{

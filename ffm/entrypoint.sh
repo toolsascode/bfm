@@ -4,11 +4,11 @@
 # Create a runtime config script that will be injected into the HTML
 cat > /usr/share/nginx/html/runtime-config.js << EOF
 window.__RUNTIME_CONFIG__ = {
-  VITE_BFM_API_URL: '${VITE_BFM_API_URL:-/api}',
-  VITE_BFM_API_TOKEN: '${VITE_BFM_API_TOKEN:-}',
-  VITE_AUTH_ENABLED: '${VITE_AUTH_ENABLED:-true}',
-  VITE_AUTH_USERNAME: '${VITE_AUTH_USERNAME:-admin}',
-  VITE_AUTH_PASSWORD: '${VITE_AUTH_PASSWORD:-admin123}'
+  BFM_API_URL: '${BFM_FRONTEND_API_URL:-/api}',
+  BFM_API_TOKEN: '${BFM_FRONTEND_API_TOKEN:-}',
+  BFM_AUTH_ENABLED: '${BFM_FRONTEND_AUTH_ENABLED:-true}',
+  BFM_AUTH_USERNAME: '${BFM_FRONTEND_AUTH_USERNAME:-admin}',
+  BFM_AUTH_PASSWORD: '${BFM_FRONTEND_AUTH_PASSWORD:-admin123}'
 };
 EOF
 

@@ -147,7 +147,7 @@ export default function Dashboard() {
       const dateB = new Date(b.applied_at || 0).getTime();
       return dateB - dateA; // Most recent first
     })
-    .slice(0, 5);
+    .slice(0, 10);
 
   return (
     <div className="w-full px-4 md:px-6 lg:px-8 animate-fade-in">
@@ -313,12 +313,12 @@ export default function Dashboard() {
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Migration ID
               </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+              {/* <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Schema
               </th>
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Table
-              </th>
+              </th> */}
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Backend
               </th>
@@ -348,8 +348,8 @@ export default function Dashboard() {
                       {migration.migration_id}
                     </Link>
                   </td>
-                  <td className="p-3 border-b border-gray-200">{migration.schema}</td>
-                  <td className="p-3 border-b border-gray-200">{migration.table}</td>
+                  {/* <td className="p-3 border-b border-gray-200">{migration.schema}</td>
+                  <td className="p-3 border-b border-gray-200">{migration.table}</td> */}
                   <td className="p-3 border-b border-gray-200">{migration.backend}</td>
                   <td className="p-3 border-b border-gray-200">
                     <span

@@ -8,35 +8,10 @@ import (
 	"strings"
 	"text/template"
 
+	migrationpkg "bfm/api/migrations"
+
 	"github.com/spf13/cobra"
 )
-
-const goFileTemplate = `package {{.PackageName}}
-
-import (
-	"bfm/api/migrations"
-	_ "embed"
-)
-
-//go:embed {{.UpFileName}}
-var upSQL string
-
-//go:embed {{.DownFileName}}
-var downSQL string
-
-func init() {
-	migration := &migrations.MigrationScript{
-		Schema:     "", // Dynamic - provided in request
-		Version:    "{{.Version}}",
-		Name:       "{{.Name}}",
-		Connection: "{{.Connection}}",
-		Backend:    "{{.Backend}}",
-		UpSQL:      upSQL,
-		DownSQL:    downSQL,
-	}
-	migrations.GlobalRegistry.Register(migration)
-}
-`
 
 type migrationFile struct {
 	UpFile      string
@@ -253,7 +228,7 @@ func buildMigrations(sfmPath string) error {
 	}
 
 	// Generate .go files
-	tmpl, err := template.New("migration").Parse(goFileTemplate)
+	tmpl, err := template.New("migration").Parse(migrationpkg.GoFileTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}

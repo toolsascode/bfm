@@ -1,11 +1,16 @@
-# Development docker-compose with hot-reload
-# This file is for DEVELOPMENT ONLY - uses volume mounts for live code updates
+# Standalone Production Docker Compose for BfM Stack
+# This file orchestrates the standalone production container that includes:
+# - BfM API Server (HTTP on 7070, gRPC on 9090)
+# - BfM Worker (conditional, when BFM_QUEUE_ENABLED=true)
+# - BfM CLI (available in container)
+# - FfM Frontend (served via HAProxy on 4040)
+# - HAProxy (reverse proxy on port 4040)
 #
 # Usage:
-#   docker compose -f docker-compose.dev.yml up -d          # Start all services with hot-reload
-#   docker compose -f docker-compose.dev.yml down            # Stop all services
-#   docker compose -f docker-compose.dev.yml logs -f bfm     # View BFM server logs
-#   docker compose -f docker-compose.dev.yml logs -f ffm     # View FFM frontend logs
+#   docker compose -f deploy/docker-compose.standalone.yml up -d          # Start standalone service
+#   docker compose -f deploy/docker-compose.standalone.yml down            # Stop service
+#   docker compose -f deploy/docker-compose.standalone.yml logs -f         # View logs
+#   docker compose -f deploy/docker-compose.standalone.yml ps              # List running services
 
 x-default-logging: &logging
   logging:
@@ -20,7 +25,7 @@ services:
   postgres:
     <<: *logging
     image: postgres:16-alpine
-    container_name: bfm-postgres-dev
+    container_name: bfm-postgres
     ports:
       - "5433:5432"
     environment:
@@ -29,9 +34,9 @@ services:
       - POSTGRES_DB=migration_state
       - POSTGRES_MULTIPLE_DATABASES=dashcloud
     volumes:
-      - bfm-postgres-data-dev:/var/lib/postgresql/data
+      - bfm-postgres-data:/var/lib/postgresql/data
     networks:
-      - bfm-network-dev
+      - bfm-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -39,22 +44,23 @@ services:
       timeout: 5s
       retries: 5
 
-  # BFM Server with hot-reload (Air)
-  bfm-server:
+  # BfM Standalone Production Container
+  bfm-standalone:
     <<: *logging
     build:
-      context: ./api
-      dockerfile: deploy/Dockerfile.dev
-    container_name: bfm-server-dev
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bfm-standalone
     ports:
-      - "7070:7070"  # HTTP API
-      - "9090:9090"  # gRPC API
+      - "4040:4040"  # HAProxy (frontend and API proxy)
+      - "7070:7070"  # BfM HTTP API (direct access)
+      - "9090:9090"  # BfM gRPC API (direct access)
     environment:
       # Server Configuration
       - BFM_HTTP_PORT=7070
       - BFM_GRPC_PORT=9090
       - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
-      - BFM_SFM_PATH=${BFM_SFM_PATH:-/sfm}
+      - BFM_SFM_PATH=${BFM_SFM_PATH:-/app/sfm}
       
       # State Database Configuration
       - BFM_STATE_BACKEND=postgresql
@@ -91,70 +97,37 @@ services:
       - METADATA_ENDPOINTS=${METADATA_ENDPOINTS:-}
       - METADATA_PREFIX=/bfm/metadata/
       
-      # Queue Configuration (disabled by default in dev)
+      # Queue Configuration (disabled by default)
       - BFM_QUEUE_ENABLED=${BFM_QUEUE_ENABLED:-false}
       - BFM_QUEUE_TYPE=${BFM_QUEUE_TYPE:-kafka}
+      
+      # Frontend Configuration (for FfM)
+      - BFM_FRONTEND_API_URL=${BFM_FRONTEND_API_URL:-/api}
+      - BFM_FRONTEND_API_TOKEN=${BFM_FRONTEND_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
+      - BFM_FRONTEND_AUTH_ENABLED=${BFM_FRONTEND_AUTH_ENABLED:-true}
+      - BFM_FRONTEND_AUTH_USERNAME=${BFM_FRONTEND_AUTH_USERNAME:-admin}
+      - BFM_FRONTEND_AUTH_PASSWORD=${BFM_FRONTEND_AUTH_PASSWORD:-admin123}
     volumes:
-      # Mount source code for hot-reload
-      - ./api:/app
-      # Mount SFM examples to /sfm (separate from /app to avoid mount conflicts)
-      - ./examples/sfm:/sfm:ro
-      # Exclude tmp directory from volume (let Air manage it)
-      - /app/tmp
+      # Mount SFM examples to /app/sfm (for migration scripts)
+      - ../examples/sfm:/app/sfm:rw
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - bfm-network-dev
+      - bfm-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:7070/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7070/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # FFM Frontend with hot-reload (Vite)
-  ffm:
-    <<: *logging
-    build:
-      context: ./ffm
-      dockerfile: Dockerfile.dev
-    container_name: ffm-frontend-dev
-    ports:
-      - "4040:4040"  # Vite dev server
-    environment:
-      # Set DOCKER env var so Vite knows to use service name for proxy
-      - DOCKER=true
-      # Use /api so requests go through Vite proxy (which forwards to bfm-server:7070)
-      - VITE_BFM_API_URL=${VITE_BFM_API_URL:-/api}
-      - VITE_BFM_API_TOKEN=${VITE_BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
-      - VITE_AUTH_ENABLED=${VITE_AUTH_ENABLED:-true}
-      - VITE_AUTH_USERNAME=${VITE_AUTH_USERNAME:-admin}
-      - VITE_AUTH_PASSWORD=${VITE_AUTH_PASSWORD:-admin123}
-      - NODE_ENV=development
-    volumes:
-      # Mount source code for hot-reload
-      - ./ffm:/app
-      # Preserve node_modules (use named volume to avoid conflicts)
-      # Note: start.sh will install deps if volume is empty
-      - ffm-node-modules:/app/node_modules
-      # Exclude dist directory (let Vite manage it)
-      - /app/dist
-    depends_on:
-      - bfm-server
-    networks:
-      - bfm-network-dev
-    restart: unless-stopped
-
 networks:
-  bfm-network-dev:
+  bfm-network:
     driver: bridge
-    name: bfm-network-dev
+    name: bfm-network
 
 volumes:
-  bfm-postgres-data-dev:
-    name: bfm-postgres-data-dev
-  ffm-node-modules:
-    name: ffm-node-modules-dev
-
+  bfm-postgres-data:
+    name: bfm-postgres-data

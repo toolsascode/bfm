@@ -1,8 +1,18 @@
 // Authentication service
 
-const AUTH_ENABLED = import.meta.env.VITE_AUTH_ENABLED === 'true';
-const AUTH_USERNAME = import.meta.env.VITE_AUTH_USERNAME || 'admin';
-const AUTH_PASSWORD = import.meta.env.VITE_AUTH_PASSWORD || 'admin123';
+// Get runtime config from window (injected at runtime)
+const getRuntimeConfig = () => {
+  if (typeof window !== 'undefined') {
+    return (window as any).__RUNTIME_CONFIG__ || {};
+  }
+  return {};
+};
+
+const runtimeConfig = getRuntimeConfig();
+// Support both BFM_* (production via runtime config) and VITE_* (dev via Vite)
+const AUTH_ENABLED = runtimeConfig.BFM_AUTH_ENABLED === 'true' || import.meta.env.VITE_AUTH_ENABLED === 'true';
+const AUTH_USERNAME = runtimeConfig.BFM_AUTH_USERNAME || import.meta.env.VITE_AUTH_USERNAME || 'admin';
+const AUTH_PASSWORD = runtimeConfig.BFM_AUTH_PASSWORD || import.meta.env.VITE_AUTH_PASSWORD || 'admin123';
 
 export interface AuthCredentials {
   username: string;

@@ -29,7 +29,8 @@ class BFMApiClient {
     };
     
     const runtimeConfig = getRuntimeConfig();
-    const apiURL = baseURL || runtimeConfig.VITE_BFM_API_URL || import.meta.env.VITE_BFM_API_URL || '/api';
+    // Support both BFM_* (production via runtime config) and VITE_* (dev via Vite)
+    const apiURL = baseURL || runtimeConfig.BFM_API_URL || import.meta.env.VITE_BFM_API_URL || '/api';
     
     this.client = axios.create({
       baseURL: apiURL,
@@ -40,8 +41,8 @@ class BFMApiClient {
       },
     });
 
-    // Load API token from runtime config, environment, or localStorage
-    const runtimeToken = runtimeConfig.VITE_BFM_API_TOKEN;
+    // Load API token from runtime config, Vite env (dev), or localStorage
+    const runtimeToken = runtimeConfig.BFM_API_TOKEN;
     const envToken = import.meta.env.VITE_BFM_API_TOKEN;
     const storedToken = localStorage.getItem('bfm_api_token');
     const token = runtimeToken || envToken || storedToken;
@@ -49,7 +50,7 @@ class BFMApiClient {
     if (token) {
       this.setToken(token);
     } else {
-      console.warn('BFM API token not found. Please set VITE_BFM_API_TOKEN environment variable.');
+      console.warn('BFM API token not found. Please set BFM_FRONTEND_API_TOKEN (production) or VITE_BFM_API_TOKEN (dev) environment variable.');
     }
 
     // Add response interceptor for error handling
