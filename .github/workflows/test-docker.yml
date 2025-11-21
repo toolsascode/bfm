@@ -158,15 +158,32 @@ jobs:
           
           if [ "$SERVER_READY" != "true" ]; then
             echo "BfM Server never became ready"
-            docker logs $BFM_CONTAINER
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
           
-          # Check if container is still running
-          if ! docker ps | grep -q $BFM_CONTAINER; then
-            echo "BfM container stopped after health check"
-            docker logs $BFM_CONTAINER
+          # Give container a moment to stabilize after health check
+          sleep 2
+          
+          # Check if container is still running using docker inspect (more reliable)
+          CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' $BFM_CONTAINER 2>/dev/null || echo "not-found")
+          if [ "$CONTAINER_STATUS" != "running" ]; then
+            echo "ERROR: BfM container stopped after health check"
+            echo "Container status: $CONTAINER_STATUS"
+            echo "Container exit code: $(docker inspect -f '{{.State.ExitCode}}' $BFM_CONTAINER 2>/dev/null || echo 'unknown')"
+            echo "Full container logs:"
+            docker logs $BFM_CONTAINER 2>&1
             exit 1
+          fi
+          echo "✓ Container is still running"
+          
+          # Verify server process is actually running inside the container
+          if ! docker exec $BFM_CONTAINER pgrep -f bfm-server > /dev/null 2>&1; then
+            echo "WARNING: bfm-server process not found in container"
+            echo "Checking running processes:"
+            docker exec $BFM_CONTAINER ps aux 2>&1 || true
+          else
+            echo "✓ bfm-server process is running"
           fi
           
           # Check if binaries exist
