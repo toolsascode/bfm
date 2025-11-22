@@ -470,5 +470,3 @@ To migrate from the existing GORM AutoMigrate system:
 3. Place scripts in appropriate `sfm/{backend}/{connection}/` directory
 4. Register migrations via `init()` functions
 5. Run migrations via HTTP API or Protobuf API
-
-See `docs/MIGRATION_GUIDE.md` for detailed instructions.
