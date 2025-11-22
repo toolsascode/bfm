@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache: false
       # More assembly might be required: Docker logins, GPG, etc.
       # It all depends on your needs.
       - name: Import GPG key

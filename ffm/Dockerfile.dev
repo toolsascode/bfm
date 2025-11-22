@@ -1,12 +1,12 @@
 # Development Dockerfile for FFM with Vite hot-reload
 # This is ONLY for development - production uses Dockerfile
 
-FROM node:20-alpine
+FROM node:24.11.1-alpine
 
 WORKDIR /app
 
 # Install dependencies (will be overridden by volume mount, but useful for initial setup)
-COPY package*.json ./
+COPY package*.json .npmrc* ./
 RUN npm ci
 
 # Copy source code (will be mounted as volume in docker-compose)

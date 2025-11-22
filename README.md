@@ -2,9 +2,9 @@
 <img src="./assets/BfM.svg" alt="drawing" width="150" />
 </p>
 <p align="center">
-<span style="font-size: 25px; font-weight: bold; text-align: center; font-family: 'Montserrat', system-ui, sans-serif;" >
+<h1 style="font-size: 25px; font-weight: bold; text-align: center; font-family: 'Montserrat', system-ui, sans-serif;" >
 Backend For Migrations (BfM)
-</span>
+</h1>
 </p>
 
 <p align="center">
@@ -470,5 +470,3 @@ To migrate from the existing GORM AutoMigrate system:
 3. Place scripts in appropriate `sfm/{backend}/{connection}/` directory
 4. Register migrations via `init()` functions
 5. Run migrations via HTTP API or Protobuf API
-
-See `docs/MIGRATION_GUIDE.md` for detailed instructions.
