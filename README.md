@@ -26,6 +26,13 @@ BfM is a comprehensive database migration system that supports multiple backends
 - Dry-run mode for testing
 - Idempotent migrations
 
+## Screenshots
+
+| | |
+|---|---|
+| <img src="./assets/screenshots/login.jpeg" alt="Login" width="400" /> | <img src="./assets/screenshots/dashboard.jpeg" alt="Dashboard" width="400" /> |
+| <img src="./assets/screenshots/MigrationList.jpeg" alt="Migration List" width="400" /> | <img src="./assets/screenshots/MigrationDetails.jpeg" alt="Migration Details" width="400" /> |
+
 ## Configuration
 
 ### Environment Variables
