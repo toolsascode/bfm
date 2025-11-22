@@ -28,4 +28,3 @@ services:
 
   # Note: The BFM server is defined in bfm/deploy/docker-compose.yml
   # The bfm-network is also defined there and will be shared via the include mechanism
-

@@ -1,0 +1,174 @@
+# Pre-commit hooks configuration for BfM (Backend for Migrations)
+# Install: pip install pre-commit && pre-commit install
+# Run: pre-commit run --all-files
+
+repos:
+  # ============================================================================
+  # General file checks
+  # ============================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(api/migrations/|\.md$)
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--unsafe']  # Allow custom YAML tags
+      - id: check-json
+        exclude: (tsconfig|tsconfig\.node)\.json$
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-docstring-first
+        language_version: python3
+      - id: debug-statements
+        language_version: python3
+
+  # ============================================================================
+  # Go hooks
+  # ============================================================================
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+        args: ['-w']
+        files: ^api/.*\.go$
+        types: [go]
+      - id: go-mod-tidy
+        files: ^api/go\.(mod|sum)$
+
+  # Local Go hooks that run from api/ directory
+  - repo: local
+    hooks:
+      - id: go-vet
+        name: go vet
+        entry: bash -c 'cd api && go vet ./...'
+        language: system
+        files: ^api/.*\.go$
+        types: [go]
+        pass_filenames: false
+      - id: go-imports
+        name: goimports (optional)
+        entry: bash -c 'cd api && if command -v goimports >/dev/null 2>&1; then goimports -w .; else echo "goimports not installed, skipping (go fmt handles formatting)"; fi'
+        language: system
+        files: ^api/.*\.go$
+        types: [go]
+        pass_filenames: false
+        always_run: false
+      - id: go-unit-tests
+        name: go unit tests
+        entry: bash -c 'cd api && go test -short ./...'
+        language: system
+        files: ^api/.*\.go$
+        types: [go]
+        pass_filenames: false
+      - id: go-cyclo
+        name: gocyclo
+        entry: bash -c 'cd api && if command -v gocyclo >/dev/null 2>&1; then gocyclo -over 15 .; else echo "gocyclo not installed, skipping"; fi'
+        language: system
+        files: ^api/.*\.go$
+        types: [go]
+        pass_filenames: false
+
+  # ============================================================================
+  # golangci-lint (comprehensive Go linting)
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'cd api && golangci-lint run --timeout=5m ./...'
+        language: system
+        files: ^api/.*\.go$
+        types: [go]
+        pass_filenames: false
+
+  # ============================================================================
+  # TypeScript/React hooks (Frontend)
+  # ============================================================================
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        files: ^ffm/.*\.(js|jsx|ts|tsx|json|css|scss|md|yaml|yml)$
+        exclude: ^ffm/(node_modules|dist|build)/
+
+  # ESLint for TypeScript/React
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v8.56.0
+    hooks:
+      - id: eslint
+        files: ^ffm/.*\.(js|jsx|ts|tsx)$
+        exclude: ^ffm/(node_modules|dist|build)/
+        additional_dependencies:
+          - eslint@^8.56.0
+          - '@typescript-eslint/parser@^8.47.0'
+          - '@typescript-eslint/eslint-plugin@^8.47.0'
+          - 'eslint-plugin-react@^7.34.0'
+          - 'eslint-plugin-react-hooks@^5.1.0'
+          - 'eslint-plugin-react-refresh@^0.4.16'
+        args: ['--fix', '--max-warnings=0', '--config', 'ffm/.eslintrc.cjs']
+
+  # TypeScript type checking
+  - repo: local
+    hooks:
+      - id: typescript-check
+        name: TypeScript type check
+        entry: bash -c 'cd ffm && if [ -f node_modules/.bin/tsc ]; then node_modules/.bin/tsc --noEmit; elif [ -f node_modules/typescript/bin/tsc ]; then node_modules/typescript/bin/tsc --noEmit; else echo "Skipping - TypeScript not installed. Run cd ffm && npm install"; exit 0; fi'
+        language: system
+        files: ^ffm/.*\.(ts|tsx)$
+        pass_filenames: false
+        always_run: false
+        require_serial: true
+
+  # ============================================================================
+  # YAML linting
+  # ============================================================================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.33.0
+    hooks:
+      - id: yamllint
+        args: ['-d', '{extends: default, rules: {line-length: {max: 120}, comments: disable, document-start: disable, empty-lines: {max: 2}, comments-indentation: disable}}']
+        exclude: ^(api/migrations/|\.github/workflows/|ffm/node_modules/|.github/workflows/|.goreleaser.yml|docker-compose|.pre-commit-config.yaml|api/go.mod|api/go.sum)
+
+  # ============================================================================
+  # Dockerfile linting
+  # ============================================================================
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: ['--ignore', 'DL3008', '--ignore', 'DL3009', '--ignore', 'DL3018', '--ignore', 'DL3062', '--ignore', 'DL3003', '--ignore', 'DL3007']
+        files: Dockerfile
+        fail_fast: false
+
+  # ============================================================================
+  # Markdown linting
+  # ============================================================================
+  # - repo: https://github.com/igorshubovych/markdownlint-cli
+  #   rev: v0.39.0
+  #   hooks:
+  #     - id: markdownlint
+  #       args: ['--fix', '--config', '.markdownlint.json', '--']
+  #       exclude: ^(CHANGELOG|node_modules)/
+
+  # ============================================================================
+  # Shell script linting
+  # ============================================================================
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        args: ['--severity=warning']
+        files: \.(sh|bash)$
+
+  # ============================================================================
+  # Git commit message linting
+  # ============================================================================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]

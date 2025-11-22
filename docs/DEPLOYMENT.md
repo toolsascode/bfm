@@ -5,6 +5,7 @@
 ### Using Docker Compose
 
 1. **Copy environment file:**
+
 ```bash
 cp .env.example .env
 ```
@@ -15,11 +16,13 @@ cp .env.example .env
    - Set backend connection details
 
 3. **Start services:**
+
 ```bash
 docker-compose up -d
 ```
 
 4. **Check health:**
+
 ```bash
 curl http://localhost:7070/health
 ```
@@ -27,11 +30,13 @@ curl http://localhost:7070/health
 ### Manual Deployment
 
 1. **Build the binary:**
+
 ```bash
 go build -o bfm-server ./cmd/server
 ```
 
 2. **Set environment variables:**
+
 ```bash
 export BFM_API_TOKEN=your-token
 export BFM_STATE_DB_PASSWORD=your-password
@@ -39,6 +44,7 @@ export BFM_STATE_DB_PASSWORD=your-password
 ```
 
 3. **Run the server:**
+
 ```bash
 ./bfm-server
 ```
@@ -121,6 +127,7 @@ export BFM_STATE_DB_PASSWORD=your-password
 ### Environment Variables in Dashboard
 
 Add to dashboard `.env`:
+
 ```bash
 BFM_API_URL=http://bfm:7070
 BFM_API_TOKEN=your-bfm-api-token
@@ -129,12 +136,14 @@ BFM_API_TOKEN=your-bfm-api-token
 ### Migration Triggers
 
 Migrations are automatically triggered when:
+
 - A new environment is created
 - Core/Guard schemas need initialization
 
 ### Manual Migration
 
 You can also trigger migrations manually via API:
+
 ```bash
 curl -X POST http://bfm:7070/api/v1/migrate \
   -H "Authorization: Bearer $BFM_API_TOKEN" \
@@ -171,6 +180,7 @@ curl -X POST http://bfm:7070/api/v1/migrate \
 ### Debug Mode
 
 Enable debug logging:
+
 ```bash
 export BFM_LOG_LEVEL=DEBUG
 ```
@@ -186,4 +196,3 @@ export BFM_LOG_LEVEL=DEBUG
    - Version control all migration scripts
    - Keep backups of SQL files
    - Document migration dependencies
-

@@ -2,18 +2,18 @@ package state
 
 // MigrationRecord represents a migration execution record in state tracking (moved here to avoid import cycle)
 type MigrationRecord struct {
-	ID              string
-	MigrationID     string // Unique ID: {schema}_{connection}_{version}_{name}
-	Schema          string
-	Table           string
-	Version         string
-	Connection      string
-	Backend         string
-	AppliedAt       string
-	Status          string // "success", "failed", "pending", "rolled_back"
-	ErrorMessage    string
-	ExecutedBy      string // User identifier (from auth context)
-	ExecutionMethod string // "manual", "api", "cli", "worker"
+	ID               string
+	MigrationID      string // Unique ID: {schema}_{connection}_{version}_{name}
+	Schema           string
+	Table            string
+	Version          string
+	Connection       string
+	Backend          string
+	AppliedAt        string
+	Status           string // "success", "failed", "pending", "rolled_back"
+	ErrorMessage     string
+	ExecutedBy       string // User identifier (from auth context)
+	ExecutionMethod  string // "manual", "api", "cli", "worker"
 	ExecutionContext string // JSON with additional context (job_id, request_id, etc.)
 }
 
@@ -65,4 +65,3 @@ type MigrationFilters struct {
 	Status     string
 	Version    string
 }
-

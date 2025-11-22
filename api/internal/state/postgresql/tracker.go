@@ -221,7 +221,7 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		// For rollbacks, update the status in migrations_list to "rolled_back"
 		// but keep the last_applied_at from the most recent successful execution
 		updateRollbackSQL := fmt.Sprintf(`
-			UPDATE %s 
+			UPDATE %s
 			SET last_status = 'rolled_back',
 			    last_history_id = $1,
 			    last_updated_at = CURRENT_TIMESTAMP
@@ -250,7 +250,7 @@ func (t *Tracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationF
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, migration_id, schema, table_name, version, connection, backend, 
+		SELECT id, migration_id, schema, table_name, version, connection, backend,
 		       applied_at, status, error_message, executed_by, execution_method, execution_context
 		FROM %s WHERE 1=1
 	`, historyTableName)
@@ -452,10 +452,10 @@ func (t *Tracker) GetLastMigrationVersion(ctx interface{}, schema, table string)
 	}
 
 	query := fmt.Sprintf(`
-		SELECT version 
-		FROM %s 
+		SELECT version
+		FROM %s
 		WHERE schema = $1 AND table_name = $2 AND last_status = 'success'
-		ORDER BY version DESC 
+		ORDER BY version DESC
 		LIMIT 1
 	`, listTableName)
 
@@ -480,7 +480,7 @@ func (t *Tracker) RegisterScannedMigration(ctx interface{}, migrationID, schema,
 		listTableName = quoteIdentifier(t.schema) + "." + quoteIdentifier("migrations_list")
 	}
 
-	insertListSQL := `INSERT INTO ` + listTableName + ` (migration_id, schema, table_name, version, name, connection, backend, 
+	insertListSQL := `INSERT INTO ` + listTableName + ` (migration_id, schema, table_name, version, name, connection, backend,
 		                last_status, first_seen_at, last_updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (migration_id) DO NOTHING`
@@ -514,7 +514,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 	// Check if old table exists
 	checkTableSQL := `
 		SELECT EXISTS (
-			SELECT FROM information_schema.tables 
+			SELECT FROM information_schema.tables
 			WHERE table_schema = $1 AND table_name = 'bfm_migrations'
 		)
 	`
@@ -533,9 +533,9 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 
 	// Get all records from old table
 	query := fmt.Sprintf(`
-		SELECT migration_id, schema, table_name, version, connection, backend, 
-		       applied_at, status, error_message 
-		FROM %s 
+		SELECT migration_id, schema, table_name, version, connection, backend,
+		       applied_at, status, error_message
+		FROM %s
 		ORDER BY applied_at DESC
 	`, oldTableName)
 
@@ -680,7 +680,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 		backend := latestRecord.backend
 
 		insertListSQL := fmt.Sprintf(`
-			INSERT INTO %s (migration_id, schema, table_name, version, name, connection, backend, 
+			INSERT INTO %s (migration_id, schema, table_name, version, name, connection, backend,
 			                last_status, last_applied_at, last_error_message, first_seen_at, last_updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			ON CONFLICT (migration_id) DO UPDATE SET

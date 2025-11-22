@@ -38,18 +38,21 @@ curl -sSfL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh | sh
 **Usage:**
 
 Navigate to the api directory and run:
+
 ```bash
 cd api
 air
 ```
 
 Air will:
+
 - Watch for changes in `.go` files
 - Automatically rebuild the application
 - Restart the server when changes are detected
 - Show colored output for build status
 
 The configuration is already set up in `api/.air.toml`. It will:
+
 - Build from `./cmd/server`
 - Output to `./tmp/main`
 - Exclude test files, vendor, and deploy directories
@@ -71,6 +74,7 @@ Vite has built-in Hot Module Replacement (HMR) that works out of the box.
 **Usage:**
 
 Navigate to the ffm directory and run:
+
 ```bash
 cd ffm
 npm install  # First time only
@@ -78,6 +82,7 @@ npm run dev
 ```
 
 Vite will:
+
 - Start the development server on `http://localhost:4040`
 - Enable HMR for React components
 - Automatically reload CSS changes
@@ -87,6 +92,7 @@ Vite will:
 **Configuration:**
 
 The Vite configuration (`ffm/vite.config.ts`) is optimized for:
+
 - WebSocket-based HMR
 - File system polling (useful for Docker/WSL)
 - API proxying to the backend
@@ -99,6 +105,7 @@ The Vite configuration (`ffm/vite.config.ts`) is optimized for:
 Start both services locally with hot-reload:
 
 **Using Makefile (recommended):**
+
 ```bash
 # Terminal 1 - Backend
 make dev-bfm
@@ -108,6 +115,7 @@ make dev-ffm
 ```
 
 Or use the combined command:
+
 ```bash
 make dev-local
 ```
@@ -115,12 +123,14 @@ make dev-local
 **Manual setup:**
 
 **Terminal 1 - Backend:**
+
 ```bash
 cd api
 air
 ```
 
 **Terminal 2 - Frontend:**
+
 ```bash
 cd ffm
 npm run dev
@@ -131,6 +141,7 @@ The frontend will automatically reload when you make changes to React components
 ### Option 2: Docker with Hot-Reload (Recommended for Docker)
 
 Start both services in Docker with hot-reload:
+
 ```bash
 # Build and start all services with hot-reload
 make dev-docker
@@ -143,6 +154,7 @@ make dev-docker-down
 ```
 
 This uses `deploy/docker-compose.dev.yml` which:
+
 - Mounts source code as volumes for live updates
 - Runs Air in the BFM container for Go hot-reload
 - Runs Vite dev server in the FFM container for frontend hot-reload
@@ -151,6 +163,7 @@ This uses `deploy/docker-compose.dev.yml` which:
 ### Option 3: Docker Compose (Production-like, No Hot-Reload)
 
 For production-like environment without hot-reload:
+
 ```bash
 make dev
 ```
@@ -162,32 +175,38 @@ This uses the standard `deploy/docker-compose.yml` without hot-reload.
 ### Backend (Air) Issues
 
 **Air not found:**
+
 ```bash
 # Make sure Go is installed and GOPATH/bin is in your PATH
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
 **Build errors:**
+
 - Check `bfm/build-errors.log` for detailed error messages
 - Ensure all dependencies are installed: `go mod download`
 - Verify Go version: `go version` (requires Go 1.24+)
 
 **Port already in use:**
+
 - Change the port in your environment variables or config
 - Kill the existing process: `lsof -ti:7070 | xargs kill`
 
 ### Frontend (Vite) Issues
 
 **Port already in use:**
+
 - Vite will automatically try the next available port
 - Or specify a different port: `npm run dev -- --port 3001`
 
 **HMR not working:**
+
 - Check browser console for WebSocket errors
 - Ensure firewall allows WebSocket connections
 - Try disabling polling in `vite.config.ts` if not using Docker/WSL
 
 **API proxy not working:**
+
 - Verify `VITE_BFM_API_URL` is set correctly
 - Check that the backend is running on the expected port
 - Review browser network tab for proxy errors
@@ -197,15 +216,19 @@ export PATH=$PATH:$(go env GOPATH)/bin
 ### Local Development
 
 1. **Start the backend:**
+
    ```bash
    cd api && air
    ```
+
    The server will start on `http://localhost:7070` (or the port specified in your environment variables).
 
 2. **Start the frontend:**
+
    ```bash
    cd ffm && npm run dev
    ```
+
    The frontend will start on `http://localhost:4040`.
 
 3. **Make changes:**
@@ -220,6 +243,7 @@ export PATH=$PATH:$(go env GOPATH)/bin
 ### Docker Development
 
 1. **Start all services with hot-reload:**
+
    ```bash
    make dev-docker
    ```
@@ -231,6 +255,7 @@ export PATH=$PATH:$(go env GOPATH)/bin
    - All changes are synced via volume mounts
 
 3. **View logs:**
+
    ```bash
    make dev-docker-logs        # All services
    make dev-docker-logs-bfm    # Backend only
@@ -238,6 +263,7 @@ export PATH=$PATH:$(go env GOPATH)/bin
    ```
 
 4. **Stop services:**
+
    ```bash
    make dev-docker-down
    ```
@@ -291,13 +317,12 @@ CORE_SCHEMA=core
 - **Backend:** Air watches all `.go` files by default. Test files (`_test.go`) are excluded.
 - **Frontend:** Vite's HMR preserves React component state, so you can test interactions without losing state.
 - **Both:** Use separate terminals for each service to see logs clearly.
-- **Docker Development:** 
+- **Docker Development:**
   - Use `make dev-docker` for Docker-based development with hot-reload
   - Source code is mounted as volumes, so changes are immediately reflected
   - No need to rebuild images after code changes
   - Air and Vite run inside containers with full hot-reload support
-- **Local Development:** 
+- **Local Development:**
   - Use `make dev-bfm` and `make dev-ffm` for local development
   - Requires Air and Node.js installed locally
   - Faster startup time, no Docker overhead
-

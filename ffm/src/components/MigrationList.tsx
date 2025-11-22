@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { apiClient } from '../services/api';
-import type { MigrationListItem, MigrationListFilters } from '../types/api';
-import { format } from 'date-fns';
+import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { apiClient } from "../services/api";
+import type { MigrationListItem, MigrationListFilters } from "../types/api";
+import { format } from "date-fns";
 
 export default function MigrationList() {
   const [migrations, setMigrations] = useState<MigrationListItem[]>([]);
@@ -39,7 +39,8 @@ export default function MigrationList() {
       setTotal(response.total);
       setError(null);
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to load migrations';
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to load migrations";
       setError(errorMsg);
       // Error toast is handled by API interceptor
     } finally {
@@ -49,13 +50,22 @@ export default function MigrationList() {
 
   // Extract unique values for filter options
   const filterOptions = useMemo(() => {
-    const backends = Array.from(new Set(allMigrations.map(m => m.backend).filter(Boolean))).sort();
-    const schemas = Array.from(new Set(allMigrations.map(m => m.schema).filter(Boolean))).sort();
-    const connections = Array.from(new Set(allMigrations.map(m => m.connection).filter(Boolean))).sort();
+    const backends = Array.from(
+      new Set(allMigrations.map((m) => m.backend).filter(Boolean)),
+    ).sort();
+    const schemas = Array.from(
+      new Set(allMigrations.map((m) => m.schema).filter(Boolean)),
+    ).sort();
+    const connections = Array.from(
+      new Set(allMigrations.map((m) => m.connection).filter(Boolean)),
+    ).sort();
     return { backends, schemas, connections };
   }, [allMigrations]);
 
-  const handleFilterChange = (key: keyof MigrationListFilters, value: string) => {
+  const handleFilterChange = (
+    key: keyof MigrationListFilters,
+    value: string,
+  ) => {
     setFilters((prev) => ({
       ...prev,
       [key]: value || undefined,
@@ -81,7 +91,7 @@ export default function MigrationList() {
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     // Scroll to top of table
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleItemsPerPageChange = (value: number) => {
@@ -109,7 +119,8 @@ export default function MigrationList() {
         <h1 className="text-3xl font-semibold text-gray-800">Migrations</h1>
         <div className="flex items-center gap-4">
           <div className="text-base text-gray-500">
-            Showing {startIndex + 1}-{Math.min(endIndex, migrations.length)} of {total}
+            Showing {startIndex + 1}-{Math.min(endIndex, migrations.length)} of{" "}
+            {total}
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="items-per-page" className="text-sm text-gray-600">
@@ -132,10 +143,12 @@ export default function MigrationList() {
 
       <div className="bg-white p-4 md:p-6 rounded-lg shadow-md mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 items-start animate-scale-in transition-all hover:shadow-lg">
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-gray-800 block">Backend</label>
+          <label className="text-sm font-semibold text-gray-800 block">
+            Backend
+          </label>
           <select
-            value={filters.backend || ''}
-            onChange={(e) => handleFilterChange('backend', e.target.value)}
+            value={filters.backend || ""}
+            onChange={(e) => handleFilterChange("backend", e.target.value)}
             className="px-2.5 py-2.5 border border-gray-300 rounded text-sm bg-white text-gray-800 w-full focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
           >
             <option value="">All Backends</option>
@@ -147,10 +160,12 @@ export default function MigrationList() {
           </select>
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-gray-800 block">Schema</label>
+          <label className="text-sm font-semibold text-gray-800 block">
+            Schema
+          </label>
           <select
-            value={filters.schema || ''}
-            onChange={(e) => handleFilterChange('schema', e.target.value)}
+            value={filters.schema || ""}
+            onChange={(e) => handleFilterChange("schema", e.target.value)}
             className="px-2.5 py-2.5 border border-gray-300 rounded text-sm bg-white text-gray-800 w-full focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
           >
             <option value="">All Schemas</option>
@@ -162,10 +177,12 @@ export default function MigrationList() {
           </select>
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-gray-800 block">Connection</label>
+          <label className="text-sm font-semibold text-gray-800 block">
+            Connection
+          </label>
           <select
-            value={filters.connection || ''}
-            onChange={(e) => handleFilterChange('connection', e.target.value)}
+            value={filters.connection || ""}
+            onChange={(e) => handleFilterChange("connection", e.target.value)}
             className="px-2.5 py-2.5 border border-gray-300 rounded text-sm bg-white text-gray-800 w-full focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
           >
             <option value="">All Connections</option>
@@ -177,10 +194,12 @@ export default function MigrationList() {
           </select>
         </div>
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-semibold text-gray-800 block">Status</label>
+          <label className="text-sm font-semibold text-gray-800 block">
+            Status
+          </label>
           <select
-            value={filters.status || ''}
-            onChange={(e) => handleFilterChange('status', e.target.value)}
+            value={filters.status || ""}
+            onChange={(e) => handleFilterChange("status", e.target.value)}
             className="px-2.5 py-2.5 border border-gray-300 rounded text-sm bg-white text-gray-800 w-full focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
           >
             <option value="">All</option>
@@ -248,8 +267,8 @@ export default function MigrationList() {
               </tr>
             ) : (
               paginatedMigrations.map((migration, index) => (
-                <tr 
-                  key={migration.migration_id} 
+                <tr
+                  key={migration.migration_id}
                   className="hover:bg-gray-50 transition-colors animate-fade-in"
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
@@ -261,41 +280,52 @@ export default function MigrationList() {
                       {migration.migration_id}
                     </Link>
                   </td>
-                    {/* <td className="p-4 border-b border-gray-200">{migration.schema || '-'}</td>
+                  {/* <td className="p-4 border-b border-gray-200">{migration.schema || '-'}</td>
                     <td className="p-4 border-b border-gray-200">{migration.name || '-'}</td> */}
-                  <td className="p-4 border-b border-gray-200">{migration.version}</td>
-                  <td className="p-4 border-b border-gray-200">{migration.backend}</td>
-                  <td className="p-4 border-b border-gray-200">{migration.connection || '-'}</td>
+                  <td className="p-4 border-b border-gray-200">
+                    {migration.version}
+                  </td>
+                  <td className="p-4 border-b border-gray-200">
+                    {migration.backend}
+                  </td>
+                  <td className="p-4 border-b border-gray-200">
+                    {migration.connection || "-"}
+                  </td>
                   <td className="p-4 border-b border-gray-200">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        migration.status === 'success'
-                          ? 'bg-green-100 text-green-800'
-                          : migration.status === 'failed'
-                          ? 'bg-red-100 text-red-800'
-                          : migration.status === 'rolled_back'
-                          ? 'bg-orange-100 text-orange-800'
-                          : 'bg-yellow-100 text-yellow-800'
+                        migration.status === "success"
+                          ? "bg-green-100 text-green-800"
+                          : migration.status === "failed"
+                            ? "bg-red-100 text-red-800"
+                            : migration.status === "rolled_back"
+                              ? "bg-orange-100 text-orange-800"
+                              : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
-                      {migration.status === 'rolled_back' ? 'Rolled Back' : migration.status || 'pending'}
+                      {migration.status === "rolled_back"
+                        ? "Rolled Back"
+                        : migration.status || "pending"}
                     </span>
                   </td>
                   <td className="p-4 border-b border-gray-200">
                     <span
                       className={
                         migration.applied
-                          ? 'text-bfm-green-dark font-medium'
-                          : 'text-gray-500'
+                          ? "text-bfm-green-dark font-medium"
+                          : "text-gray-500"
                       }
                     >
-                      {migration.applied ? 'Yes' : 'No'}
+                      {migration.applied ? "Yes" : "No"}
                     </span>
                   </td>
                   <td className="p-4 border-b border-gray-200">
                     {migration.applied_at
-                      ? format(new Date(migration.applied_at), 'yyyy-MM-dd HH:mm:ss')
-                      : '-'}
+                      ? format(
+                          new Date(migration.applied_at),
+                          "yyyy-MM-dd HH:mm:ss",
+                        )
+                      : "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
                     <div className="flex items-center gap-2">
@@ -373,8 +403,8 @@ export default function MigrationList() {
                     onClick={() => handlePageChange(pageNum)}
                     className={`px-3 py-2 border rounded text-sm transition-colors ${
                       currentPage === pageNum
-                        ? 'bg-bfm-blue text-white border-bfm-blue'
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                        ? "bg-bfm-blue text-white border-bfm-blue"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
                     }`}
                   >
                     {pageNum}
@@ -402,4 +432,3 @@ export default function MigrationList() {
     </div>
   );
 }
-

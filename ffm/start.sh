@@ -26,4 +26,3 @@ export PATH="/app/node_modules/.bin:$PATH"
 echo "[ffm] Starting Vite dev server..."
 # Start Vite development server
 exec npm run dev -- --host 0.0.0.0
-

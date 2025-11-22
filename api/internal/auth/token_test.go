@@ -91,9 +91,9 @@ func TestValidateToken(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
@@ -150,9 +150,9 @@ func TestValidateToken(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set environment variable
 			if tt.envToken != "" {
-				os.Setenv("BFM_API_TOKEN", tt.envToken)
+				_ = os.Setenv("BFM_API_TOKEN", tt.envToken)
 			} else {
-				os.Unsetenv("BFM_API_TOKEN")
+				_ = os.Unsetenv("BFM_API_TOKEN")
 			}
 
 			err := ValidateToken(tt.inputToken)
@@ -174,13 +174,13 @@ func TestExtractAndValidateToken(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token-123")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token-123")
 
 	tests := []struct {
 		name        string
@@ -230,4 +230,3 @@ func TestExtractAndValidateToken(t *testing.T) {
 		})
 	}
 }
-

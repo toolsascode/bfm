@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -12,27 +12,29 @@ export default defineConfig({
     strictPort: false,
     hmr: {
       port: 4040,
-      host: 'localhost',
-      protocol: 'ws',
+      host: "localhost",
+      protocol: "ws",
     },
     watch: {
       usePolling: true, // Useful for Docker/WSL
     },
     proxy: {
-      '/api': {
+      "/api": {
         // In Docker, use service name; locally, use localhost
         // The proxy forwards /api/* requests to the backend
         // e.g., /api/v1/migrations -> http://bfm-server:7070/api/v1/migrations (Docker)
         //      /api/v1/migrations -> http://localhost:7070/api/v1/migrations (local)
-        target: process.env.DOCKER === 'true' ? 'http://bfm-server:7070' : 'http://localhost:7070',
+        target:
+          process.env.DOCKER === "true"
+            ? "http://bfm-server:7070"
+            : "http://localhost:7070",
         changeOrigin: true,
         ws: true, // Enable WebSocket proxying for HMR
-      }
-    }
+      },
+    },
   },
   // Production build configuration
   build: {
     sourcemap: true,
   },
-})
-
+});

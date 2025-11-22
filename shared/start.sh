@@ -20,7 +20,7 @@ WORKER_PID_FILE="${PID_DIR}/bfm-worker.pid"
 # Cleanup function
 cleanup() {
     echo -e "\n${YELLOW}Shutting down services...${NC}"
-    
+
     # Stop worker if running
     if [ -f "$WORKER_PID_FILE" ]; then
         WORKER_PID=$(cat "$WORKER_PID_FILE")
@@ -31,7 +31,7 @@ cleanup() {
         fi
         rm -f "$WORKER_PID_FILE"
     fi
-    
+
     # Stop server
     if [ -f "$SERVER_PID_FILE" ]; then
         SERVER_PID=$(cat "$SERVER_PID_FILE")
@@ -42,7 +42,7 @@ cleanup() {
         fi
         rm -f "$SERVER_PID_FILE"
     fi
-    
+
     echo -e "${GREEN}All services stopped.${NC}"
     exit 0
 }
@@ -132,4 +132,3 @@ wait "$SERVER_PID" 2>/dev/null || true
 
 # If server exits, trigger cleanup
 cleanup
-

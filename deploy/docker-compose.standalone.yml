@@ -61,7 +61,7 @@ services:
       - BFM_GRPC_PORT=9090
       - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
       - BFM_SFM_PATH=${BFM_SFM_PATH:-/app/sfm}
-      
+
       # State Database Configuration
       - BFM_STATE_BACKEND=postgresql
       - BFM_STATE_DB_HOST=postgres
@@ -70,7 +70,7 @@ services:
       - BFM_STATE_DB_PASSWORD=${BFM_STATE_DB_PASSWORD:-postgres}
       - BFM_STATE_DB_NAME=${BFM_STATE_DB_NAME:-migration_state}
       - BFM_STATE_SCHEMA=${BFM_STATE_SCHEMA:-public}
-      
+
       # Core Backend Connection (matches SFM example: core connection)
       - CORE_BACKEND=postgresql
       - CORE_DB_HOST=${CORE_DB_HOST:-postgres}
@@ -79,7 +79,7 @@ services:
       - CORE_DB_PASSWORD=${CORE_DB_PASSWORD:-postgres}
       - CORE_DB_NAME=${CORE_DB_NAME:-migration_state}
       - CORE_SCHEMA=core
-      
+
       # Logs Backend Connection (matches SFM example: logs connection for GreptimeDB)
       - LOGS_BACKEND=greptimedb
       - LOGS_DB_HOST=${LOGS_DB_HOST:-}
@@ -87,7 +87,7 @@ services:
       - LOGS_DB_USERNAME=${LOGS_DB_USERNAME:-}
       - LOGS_DB_PASSWORD=${LOGS_DB_PASSWORD:-}
       - LOGS_DB_NAME=${LOGS_DB_NAME:-}
-      
+
       # Metadata Backend Connection (matches SFM example: metadata connection for Etcd)
       - METADATA_BACKEND=etcd
       - METADATA_DB_HOST=${METADATA_DB_HOST:-}
@@ -96,11 +96,11 @@ services:
       - METADATA_DB_PASSWORD=${METADATA_DB_PASSWORD:-}
       - METADATA_ENDPOINTS=${METADATA_ENDPOINTS:-}
       - METADATA_PREFIX=/bfm/metadata/
-      
+
       # Queue Configuration (disabled by default)
       - BFM_QUEUE_ENABLED=${BFM_QUEUE_ENABLED:-false}
       - BFM_QUEUE_TYPE=${BFM_QUEUE_TYPE:-kafka}
-      
+
       # Frontend Configuration (for FfM)
       - BFM_FRONTEND_API_URL=${BFM_FRONTEND_API_URL:-/api}
       - BFM_FRONTEND_API_TOKEN=${BFM_FRONTEND_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}

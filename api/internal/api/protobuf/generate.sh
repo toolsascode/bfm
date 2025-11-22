@@ -4,7 +4,8 @@
 set -e
 
 # Add Go bin to PATH if not already there
-export PATH="${PATH}:$(go env GOPATH)/bin"
+GOPATH_BIN="$(go env GOPATH)/bin"
+export PATH="${PATH}:${GOPATH_BIN}"
 
 # Check if protoc is installed
 if ! command -v protoc &> /dev/null; then
@@ -38,4 +39,3 @@ protoc \
     $SCRIPT_DIR/migration.proto
 
 echo "Protobuf code generated successfully!"
-

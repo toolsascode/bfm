@@ -77,8 +77,8 @@ func (b *Backend) CreateSchema(ctx context.Context, schemaName string) error {
 func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, error) {
 	query := `
 		SELECT EXISTS(
-			SELECT 1 
-			FROM information_schema.schemata 
+			SELECT 1
+			FROM information_schema.schemata
 			WHERE schema_name = $1
 		)
 	`

@@ -292,10 +292,10 @@ func buildMigrations(sfmPath string) error {
 			Version:      migration.Version,
 			Name:         migration.Name,
 			Connection:   migration.Connection,
-		Backend:      migration.Backend,
-	})
+			Backend:      migration.Backend,
+		})
 
-	_ = file.Close()
+		_ = file.Close()
 
 		if err != nil {
 			return fmt.Errorf("failed to generate file %s: %w", goFilePath, err)

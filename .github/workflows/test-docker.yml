@@ -76,7 +76,7 @@ jobs:
           # Create a Docker network for container communication
           NETWORK_NAME="bfm-test-network"
           docker network create $NETWORK_NAME || true
-          
+
           # Start PostgreSQL container
           POSTGRES_CONTAINER=$(docker run -d \
             --network $NETWORK_NAME \
@@ -85,7 +85,7 @@ jobs:
             -e POSTGRES_USER=postgres \
             -e POSTGRES_DB=migration_state \
             postgres:16-alpine)
-          
+
           # Wait for PostgreSQL to be ready
           echo "Waiting for PostgreSQL to be ready..."
           for i in {1..30}; do
@@ -100,7 +100,7 @@ jobs:
             fi
             sleep 1
           done
-          
+
           # Start BfM container in background with required environment variables
           echo "Starting BfM container..."
           BFM_CONTAINER=$(docker run -d \
@@ -116,12 +116,12 @@ jobs:
             -e BFM_STATE_DB_NAME=migration_state \
             -e BFM_STATE_SCHEMA=public \
             bfm:test)
-          
+
           echo "BfM container started with ID: $BFM_CONTAINER"
-          
+
           # Give container a moment to start
           sleep 3
-          
+
           # Wait for BfM container to be ready
           echo "Waiting for BfM Server to be ready..."
           SERVER_READY=false
@@ -154,16 +154,16 @@ jobs:
             fi
             sleep 2
           done
-          
+
           if [ "$SERVER_READY" != "true" ]; then
             echo "BfM Server never became ready"
             docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
-          
+
           # Give container a moment to stabilize after health check
           sleep 2
-          
+
           # Check if container is still running using docker inspect (more reliable)
           CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' $BFM_CONTAINER 2>/dev/null || echo "not-found")
           if [ "$CONTAINER_STATUS" != "running" ]; then
@@ -175,7 +175,7 @@ jobs:
             exit 1
           fi
           echo "✓ Container is still running"
-          
+
           # Verify server process is actually running inside the container
           if ! docker exec $BFM_CONTAINER pgrep -f bfm-server > /dev/null 2>&1; then
             echo "WARNING: bfm-server process not found in container"
@@ -184,7 +184,7 @@ jobs:
           else
             echo "✓ bfm-server process is running"
           fi
-          
+
           # Check if binaries exist
           echo "Checking binaries..."
           if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-server 2>&1; then
@@ -193,14 +193,14 @@ jobs:
             exit 1
           fi
           echo "✓ bfm-server binary found"
-          
+
           if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-worker 2>&1; then
             echo "ERROR: bfm-worker binary not found"
             docker logs $BFM_CONTAINER 2>&1
             exit 1
           fi
           echo "✓ bfm-worker binary found"
-          
+
           if ! docker exec $BFM_CONTAINER test -f /app/bin/bfm-cli 2>&1; then
             echo "ERROR: bfm-cli binary not found"
             docker logs $BFM_CONTAINER 2>&1
@@ -208,7 +208,7 @@ jobs:
           fi
           echo "✓ bfm-cli binary found"
           echo "All binaries found!"
-          
+
           # Test health endpoint one more time
           echo "Testing health endpoint..."
           HEALTH_OUTPUT=$(curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:7070/health 2>&1)
@@ -224,13 +224,13 @@ jobs:
             exit 1
           fi
           echo "✓ Health endpoint check passed (HTTP $HTTP_CODE)!"
-          
+
           # All tests passed
           echo ""
           echo "=========================================="
           echo "All container health checks passed!"
           echo "=========================================="
-          
+
           # Verify container is still running one final time
           CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' $BFM_CONTAINER 2>/dev/null || echo "not-found")
           if [ "$CONTAINER_STATUS" != "running" ]; then
@@ -239,13 +239,12 @@ jobs:
           else
             echo "✓ Container is still running"
           fi
-          
+
           # Cleanup
           echo "Cleaning up containers..."
           docker stop $BFM_CONTAINER $POSTGRES_CONTAINER 2>&1 || true
           docker rm $BFM_CONTAINER $POSTGRES_CONTAINER 2>&1 || true
           docker network rm $NETWORK_NAME 2>&1 || true
-          
+
           echo "Cleanup completed successfully"
           echo "Test completed successfully!"
-

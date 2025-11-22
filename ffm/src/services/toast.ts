@@ -1,4 +1,4 @@
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
+export type ToastType = "success" | "error" | "warning" | "info";
 
 export interface Toast {
   id: string;
@@ -22,10 +22,10 @@ class ToastService {
     this.listeners.forEach((listener) => listener([...this.toasts]));
   }
 
-  show(message: string, type: ToastType = 'info', duration: number = 5000) {
+  show(message: string, type: ToastType = "info", duration: number = 5000) {
     const id = Math.random().toString(36).substring(2, 9);
     const toast: Toast = { id, message, type, duration };
-    
+
     this.toasts.push(toast);
     this.notify();
 
@@ -39,22 +39,22 @@ class ToastService {
   }
 
   success(message: string, duration?: number) {
-    return this.show(message, 'success', duration);
+    return this.show(message, "success", duration);
   }
 
   error(message: string, duration?: number) {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('ToastService.error called with:', message);
+    if (process.env.NODE_ENV === "development") {
+      console.log("ToastService.error called with:", message);
     }
-    return this.show(message, 'error', duration || 7000);
+    return this.show(message, "error", duration || 7000);
   }
 
   warning(message: string, duration?: number) {
-    return this.show(message, 'warning', duration);
+    return this.show(message, "warning", duration);
   }
 
   info(message: string, duration?: number) {
-    return this.show(message, 'info', duration);
+    return this.show(message, "info", duration);
   }
 
   remove(id: string) {
@@ -69,4 +69,3 @@ class ToastService {
 }
 
 export const toastService = new ToastService();
-

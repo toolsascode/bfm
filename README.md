@@ -79,6 +79,7 @@ For development environment setup, local development, and hot-reload configurati
 ### Using Docker Image
 
 BfM provides a production-ready Docker image that includes:
+
 - BfM API Server (HTTP on port 7070, gRPC on port 9090)
 - BfM Worker (optional, enabled via `BFM_QUEUE_ENABLED=true`)
 - BfM CLI tool (available inside container)
@@ -200,10 +201,10 @@ docker run -d \
 
 Once running, you can access:
 
-- **Frontend UI**: http://localhost:7070
-- **HTTP API**: http://localhost:7070/api/v1
+- **Frontend UI**: <http://localhost:7070>
+- **HTTP API**: <http://localhost:7070/api/v1>
 - **gRPC API**: localhost:9090
-- **Health Check**: http://localhost:7070/health
+- **Health Check**: <http://localhost:7070/health>
 
 #### Using the CLI Inside Container
 
@@ -238,7 +239,7 @@ go install github.com/toolsascode/bfm@latest
 curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | bash
 ```
 
-Or 
+Or
 
 ```shell
 curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | sudo bash
@@ -444,6 +445,7 @@ Migration scripts are located in `sfm/{backend}/{connection}/` and follow the na
 `{version}_{name}.up.sql` and `{version}_{name}.down.sql`
 
 The BfM CLI generates corresponding `.go` files with the format `{version}_{name}.go` that:
+
 1. Embed SQL/JSON files using `//go:embed`
 2. Register themselves in the global registry via `init()`
 3. Include both up and down migrations

@@ -8,7 +8,7 @@ option go_package = "bfm/api/internal/api/protobuf";
 service MigrationService {
   // Migrate executes database migrations
   rpc Migrate(MigrateRequest) returns (MigrateResponse);
-  
+
   // StreamMigrate executes migrations with streaming progress updates
   rpc StreamMigrate(MigrateRequest) returns (stream MigrateProgress);
 }
@@ -46,4 +46,3 @@ message MigrateProgress {
   string message = 3;
   int32 progress = 4;        // 0-100
 }
-

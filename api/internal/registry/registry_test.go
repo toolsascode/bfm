@@ -46,7 +46,7 @@ func TestInMemoryRegistry_FindByTarget(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test1;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
 		Version:    "20240101120001",
@@ -55,7 +55,7 @@ func TestInMemoryRegistry_FindByTarget(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test2;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	migration3 := &backends.MigrationScript{
 		Version:    "20240101120000",
@@ -64,7 +64,7 @@ func TestInMemoryRegistry_FindByTarget(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test3;",
 	}
-	reg.Register(migration3)
+	_ = reg.Register(migration3)
 
 	tests := []struct {
 		name     string
@@ -144,7 +144,7 @@ func TestInMemoryRegistry_GetAll(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	all := reg.GetAll()
 	if len(all) != 1 {
@@ -162,7 +162,7 @@ func TestInMemoryRegistry_GetByConnection(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test1;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
 		Version:    "20240101120001",
@@ -171,7 +171,7 @@ func TestInMemoryRegistry_GetByConnection(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test2;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	results := reg.GetByConnection("test")
 	if len(results) != 1 {
@@ -197,7 +197,7 @@ func TestInMemoryRegistry_GetByBackend(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test1;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
 		Version:    "20240101120001",
@@ -206,7 +206,7 @@ func TestInMemoryRegistry_GetByBackend(t *testing.T) {
 		Backend:    "mysql",
 		UpSQL:      "CREATE TABLE test2;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	results := reg.GetByBackend("postgresql")
 	if len(results) != 1 {
@@ -233,7 +233,7 @@ func TestInMemoryRegistry_FindByTarget_WithSchema(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test1;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
 		Schema:     "private",
@@ -243,7 +243,7 @@ func TestInMemoryRegistry_FindByTarget_WithSchema(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test2;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	target := &MigrationTarget{
 		Schema:     "public",
@@ -275,7 +275,7 @@ func TestInMemoryRegistry_FindByTarget_WithTables(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE users;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	tableName2 := "posts"
 	migration2 := &backends.MigrationScript{
@@ -287,7 +287,7 @@ func TestInMemoryRegistry_FindByTarget_WithTables(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE posts;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	target := &MigrationTarget{
 		Tables: []string{"users"},
@@ -304,4 +304,3 @@ func TestInMemoryRegistry_FindByTarget_WithTables(t *testing.T) {
 		t.Errorf("Expected migration1, got %v", results[0].Name)
 	}
 }
-

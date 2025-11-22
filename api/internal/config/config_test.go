@@ -10,9 +10,9 @@ func TestGetEnvOrDefault(t *testing.T) {
 	originalValue := os.Getenv(key)
 	defer func() {
 		if originalValue != "" {
-			os.Setenv(key, originalValue)
+			_ = os.Setenv(key, originalValue)
 		} else {
-			os.Unsetenv(key)
+			_ = os.Unsetenv(key)
 		}
 	}()
 
@@ -45,9 +45,9 @@ func TestGetEnvOrDefault(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(key, tt.envValue)
+				_ = os.Setenv(key, tt.envValue)
 			} else {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 
 			got := getEnvOrDefault(key, tt.defaultValue)
@@ -93,17 +93,17 @@ func TestLoadFromEnv(t *testing.T) {
 	// Cleanup function
 	defer func() {
 		for key, val := range originalEnv {
-			os.Setenv(key, val)
+			_ = os.Setenv(key, val)
 		}
 		for _, key := range envVars {
 			if _, exists := originalEnv[key]; !exists {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 		}
 		// Clean up connection env vars
 		os.Clearenv()
 		for key, val := range originalEnv {
-			os.Setenv(key, val)
+			_ = os.Setenv(key, val)
 		}
 	}()
 
@@ -117,7 +117,7 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "minimal valid config",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -135,7 +135,7 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "missing required BFM_API_TOKEN",
 			envSetup: func() {
-				os.Unsetenv("BFM_API_TOKEN")
+				_ = os.Unsetenv("BFM_API_TOKEN")
 			},
 			wantErr:     true,
 			errContains: "BFM_API_TOKEN environment variable is required",
@@ -143,9 +143,9 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "custom server ports",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("BFM_HTTP_PORT", "8080")
-				os.Setenv("BFM_GRPC_PORT", "9091")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_HTTP_PORT", "8080")
+				_ = os.Setenv("BFM_GRPC_PORT", "9091")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -160,14 +160,14 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "state database config",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("BFM_STATE_BACKEND", "postgresql")
-				os.Setenv("BFM_STATE_DB_HOST", "localhost")
-				os.Setenv("BFM_STATE_DB_PORT", "5432")
-				os.Setenv("BFM_STATE_DB_USERNAME", "postgres")
-				os.Setenv("BFM_STATE_DB_PASSWORD", "password")
-				os.Setenv("BFM_STATE_DB_NAME", "migrations")
-				os.Setenv("BFM_STATE_SCHEMA", "public")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_STATE_BACKEND", "postgresql")
+				_ = os.Setenv("BFM_STATE_DB_HOST", "localhost")
+				_ = os.Setenv("BFM_STATE_DB_PORT", "5432")
+				_ = os.Setenv("BFM_STATE_DB_USERNAME", "postgres")
+				_ = os.Setenv("BFM_STATE_DB_PASSWORD", "password")
+				_ = os.Setenv("BFM_STATE_DB_NAME", "migrations")
+				_ = os.Setenv("BFM_STATE_SCHEMA", "public")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -197,12 +197,12 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "queue config - kafka",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("BFM_QUEUE_ENABLED", "true")
-				os.Setenv("BFM_QUEUE_TYPE", "kafka")
-				os.Setenv("BFM_QUEUE_KAFKA_BROKERS", "localhost:9092,localhost:9093")
-				os.Setenv("BFM_QUEUE_KAFKA_TOPIC", "migrations")
-				os.Setenv("BFM_QUEUE_KAFKA_GROUP_ID", "workers")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_QUEUE_ENABLED", "true")
+				_ = os.Setenv("BFM_QUEUE_TYPE", "kafka")
+				_ = os.Setenv("BFM_QUEUE_KAFKA_BROKERS", "localhost:9092,localhost:9093")
+				_ = os.Setenv("BFM_QUEUE_KAFKA_TOPIC", "migrations")
+				_ = os.Setenv("BFM_QUEUE_KAFKA_GROUP_ID", "workers")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -226,11 +226,11 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "queue config - kafka with host/port",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("BFM_QUEUE_ENABLED", "true")
-				os.Setenv("BFM_QUEUE_TYPE", "kafka")
-				os.Setenv("BFM_QUEUE_KAFKA_HOST", "kafka-host")
-				os.Setenv("BFM_QUEUE_KAFKA_PORT", "9094")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_QUEUE_ENABLED", "true")
+				_ = os.Setenv("BFM_QUEUE_TYPE", "kafka")
+				_ = os.Setenv("BFM_QUEUE_KAFKA_HOST", "kafka-host")
+				_ = os.Setenv("BFM_QUEUE_KAFKA_PORT", "9094")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -245,12 +245,12 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "queue config - pulsar",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("BFM_QUEUE_ENABLED", "true")
-				os.Setenv("BFM_QUEUE_TYPE", "pulsar")
-				os.Setenv("BFM_QUEUE_PULSAR_URL", "pulsar://localhost:6650")
-				os.Setenv("BFM_QUEUE_PULSAR_TOPIC", "migrations")
-				os.Setenv("BFM_QUEUE_PULSAR_SUBSCRIPTION", "workers")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("BFM_QUEUE_ENABLED", "true")
+				_ = os.Setenv("BFM_QUEUE_TYPE", "pulsar")
+				_ = os.Setenv("BFM_QUEUE_PULSAR_URL", "pulsar://localhost:6650")
+				_ = os.Setenv("BFM_QUEUE_PULSAR_TOPIC", "migrations")
+				_ = os.Setenv("BFM_QUEUE_PULSAR_SUBSCRIPTION", "workers")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -271,14 +271,14 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "connection config",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("POSTGRES_BACKEND", "postgresql")
-				os.Setenv("POSTGRES_DB_HOST", "postgres-host")
-				os.Setenv("POSTGRES_DB_PORT", "5432")
-				os.Setenv("POSTGRES_DB_USERNAME", "postgres")
-				os.Setenv("POSTGRES_DB_PASSWORD", "postgres-password")
-				os.Setenv("POSTGRES_DB_NAME", "postgres-db")
-				os.Setenv("POSTGRES_SCHEMA", "public")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("POSTGRES_BACKEND", "postgresql")
+				_ = os.Setenv("POSTGRES_DB_HOST", "postgres-host")
+				_ = os.Setenv("POSTGRES_DB_PORT", "5432")
+				_ = os.Setenv("POSTGRES_DB_USERNAME", "postgres")
+				_ = os.Setenv("POSTGRES_DB_PASSWORD", "postgres-password")
+				_ = os.Setenv("POSTGRES_DB_NAME", "postgres-db")
+				_ = os.Setenv("POSTGRES_SCHEMA", "public")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -313,10 +313,10 @@ func TestLoadFromEnv(t *testing.T) {
 		{
 			name: "connection config with extra fields",
 			envSetup: func() {
-				os.Setenv("BFM_API_TOKEN", "test-token")
-				os.Setenv("MYSQL_BACKEND", "mysql")
-				os.Setenv("MYSQL_SSL_MODE", "require")
-				os.Setenv("MYSQL_TIMEOUT", "30")
+				_ = os.Setenv("BFM_API_TOKEN", "test-token")
+				_ = os.Setenv("MYSQL_BACKEND", "mysql")
+				_ = os.Setenv("MYSQL_SSL_MODE", "require")
+				_ = os.Setenv("MYSQL_TIMEOUT", "30")
 			},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
@@ -339,7 +339,7 @@ func TestLoadFromEnv(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
 			for _, key := range envVars {
-				os.Unsetenv(key)
+				_ = os.Unsetenv(key)
 			}
 			// Clean connection env vars
 			allEnv := os.Environ()
@@ -351,14 +351,14 @@ func TestLoadFromEnv(t *testing.T) {
 						break
 					}
 				}
-				if len(key) >= 7 && (key[len(key)-7:] == "_BACKEND" || 
+				if len(key) >= 7 && (key[len(key)-7:] == "_BACKEND" ||
 					(len(key) >= 8 && key[len(key)-8:] == "_DB_HOST") ||
 					(len(key) >= 8 && key[len(key)-8:] == "_DB_PORT") ||
 					(len(key) >= 12 && key[len(key)-12:] == "_DB_USERNAME") ||
 					(len(key) >= 12 && key[len(key)-12:] == "_DB_PASSWORD") ||
 					(len(key) >= 8 && key[len(key)-8:] == "_DB_NAME") ||
 					(len(key) >= 7 && key[len(key)-7:] == "_SCHEMA")) {
-					os.Unsetenv(key)
+					_ = os.Unsetenv(key)
 				}
 			}
 
@@ -393,19 +393,19 @@ func TestConfig_Connections(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 
 	// Test multiple connections
-	os.Setenv("POSTGRES_BACKEND", "postgresql")
-	os.Setenv("POSTGRES_DB_HOST", "postgres-host")
-	os.Setenv("MYSQL_BACKEND", "mysql")
-	os.Setenv("MYSQL_DB_HOST", "mysql-host")
+	_ = os.Setenv("POSTGRES_BACKEND", "postgresql")
+	_ = os.Setenv("POSTGRES_DB_HOST", "postgres-host")
+	_ = os.Setenv("MYSQL_BACKEND", "mysql")
+	_ = os.Setenv("MYSQL_DB_HOST", "mysql-host")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
@@ -417,23 +417,23 @@ func TestConfig_Connections(t *testing.T) {
 	}
 
 	// Cleanup
-	os.Unsetenv("POSTGRES_BACKEND")
-	os.Unsetenv("POSTGRES_DB_HOST")
-	os.Unsetenv("MYSQL_BACKEND")
-	os.Unsetenv("MYSQL_DB_HOST")
+	_ = os.Unsetenv("POSTGRES_BACKEND")
+	_ = os.Unsetenv("POSTGRES_DB_HOST")
+	_ = os.Unsetenv("MYSQL_BACKEND")
+	_ = os.Unsetenv("MYSQL_DB_HOST")
 }
 
 func TestConfig_DefaultValues(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
@@ -477,13 +477,13 @@ func TestConfig_QueueEnabled(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 
 	tests := []struct {
 		name     string
@@ -498,7 +498,7 @@ func TestConfig_QueueEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("BFM_QUEUE_ENABLED", tt.envValue)
+			_ = os.Setenv("BFM_QUEUE_ENABLED", tt.envValue)
 			cfg, err := LoadFromEnv()
 			if err != nil {
 				t.Fatalf("LoadFromEnv() error = %v", err)
@@ -514,13 +514,13 @@ func TestConfig_ConnectionsMap(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 
 	cfg, err := LoadFromEnv()
 	if err != nil {
@@ -536,4 +536,3 @@ func TestConfig_ConnectionsMap(t *testing.T) {
 		t.Error("Connections map should be initialized")
 	}
 }
-

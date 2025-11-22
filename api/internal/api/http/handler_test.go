@@ -22,11 +22,11 @@ import (
 
 // mockBackend is a mock implementation of backends.Backend
 type mockBackend struct {
-	name            string
-	connectError    error
-	executeError    error
-	executeCalled   bool
-	connected       bool
+	name             string
+	connectError     error
+	executeError     error
+	executeCalled    bool
+	connected        bool
 	executeMigration *backends.MigrationScript
 }
 
@@ -150,9 +150,10 @@ func newMockStateTracker() *mockStateTracker {
 
 func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.MigrationRecord) error {
 	m.history = append(m.history, migration)
-	if migration.Status == "success" {
+	switch migration.Status {
+	case "success":
 		m.appliedMigrations[migration.MigrationID] = true
-	} else if migration.Status == "rolled_back" {
+	case "rolled_back":
 		m.appliedMigrations[migration.MigrationID] = false
 	}
 	return nil
@@ -257,13 +258,13 @@ func TestHandler_authenticate(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -316,13 +317,13 @@ func TestHandler_migrateUp(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -380,17 +381,17 @@ func TestHandler_migrateUp_PartialContent(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, exec := setupTestRouter(reg, tracker)
-	
+
 	// Register a migration that will fail
 	migration := &backends.MigrationScript{
 		Version:    "20240101120000",
@@ -399,19 +400,19 @@ func TestHandler_migrateUp_PartialContent(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
-	
+	_ = reg.Register(migration)
+
 	// Set up backend that will fail
 	backend := &mockBackend{name: "postgresql", executeError: errors.New("execution failed")}
 	exec.RegisterBackend("postgresql", backend)
-	
+
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
 			Backend: "postgresql",
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	reqBody := dto.MigrateUpRequest{
 		Target: &registry.MigrationTarget{
@@ -439,13 +440,13 @@ func TestHandler_migrateDown(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, exec := setupTestRouter(reg, tracker)
@@ -459,7 +460,7 @@ func TestHandler_migrateDown(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 	migrationID := "test_20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
@@ -472,7 +473,7 @@ func TestHandler_migrateDown(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	tests := []struct {
 		name           string
@@ -483,8 +484,8 @@ func TestHandler_migrateDown(t *testing.T) {
 			name: "valid request",
 			requestBody: dto.MigrateDownRequest{
 				MigrationID: migrationID,
-				Schemas:    []string{},
-				DryRun:     false,
+				Schemas:     []string{},
+				DryRun:      false,
 			},
 			expectedStatus: http.StatusOK,
 		},
@@ -523,25 +524,25 @@ func TestHandler_listMigrations(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	tracker.listItems = []*state.MigrationListItem{
 		{
 			MigrationID: "migration1",
-			Schema:     "public",
-			Version:       "20240101120000",
-			Name:          "test_migration",
-			Connection:    "test",
-			Backend:       "postgresql",
-			Applied:       true,
-			LastStatus:    "success",
+			Schema:      "public",
+			Version:     "20240101120000",
+			Name:        "test_migration",
+			Connection:  "test",
+			Backend:     "postgresql",
+			Applied:     true,
+			LastStatus:  "success",
 		},
 	}
 	router, _ := setupTestRouter(reg, tracker)
@@ -573,13 +574,13 @@ func TestHandler_listMigrations_WithFilters(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -599,13 +600,13 @@ func TestHandler_getMigration(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	migration := &backends.MigrationScript{
@@ -617,7 +618,7 @@ func TestHandler_getMigration(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 	migrationID := "public_test_20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 	router, _ := setupTestRouter(reg, tracker)
@@ -649,13 +650,13 @@ func TestHandler_getMigration_NotFound(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -675,13 +676,13 @@ func TestHandler_getMigrationStatus(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	migrationID := "test_20240101120000_test_migration"
@@ -717,13 +718,13 @@ func TestHandler_getMigrationHistory(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	migration := &backends.MigrationScript{
@@ -733,13 +734,13 @@ func TestHandler_getMigrationHistory(t *testing.T) {
 		Connection: "test",
 		Backend:    "postgresql",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 	migrationID := "public_test_20240101120000_test_migration"
 	record := &state.MigrationRecord{
-		MigrationID:      migrationID,
-		Status:           "success",
+		MigrationID:     migrationID,
+		Status:          "success",
 		AppliedAt:       time.Now().Format(time.RFC3339),
-		ExecutedBy:       "test-user",
+		ExecutedBy:      "test-user",
 		ExecutionMethod: "manual",
 	}
 	tracker.history = []*state.MigrationRecord{record}
@@ -769,13 +770,13 @@ func TestHandler_getMigrationHistory_NotFound(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -795,13 +796,13 @@ func TestHandler_rollbackMigration(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	migration := &backends.MigrationScript{
@@ -813,11 +814,11 @@ func TestHandler_rollbackMigration(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 	migrationID := "public_test_20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 	router, exec := setupTestRouter(reg, tracker)
-	
+
 	// Set up backend and connection for rollback
 	backend := &mockBackend{name: "postgresql"}
 	exec.RegisterBackend("postgresql", backend)
@@ -827,7 +828,7 @@ func TestHandler_rollbackMigration(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	req, _ := http.NewRequest("POST", "/api/v1/migrations/"+migrationID+"/rollback", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -853,13 +854,13 @@ func TestHandler_rollbackMigration_NotFound(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	router, _ := setupTestRouter(reg, tracker)
@@ -879,13 +880,13 @@ func TestHandler_rollbackMigration_NotApplied(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	migration := &backends.MigrationScript{
@@ -897,11 +898,11 @@ func TestHandler_rollbackMigration_NotApplied(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 	migrationID := "public_test_20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = false
 	router, exec := setupTestRouter(reg, tracker)
-	
+
 	// Set up backend and connection for rollback
 	backend := &mockBackend{name: "postgresql"}
 	exec.RegisterBackend("postgresql", backend)
@@ -911,7 +912,7 @@ func TestHandler_rollbackMigration_NotApplied(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	req, _ := http.NewRequest("POST", "/api/v1/migrations/"+migrationID+"/rollback", nil)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -993,13 +994,13 @@ func TestHandler_getExecutedBy(t *testing.T) {
 	originalToken := os.Getenv("BFM_API_TOKEN")
 	defer func() {
 		if originalToken != "" {
-			os.Setenv("BFM_API_TOKEN", originalToken)
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
 		} else {
-			os.Unsetenv("BFM_API_TOKEN")
+			_ = os.Unsetenv("BFM_API_TOKEN")
 		}
 	}()
 
-	os.Setenv("BFM_API_TOKEN", "test-token")
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
 	exec := executor.NewExecutor(reg, tracker)
@@ -1096,4 +1097,3 @@ func TestHandler_Options(t *testing.T) {
 		t.Errorf("Expected status %d, got %d", http.StatusNoContent, w.Code)
 	}
 }
-

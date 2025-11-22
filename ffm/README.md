@@ -119,6 +119,7 @@ The following custom colors are available as Tailwind utilities:
 - `bfm-active-accent` - Active navigation accent
 
 **Usage examples:**
+
 ```tsx
 <div className="bg-bfm-teal text-white">Teal background</div>
 <button className="hover:bg-bfm-blue-dark">Blue button</button>
@@ -127,6 +128,7 @@ The following custom colors are available as Tailwind utilities:
 ### Responsive Design
 
 All components are fully responsive with mobile-first design:
+
 - Mobile: Single column layouts, collapsible sidebar
 - Tablet: 2-column grids where appropriate
 - Desktop: Full multi-column layouts
@@ -198,4 +200,3 @@ ffm/
 ## License
 
 See LICENSE file in the root of the bfm project.
-

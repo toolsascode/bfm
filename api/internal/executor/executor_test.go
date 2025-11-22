@@ -111,9 +111,10 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 		return m.recordError
 	}
 	m.history = append(m.history, migration)
-	if migration.Status == "success" {
+	switch migration.Status {
+	case "success":
 		m.appliedMigrations[migration.MigrationID] = true
-	} else if migration.Status == "rolled_back" {
+	case "rolled_back":
 		m.appliedMigrations[migration.MigrationID] = false
 	}
 	return nil
@@ -148,11 +149,11 @@ func (m *mockStateTracker) Initialize(ctx interface{}) error {
 
 // mockBackend is a mock implementation of backends.Backend
 type mockBackend struct {
-	name            string
-	connectError    error
-	executeError    error
-	executeCalled   bool
-	connected       bool
+	name             string
+	connectError     error
+	executeError     error
+	executeCalled    bool
+	connected        bool
 	executeMigration *backends.MigrationScript
 }
 
@@ -293,7 +294,7 @@ func TestExecutor_GetConnectionConfig(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	tests := []struct {
 		name        string
@@ -346,13 +347,14 @@ func TestExecutor_GetMigrationByID(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	migrationID := "public_test_20240101120000_test_migration"
 	found := exec.GetMigrationByID(migrationID)
 
 	if found == nil {
 		t.Error("GetMigrationByID() returned nil")
+		return
 	}
 	if found.Name != migration.Name {
 		t.Errorf("Expected Name = %v, got %v", migration.Name, found.Name)
@@ -450,7 +452,7 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -458,7 +460,7 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -498,7 +500,7 @@ func TestExecutor_ExecuteSync_DryRun(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -506,7 +508,7 @@ func TestExecutor_ExecuteSync_DryRun(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -544,7 +546,7 @@ func TestExecutor_ExecuteSync_BackendNotFound(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -552,7 +554,7 @@ func TestExecutor_ExecuteSync_BackendNotFound(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	target := &registry.MigrationTarget{
 		Connection: "test",
@@ -582,7 +584,7 @@ func TestExecutor_ExecuteSync_ConnectionNotFound(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	target := &registry.MigrationTarget{
 		Connection: "nonexistent",
@@ -667,7 +669,7 @@ func TestExecutor_ExecuteDown_NotApplied(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -675,7 +677,7 @@ func TestExecutor_ExecuteDown_NotApplied(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -708,7 +710,7 @@ func TestExecutor_ExecuteDown_Successful(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -716,7 +718,7 @@ func TestExecutor_ExecuteDown_Successful(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -755,7 +757,7 @@ func TestExecutor_ExecuteDown_WithSchemas(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -763,7 +765,7 @@ func TestExecutor_ExecuteDown_WithSchemas(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -797,7 +799,7 @@ func TestExecutor_ExecuteDown_NoDownSQL(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "", // No down SQL
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -805,7 +807,7 @@ func TestExecutor_ExecuteDown_NoDownSQL(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -838,7 +840,7 @@ func TestExecutor_ExecuteDown_ExecutionError(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -846,7 +848,7 @@ func TestExecutor_ExecuteDown_ExecutionError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	backend.executeError = errors.New("execution failed")
@@ -884,7 +886,7 @@ func TestExecutor_ExecuteDown_CheckStatusError(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -892,7 +894,7 @@ func TestExecutor_ExecuteDown_CheckStatusError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -938,7 +940,7 @@ func TestExecutor_Rollback_NotApplied(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	migrationID := "test_20240101120000_test_migration"
 	// Migration is not applied
@@ -972,7 +974,7 @@ func TestExecutor_Rollback_CheckStatusError(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	migrationID := "test_20240101120000_test_migration"
 
@@ -998,7 +1000,7 @@ func TestExecutor_Rollback_NoDownSQL(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "", // No down SQL
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1006,7 +1008,7 @@ func TestExecutor_Rollback_NoDownSQL(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1042,7 +1044,7 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1050,7 +1052,7 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1086,7 +1088,7 @@ func TestExecutor_Rollback_ExecutionError(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1094,7 +1096,7 @@ func TestExecutor_Rollback_ExecutionError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	backend.executeError = errors.New("rollback execution failed")
@@ -1162,7 +1164,7 @@ func TestExecutor_SetQueue(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	migration := &backends.MigrationScript{
 		Version:    "20240101120000",
@@ -1171,7 +1173,7 @@ func TestExecutor_SetQueue(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	target := &registry.MigrationTarget{
 		Connection: "test",
@@ -1229,7 +1231,7 @@ func TestExecutor_Execute_QueueError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	migration := &backends.MigrationScript{
 		Version:    "20240101120000",
@@ -1238,7 +1240,7 @@ func TestExecutor_Execute_QueueError(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	target := &registry.MigrationTarget{
 		Connection: "test",
@@ -1260,10 +1262,10 @@ func TestExecutor_GetMigrationHistory(t *testing.T) {
 
 	record := &state.MigrationRecord{
 		MigrationID: "test_migration",
-		Status:       "success",
-		AppliedAt:    time.Now().Format(time.RFC3339),
+		Status:      "success",
+		AppliedAt:   time.Now().Format(time.RFC3339),
 	}
-	tracker.RecordMigration(context.Background(), record)
+	_ = tracker.RecordMigration(context.Background(), record)
 
 	history, err := exec.GetMigrationHistory(context.Background(), nil)
 	if err != nil {
@@ -1346,7 +1348,7 @@ func TestExecutor_GetAllMigrations(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	all := exec.GetAllMigrations()
 	if len(all) != 1 {
@@ -1366,7 +1368,7 @@ func TestExecutor_ExecuteSync_WithError(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1374,7 +1376,7 @@ func TestExecutor_ExecuteSync_WithError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	backend.executeError = errors.New("execution failed")
@@ -1412,7 +1414,7 @@ func TestExecutor_ExecuteSync_BackendConnectError(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1420,7 +1422,7 @@ func TestExecutor_ExecuteSync_BackendConnectError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	backend.connectError = errors.New("connection failed")
@@ -1444,9 +1446,9 @@ func TestExecutor_GetMigrationID(t *testing.T) {
 	exec := NewExecutor(newMockRegistry(), newMockStateTracker())
 
 	tests := []struct {
-		name     string
+		name      string
 		migration *backends.MigrationScript
-		want     string
+		want      string
 	}{
 		{
 			name: "with schema",
@@ -1473,7 +1475,7 @@ func TestExecutor_GetMigrationID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Access private method through GetMigrationByID which uses it
 			reg := newMockRegistry()
-			reg.Register(tt.migration)
+			_ = reg.Register(tt.migration)
 			exec = NewExecutor(reg, newMockStateTracker())
 
 			found := exec.GetMigrationByID(tt.want)
@@ -1494,7 +1496,7 @@ func TestExecutor_GetMigrationIDWithSchema(t *testing.T) {
 		Name:       "test_migration",
 		Backend:    "postgresql",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	// Test with schema
 	idWithSchema := exec.GetMigrationByID("schema1_test_20240101120000_test_migration")
@@ -1522,7 +1524,7 @@ func TestExecutor_ExecuteSync_RecordMigrationError(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1530,7 +1532,7 @@ func TestExecutor_ExecuteSync_RecordMigrationError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1566,7 +1568,7 @@ func TestExecutor_ExecuteDown_RecordMigrationError(t *testing.T) {
 		UpSQL:      "CREATE TABLE test;",
 		DownSQL:    "DROP TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1574,7 +1576,7 @@ func TestExecutor_ExecuteDown_RecordMigrationError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1608,7 +1610,7 @@ func TestConvertTarget(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	target := &registry.MigrationTarget{
 		Backend:    "postgresql",
@@ -1658,7 +1660,7 @@ func TestConvertTarget_Nil(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	result, err := exec.Execute(context.Background(), nil, "test", "", false)
 	if err != nil {
@@ -1736,7 +1738,7 @@ func TestExecutor_ExecuteSync_IsMigrationAppliedError(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1744,7 +1746,7 @@ func TestExecutor_ExecuteSync_IsMigrationAppliedError(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1778,7 +1780,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test1;",
 	}
-	reg.Register(migration1)
+	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
 		Version:    "20240101120001",
@@ -1787,7 +1789,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test2;",
 	}
-	reg.Register(migration2)
+	_ = reg.Register(migration2)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1795,7 +1797,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1829,7 +1831,7 @@ func TestExecutor_ExecuteSync_WithSchema(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1837,7 +1839,7 @@ func TestExecutor_ExecuteSync_WithSchema(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
@@ -1872,7 +1874,7 @@ func TestExecutor_ExecuteSync_MigrationWithSchema(t *testing.T) {
 		Backend:    "postgresql",
 		UpSQL:      "CREATE TABLE test;",
 	}
-	reg.Register(migration)
+	_ = reg.Register(migration)
 
 	connections := map[string]*backends.ConnectionConfig{
 		"test": {
@@ -1880,7 +1882,7 @@ func TestExecutor_ExecuteSync_MigrationWithSchema(t *testing.T) {
 			Host:    "localhost",
 		},
 	}
-	exec.SetConnections(connections)
+	_ = exec.SetConnections(connections)
 
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
