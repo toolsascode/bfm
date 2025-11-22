@@ -55,7 +55,7 @@ class BFMApiClient {
       this.setToken(token);
     } else {
       console.warn(
-        "BFM API token not found. Please set BFM_FRONTEND_API_TOKEN (production) or VITE_BFM_API_TOKEN (dev) environment variable.",
+        "BFM API token not found. Please set BFM_API_TOKEN (production) or VITE_BFM_API_TOKEN (dev) environment variable.",
       );
     }
 
