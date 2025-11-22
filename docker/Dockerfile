@@ -34,12 +34,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bfm-server ./cmd/
 # ============================================================================
 # Stage 2: Build FfM Frontend
 # ============================================================================
-FROM node:20-alpine AS frontend-builder
+FROM node:24.11.1-alpine AS frontend-builder
 
 WORKDIR /build
 
-# Copy package files
-COPY ffm/package*.json ./
+# Copy package files and npm config
+COPY ffm/package*.json ffm/.npmrc* ./
 
 # Install dependencies
 RUN npm ci

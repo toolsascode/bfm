@@ -2,9 +2,9 @@
 <img src="./assets/BfM.svg" alt="drawing" width="150" />
 </p>
 <p align="center">
-<span style="font-size: 25px; font-weight: bold; text-align: center; font-family: 'Montserrat', system-ui, sans-serif;" >
+<h1 style="font-size: 25px; font-weight: bold; text-align: center; font-family: 'Montserrat', system-ui, sans-serif;" >
 Backend For Migrations (BfM)
-</span>
+</h1>
 </p>
 
 <p align="center">
