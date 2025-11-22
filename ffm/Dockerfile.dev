@@ -22,4 +22,3 @@ EXPOSE 4040
 # Use entrypoint script that ensures dependencies are installed
 # Use sh to execute the script (not direct execution)
 CMD ["sh", "/app/start.sh"]
-

@@ -42,21 +42,20 @@ type Backend interface {
 
 // ConnectionConfig holds configuration for a backend connection
 type ConnectionConfig struct {
-	Backend   string // "postgresql", "greptimedb", "etcd"
-	Host      string
-	Port      string
-	Username  string
-	Password  string
-	Database  string
-	Schema    string // Can be fixed or dynamic
-	Extra     map[string]string // Additional backend-specific config
+	Backend  string // "postgresql", "greptimedb", "etcd"
+	Host     string
+	Port     string
+	Username string
+	Password string
+	Database string
+	Schema   string            // Can be fixed or dynamic
+	Extra    map[string]string // Additional backend-specific config
 }
 
 // MigrationResult represents the result of a migration execution
 type MigrationResult struct {
-	Success   bool
-	Error     error
-	Duration  string
+	Success      bool
+	Error        error
+	Duration     string
 	RowsAffected int64
 }
-

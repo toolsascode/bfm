@@ -19,4 +19,3 @@ interface ImportMeta {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
-

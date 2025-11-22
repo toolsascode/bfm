@@ -102,4 +102,3 @@ EXPOSE 7070 9090
 
 # Use startup script as entrypoint
 ENTRYPOINT ["/app/start.sh"]
-

@@ -25,7 +25,7 @@ var (
 
 func init() {
 	logger = log.New(os.Stdout, "", 0)
-	
+
 	// Set log level from environment
 	levelStr := os.Getenv("BFM_LOG_LEVEL")
 	switch levelStr {
@@ -118,4 +118,3 @@ func Errorf(format string, args ...interface{}) {
 func Fatalf(format string, args ...interface{}) {
 	Fatal(format, args...)
 }
-

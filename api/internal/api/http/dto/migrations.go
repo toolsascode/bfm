@@ -63,7 +63,6 @@ type MigrateUpRequest struct {
 // MigrateDownRequest represents a request to execute down migrations
 type MigrateDownRequest struct {
 	MigrationID string   `json:"migration_id" binding:"required"`
-	Schemas     []string  `json:"schemas"` // Array for dynamic schemas
+	Schemas     []string `json:"schemas"` // Array for dynamic schemas
 	DryRun      bool     `json:"dry_run"`
 }
-

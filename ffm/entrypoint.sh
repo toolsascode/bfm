@@ -19,4 +19,3 @@ fi
 
 # Start nginx
 exec nginx -g "daemon off;"
-

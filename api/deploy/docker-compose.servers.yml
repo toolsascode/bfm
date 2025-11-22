@@ -161,7 +161,7 @@ services:
       - "4003:4003"
     networks:
       - bfm-network
-    command: 
+    command:
       - standalone
       - start
       - --http-addr=0.0.0.0:4000
@@ -192,4 +192,3 @@ volumes:
 networks:
   bfm-network:
     driver: bridge
-

@@ -21,7 +21,7 @@ services:
       - BFM_GRPC_PORT=9090
       - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
       - BFM_SFM_PATH=${BFM_SFM_PATH:-/app/sfm}
-      
+
       # State Database Configuration
       - BFM_STATE_BACKEND=postgresql
       - BFM_STATE_DB_HOST=${BFM_STATE_DB_HOST:-postgres}
@@ -30,7 +30,7 @@ services:
       - BFM_STATE_DB_PASSWORD=${BFM_STATE_DB_PASSWORD:-postgres}
       - BFM_STATE_DB_NAME=${BFM_STATE_DB_NAME:-migration_state}
       - BFM_STATE_SCHEMA=${BFM_STATE_SCHEMA:-public}
-      
+
       # Core Backend Connection
       - CORE_BACKEND=postgresql
       - CORE_DB_HOST=${CORE_DB_HOST:-postgres}
@@ -39,7 +39,7 @@ services:
       - CORE_DB_PASSWORD=${CORE_DB_PASSWORD:-dashcloud}
       - CORE_DB_NAME=${CORE_DB_NAME:-dashcloud}
       - CORE_SCHEMA=core
-      
+
       # Guard Backend Connection
       - GUARD_BACKEND=postgresql
       - GUARD_DB_HOST=${GUARD_DB_HOST:-postgres}
@@ -48,7 +48,7 @@ services:
       - GUARD_DB_PASSWORD=${GUARD_DB_PASSWORD:-dashcloud}
       - GUARD_DB_NAME=${GUARD_DB_NAME:-dashcloud}
       - GUARD_SCHEMA=guard
-      
+
       # Organization Backend Connection
       - ORG_BACKEND=postgresql
       - ORG_DB_HOST=${ORG_DB_HOST:-postgres}
@@ -56,7 +56,7 @@ services:
       - ORG_DB_USERNAME=${ORG_DB_USERNAME:-dashcloud}
       - ORG_DB_PASSWORD=${ORG_DB_PASSWORD:-dashcloud}
       - ORG_DB_NAME=${ORG_DB_NAME:-dashcloud}
-      
+
       # Logs Backend Connection (GreptimeDB)
       - LOGS_BACKEND=greptimedb
       - LOGS_DB_HOST=${LOGS_DB_HOST:-greptimedb}
@@ -64,7 +64,7 @@ services:
       - LOGS_DB_USERNAME=${LOGS_DB_USERNAME:-}
       - LOGS_DB_PASSWORD=${LOGS_DB_PASSWORD:-}
       - LOGS_DB_NAME=${LOGS_DB_NAME:-}
-      
+
       # Metadata Backend Connection (Etcd)
       - ETCD_BACKEND=etcd
       - ETCD_DB_HOST=${METADATA_DB_HOST:-etcd}
@@ -73,16 +73,16 @@ services:
       - ETCD_DB_PASSWORD=${METADATA_DB_PASSWORD:-}
       - ETCD_ENDPOINTS=${METADATA_ENDPOINTS:-etcd:2379}
       - ETCD_PREFIX=/bfm/metadata/
-      
+
       # Queue Configuration
       - BFM_QUEUE_ENABLED=${BFM_QUEUE_ENABLED:-false}
       - BFM_QUEUE_TYPE=${BFM_QUEUE_TYPE:-kafka}
-      
+
       # Kafka Queue Configuration
       - BFM_QUEUE_KAFKA_BROKERS=${BFM_QUEUE_KAFKA_BROKERS:-kafka:9092}
       - BFM_QUEUE_KAFKA_TOPIC=${BFM_QUEUE_KAFKA_TOPIC:-bfm-migrations}
       - BFM_QUEUE_KAFKA_GROUP_ID=${BFM_QUEUE_KAFKA_GROUP_ID:-bfm-migration-workers}
-      
+
       # Pulsar Queue Configuration
       - BFM_QUEUE_PULSAR_URL=${BFM_QUEUE_PULSAR_URL:-pulsar://pulsar:6650}
       - BFM_QUEUE_PULSAR_TOPIC=${BFM_QUEUE_PULSAR_TOPIC:-bfm-migrations}

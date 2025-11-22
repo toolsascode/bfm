@@ -431,6 +431,44 @@ test-all: test-api test-frontend ## Run all tests
 	@echo "$(GREEN)All tests complete!$(NC)"
 
 # ============================================================================
+# Pre-commit Hooks
+# ============================================================================
+
+pre-commit-install: ## Install pre-commit hooks
+	@echo "$(GREEN)Installing pre-commit hooks...$(NC)"
+	@if ! command -v pre-commit &> /dev/null; then \
+		echo "$(YELLOW)pre-commit not found. Installing...$(NC)"; \
+		pip install pre-commit || brew install pre-commit || echo "$(RED)Please install pre-commit manually: pip install pre-commit$(NC)"; \
+	fi
+	@pre-commit install || (echo "$(RED)Failed to install pre-commit hooks$(NC)" && exit 1)
+	@echo "$(GREEN)Pre-commit hooks installed!$(NC)"
+
+pre-commit-uninstall: ## Uninstall pre-commit hooks
+	@echo "$(YELLOW)Uninstalling pre-commit hooks...$(NC)"
+	@pre-commit uninstall || true
+	@echo "$(GREEN)Pre-commit hooks uninstalled!$(NC)"
+
+pre-commit-run: ## Run pre-commit hooks on staged files
+	@echo "$(GREEN)Running pre-commit hooks...$(NC)"
+	@pre-commit run || (echo "$(RED)Pre-commit hooks failed$(NC)" && exit 1)
+
+pre-commit-run-all: ## Run pre-commit hooks on all files
+	@echo "$(GREEN)Running pre-commit hooks on all files...$(NC)"
+	@pre-commit run --all-files || (echo "$(RED)Pre-commit hooks failed$(NC)" && exit 1)
+
+pre-commit-update: ## Update pre-commit hooks to latest versions
+	@echo "$(GREEN)Updating pre-commit hooks...$(NC)"
+	@pre-commit autoupdate
+	@echo "$(GREEN)Pre-commit hooks updated!$(NC)"
+
+pre-commit-clean: ## Clean pre-commit cache
+	@echo "$(YELLOW)Cleaning pre-commit cache...$(NC)"
+	@pre-commit clean
+	@echo "$(GREEN)Pre-commit cache cleaned!$(NC)"
+
+precommit: pre-commit-run ## Alias for pre-commit-run
+
+# ============================================================================
 # Quick Actions
 # ============================================================================
 
@@ -470,4 +508,3 @@ version: ## Show version information
 	@echo ""
 	@echo "Docker:"
 	@docker --version
-

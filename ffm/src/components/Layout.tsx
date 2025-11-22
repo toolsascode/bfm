@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { useState } from "react";
+import { Outlet, Link, useLocation } from "react-router-dom";
 
 interface LayoutProps {
   onLogout: () => void;
@@ -53,11 +53,15 @@ export default function Layout({ onLogout }: LayoutProps) {
 
       <nav
         className={`w-64 bg-gradient-to-b from-bfm-sidebar-bg to-[#1a2f4a] text-white flex flex-col fixed h-screen overflow-y-auto shadow-lg transition-all duration-300 ease-in-out z-40 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
         <div className="p-6 border-b border-white/10 flex flex-col items-center text-center">
-          <img src="/favicon.png" alt="BfM Logo" className="w-16 h-16 mb-4 drop-shadow-md" />
+          <img
+            src="/favicon.png"
+            alt="BfM Logo"
+            className="w-16 h-16 mb-4 drop-shadow-md"
+          />
           <h1 className="text-2xl mb-1 bg-gradient-to-br from-bfm-teal via-bfm-green to-bfm-blue bg-clip-text text-transparent">
             BfM
           </h1>
@@ -68,9 +72,9 @@ export default function Layout({ onLogout }: LayoutProps) {
             <Link
               to="/dashboard"
               className={`block px-6 py-3 text-white/80 no-underline transition-all duration-200 ${
-                isActive('/dashboard')
-                  ? 'bg-gradient-to-r from-bfm-teal/20 to-bfm-blue/10 text-white border-l-4 border-bfm-active-accent'
-                  : 'hover:bg-bfm-sidebar-hover hover:text-white hover:translate-x-1'
+                isActive("/dashboard")
+                  ? "bg-gradient-to-r from-bfm-teal/20 to-bfm-blue/10 text-white border-l-4 border-bfm-active-accent"
+                  : "hover:bg-bfm-sidebar-hover hover:text-white hover:translate-x-1"
               }`}
               onClick={() => setSidebarOpen(false)}
             >
@@ -81,9 +85,9 @@ export default function Layout({ onLogout }: LayoutProps) {
             <Link
               to="/migrations"
               className={`block px-6 py-3 text-white/80 no-underline transition-all duration-200 ${
-                isActive('/migrations')
-                  ? 'bg-gradient-to-r from-bfm-teal/20 to-bfm-blue/10 text-white border-l-4 border-bfm-active-accent'
-                  : 'hover:bg-bfm-sidebar-hover hover:text-white hover:translate-x-1'
+                isActive("/migrations")
+                  ? "bg-gradient-to-r from-bfm-teal/20 to-bfm-blue/10 text-white border-l-4 border-bfm-active-accent"
+                  : "hover:bg-bfm-sidebar-hover hover:text-white hover:translate-x-1"
               }`}
               onClick={() => setSidebarOpen(false)}
             >
@@ -106,4 +110,3 @@ export default function Layout({ onLogout }: LayoutProps) {
     </div>
   );
 }
-

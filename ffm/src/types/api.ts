@@ -117,4 +117,3 @@ export interface MigrationListFilters {
   status?: string;
   version?: string;
 }
-

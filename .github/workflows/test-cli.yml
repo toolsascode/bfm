@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   test:
@@ -26,7 +27,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
@@ -54,12 +55,15 @@ jobs:
         working-directory: api
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
         with:
-          file: ./api/coverage.out
+          directory: ./api
+          files: ./coverage.out
           flags: cli
           name: cli-coverage
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
         continue-on-error: true
 
       - name: Build CLI binary
@@ -116,7 +120,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('**/api/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
@@ -164,4 +168,3 @@ jobs:
         working-directory: api
         run: |
           ./bfm${{ matrix.os == 'windows-latest' && '.exe' || '' }} version
-
