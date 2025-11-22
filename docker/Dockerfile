@@ -3,6 +3,13 @@
 # ============================================================================
 FROM golang:1.25.4-alpine AS go-builder
 
+LABEL org.opencontainers.image.description="BfM - Backend for Migrations"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/toolsascode/bfm"
+LABEL org.opencontainers.image.authors="Carlos Junior <carlosrfjunior@gmail.com>"
+LABEL org.opencontainers.image.vendor="toolsascode"
+LABEL org.opencontainers.image.url="https://github.com/toolsascode/bfm"
+
 WORKDIR /build
 
 # Install tooling needed to generate gRPC code

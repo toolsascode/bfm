@@ -84,6 +84,14 @@ BfM provides a production-ready Docker image that includes:
 - BfM CLI tool (available inside container)
 - FfM Frontend (served via the API server)
 
+#### Registry
+
+Install from the command line
+
+``` bash
+docker pull ghcr.io/toolsascode/bfm:latest
+```
+
 #### Building the Production Image
 
 Build the standalone production Docker image:
