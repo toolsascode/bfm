@@ -91,7 +91,13 @@ homebrew_casks:
     repository:
       owner: toolsascode
       name: homebrew-tap
+      token: "{{ .Env.PA_TOKEN }}"
+    commit_author:
+      name: carlosrfjunior
+      email: carlosrfjunior@gmail.com
     # Cask metadata
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Casks
     homepage: "https://github.com/toolsascode/bfm"
     description: "BfM - Backend for Migrations CLI"
     license: "MIT"
@@ -109,6 +115,12 @@ scoops:
     repository:
       owner: toolsascode
       name: scoop-bucket
+      token: "{{ .Env.PA_TOKEN }}"
+    commit_author:
+      name: carlosrfjunior
+      email: carlosrfjunior@gmail.com
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: Scoops
     homepage: "https://github.com/toolsascode/bfm"
     description: "BfM - Backend for Migrations CLI"
     license: "MIT"
