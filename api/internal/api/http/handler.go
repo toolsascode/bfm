@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	_ "embed"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"bfm/api/internal/state"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 // Handler handles HTTP API requests
@@ -43,6 +45,8 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 		api.GET("/migrations/:id/history", h.authenticate, h.getMigrationHistory)
 		api.POST("/migrations/:id/rollback", h.authenticate, h.rollbackMigration)
 		api.GET("/health", h.Health)
+		api.GET("/openapi.yaml", h.OpenAPISpec)
+		api.GET("/openapi.json", h.OpenAPISpecJSON)
 	}
 }
 
@@ -537,6 +541,24 @@ func (h *Handler) Health(c *gin.Context) {
 	}
 
 	c.JSON(statusCode, healthStatus)
+}
+
+//go:embed openapi.yaml
+var openAPISpecYAML []byte
+
+// OpenAPISpec serves the OpenAPI specification in YAML format
+func (h *Handler) OpenAPISpec(c *gin.Context) {
+	c.Data(http.StatusOK, "application/x-yaml", openAPISpecYAML)
+}
+
+// OpenAPISpecJSON serves the OpenAPI specification in JSON format
+func (h *Handler) OpenAPISpecJSON(c *gin.Context) {
+	var spec map[string]interface{}
+	if err := yaml.Unmarshal(openAPISpecYAML, &spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse OpenAPI spec"})
+		return
+	}
+	c.JSON(http.StatusOK, spec)
 }
 
 // getMigrationID generates a migration ID

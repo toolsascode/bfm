@@ -1,0 +1,860 @@
+openapi: 3.2.0
+info:
+  title: Backend For Migrations (BfM) API
+  description: |
+    BfM is a comprehensive database migration system that supports multiple backends
+    (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
+
+    This API allows you to:
+    - Execute up migrations
+    - Execute down migrations (rollback)
+    - List migrations with filtering
+    - Get migration details and status
+    - View migration history
+    - Check system health
+  version: 1.0.0
+  contact:
+    name: BfM Support
+    url: https://github.com/toolsascode/bfm
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:7070
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+tags:
+  - name: Migrations
+    description: Migration operations
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /api/v1/migrations/up:
+    post:
+      tags:
+        - Migrations
+      summary: Execute up migrations
+      description: |
+        Executes up migrations based on the provided target specification.
+        Migrations can be filtered by backend, connection, schema, tables, and version.
+      operationId: migrateUp
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrateUpRequest'
+            examples:
+              basic:
+                summary: Basic migration
+                value:
+                  target:
+                    backend: postgresql
+                    connection: core
+                    schema: core
+                  connection: core
+                  schemas: []
+                  dry_run: false
+              withTables:
+                summary: Migrate specific tables
+                value:
+                  target:
+                    backend: postgresql
+                    connection: core
+                    schema: core
+                    tables:
+                      - users
+                      - orders
+                  connection: core
+                  schemas: []
+                  dry_run: false
+              dryRun:
+                summary: Dry run (test without applying)
+                value:
+                  target:
+                    backend: postgresql
+                    connection: core
+                    schema: core
+                  connection: core
+                  schemas: []
+                  dry_run: true
+      responses:
+        '200':
+          description: Migrations executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateResponse'
+        '206':
+          description: Partial success (some migrations failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations/down:
+    post:
+      tags:
+        - Migrations
+      summary: Execute down migrations (rollback)
+      description: |
+        Executes down migrations (rollback) for a specific migration ID.
+        This will revert the changes made by the specified migration.
+      operationId: migrateDown
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrateDownRequest'
+            examples:
+              basic:
+                summary: Basic rollback
+                value:
+                  migration_id: core_20250101120000_create_users
+                  schemas: []
+                  dry_run: false
+              dryRun:
+                summary: Dry run rollback
+                value:
+                  migration_id: core_20250101120000_create_users
+                  schemas: []
+                  dry_run: true
+      responses:
+        '200':
+          description: Rollback executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateResponse'
+        '206':
+          description: Partial success (some migrations failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations:
+    get:
+      tags:
+        - Migrations
+      summary: List migrations
+      description: |
+        Lists all migrations with optional filtering by schema, table, connection,
+        backend, status, or version.
+      operationId: listMigrations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: schema
+          in: query
+          description: Filter by schema name
+          required: false
+          schema:
+            type: string
+        - name: table
+          in: query
+          description: Filter by table name
+          required: false
+          schema:
+            type: string
+        - name: connection
+          in: query
+          description: Filter by connection name
+          required: false
+          schema:
+            type: string
+        - name: backend
+          in: query
+          description: Filter by backend type (postgresql, greptimedb, etcd)
+          required: false
+          schema:
+            type: string
+            enum:
+              - postgresql
+              - greptimedb
+              - etcd
+        - name: status
+          in: query
+          description: Filter by migration status
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending
+              - success
+              - failed
+              - rolled_back
+        - name: version
+          in: query
+          description: Filter by migration version
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of migrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations/{id}:
+    get:
+      tags:
+        - Migrations
+      summary: Get migration details
+      description: Get detailed information about a specific migration by ID
+      operationId: getMigration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Migration ID
+          schema:
+            type: string
+            example: core_20250101120000_create_users
+      responses:
+        '200':
+          description: Migration details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationDetailResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Migration not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations/{id}/status:
+    get:
+      tags:
+        - Migrations
+      summary: Get migration status
+      description: |
+        Get the current status of a specific migration, including whether it's applied,
+        the last applied timestamp, and any error messages.
+      operationId: getMigrationStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Migration ID
+          schema:
+            type: string
+            example: core_20250101120000_create_users
+      responses:
+        '200':
+          description: Migration status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationStatusResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations/{id}/history:
+    get:
+      tags:
+        - Migrations
+      summary: Get migration history
+      description: |
+        Get the complete execution history for a specific migration, including
+        all executions, rollbacks, and their details.
+      operationId: getMigrationHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Migration ID
+          schema:
+            type: string
+            example: core_20250101120000_create_users
+      responses:
+        '200':
+          description: Migration history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationHistoryResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Migration not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/migrations/{id}/rollback:
+    post:
+      tags:
+        - Migrations
+      summary: Rollback a migration
+      description: |
+        Rollback a specific migration that has been applied. This will execute
+        the down migration for the specified migration ID.
+      operationId: rollbackMigration
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Migration ID
+          schema:
+            type: string
+            example: core_20250101120000_create_users
+      responses:
+        '200':
+          description: Rollback executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RollbackResponse'
+        '400':
+          description: Bad request (migration not applied)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Migration not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check the health status of the API and its dependencies
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check (alias)
+      description: Alias for /api/v1/health endpoint
+      operationId: healthCheckAlias
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+      description: |
+        API token authentication. Include the token in the Authorization header:
+        `Authorization: Bearer {BFM_API_TOKEN}`
+
+  schemas:
+    MigrationTarget:
+      type: object
+      description: Specifies which migrations to execute
+      properties:
+        backend:
+          type: string
+          description: Backend type filter
+          enum:
+            - postgresql
+            - greptimedb
+            - etcd
+          example: postgresql
+        schema:
+          type: string
+          description: Schema filter (optional)
+          example: core
+        tables:
+          type: array
+          description: Table filters (optional, empty = all)
+          items:
+            type: string
+          example:
+            - users
+            - orders
+        version:
+          type: string
+          description: Version filter (optional, empty = latest)
+          example: "20250101120000"
+        connection:
+          type: string
+          description: Connection name filter
+          example: core
+      required:
+        - connection
+
+    MigrateUpRequest:
+      type: object
+      description: Request to execute up migrations
+      properties:
+        target:
+          $ref: '#/components/schemas/MigrationTarget'
+          description: Target specification for migrations
+        connection:
+          type: string
+          description: Connection name
+          example: core
+        schemas:
+          type: array
+          description: Array of schema names for dynamic schemas
+          items:
+            type: string
+          example: []
+        dry_run:
+          type: boolean
+          description: If true, perform a dry run without applying migrations
+          default: false
+      required:
+        - connection
+
+    MigrateDownRequest:
+      type: object
+      description: Request to execute down migrations (rollback)
+      properties:
+        migration_id:
+          type: string
+          description: Migration ID to rollback
+          example: core_20250101120000_create_users
+        schemas:
+          type: array
+          description: Array of schema names for dynamic schemas
+          items:
+            type: string
+          example: []
+        dry_run:
+          type: boolean
+          description: If true, perform a dry run without applying migrations
+          default: false
+      required:
+        - migration_id
+
+    MigrateResponse:
+      type: object
+      description: Response from migration operations
+      properties:
+        success:
+          type: boolean
+          description: Whether the operation was successful
+          example: true
+        applied:
+          type: array
+          description: List of migration IDs that were applied
+          items:
+            type: string
+          example:
+            - core_20250101120000_create_users
+            - core_20250101120001_add_indexes
+        skipped:
+          type: array
+          description: List of migration IDs that were skipped
+          items:
+            type: string
+          example: []
+        errors:
+          type: array
+          description: List of error messages (if any)
+          items:
+            type: string
+          example: []
+
+    MigrationListItem:
+      type: object
+      description: A single migration in the list
+      properties:
+        migration_id:
+          type: string
+          description: Unique migration identifier
+          example: core_20250101120000_create_users
+        schema:
+          type: string
+          description: Schema name
+          example: core
+        table:
+          type: string
+          description: Table name (if applicable)
+          example: users
+        version:
+          type: string
+          description: Migration version
+          example: "20250101120000"
+        name:
+          type: string
+          description: Migration name
+          example: create_users
+        connection:
+          type: string
+          description: Connection name
+          example: core
+        backend:
+          type: string
+          description: Backend type
+          example: postgresql
+        applied:
+          type: boolean
+          description: Whether the migration has been applied
+          example: true
+        status:
+          type: string
+          description: Migration status
+          enum:
+            - pending
+            - success
+            - failed
+            - rolled_back
+          example: success
+        applied_at:
+          type: string
+          format: date-time
+          description: Timestamp when migration was last applied
+          example: "2025-01-01T12:00:00Z"
+        error_message:
+          type: string
+          description: Error message (if migration failed)
+          nullable: true
+          example: null
+
+    MigrationListResponse:
+      type: object
+      description: Response containing a list of migrations
+      properties:
+        items:
+          type: array
+          description: List of migrations
+          items:
+            $ref: '#/components/schemas/MigrationListItem'
+        total:
+          type: integer
+          description: Total number of migrations
+          example: 10
+
+    MigrationDetailResponse:
+      type: object
+      description: Detailed information about a migration
+      properties:
+        migration_id:
+          type: string
+          description: Unique migration identifier
+          example: core_20250101120000_create_users
+        schema:
+          type: string
+          description: Schema name
+          example: core
+        table:
+          type: string
+          description: Table name (if applicable)
+          example: users
+        version:
+          type: string
+          description: Migration version
+          example: "20250101120000"
+        name:
+          type: string
+          description: Migration name
+          example: create_users
+        connection:
+          type: string
+          description: Connection name
+          example: core
+        backend:
+          type: string
+          description: Backend type
+          example: postgresql
+        applied:
+          type: boolean
+          description: Whether the migration has been applied
+          example: true
+
+    MigrationStatusResponse:
+      type: object
+      description: Status information for a migration
+      properties:
+        migration_id:
+          type: string
+          description: Migration ID
+          example: core_20250101120000_create_users
+        status:
+          type: string
+          description: Current status
+          enum:
+            - pending
+            - success
+            - failed
+            - rolled_back
+          example: success
+        applied:
+          type: boolean
+          description: Whether the migration is currently applied
+          example: true
+        applied_at:
+          type: string
+          format: date-time
+          description: Timestamp when migration was last applied
+          nullable: true
+          example: "2025-01-01T12:00:00Z"
+        error_message:
+          type: string
+          description: Error message (if any)
+          nullable: true
+          example: null
+
+    MigrationHistoryItem:
+      type: object
+      description: A single entry in migration history
+      properties:
+        migration_id:
+          type: string
+          description: Migration ID (may include rollback suffix)
+          example: core_20250101120000_create_users
+        schema:
+          type: string
+          description: Schema name
+          example: core
+        table:
+          type: string
+          description: Table name
+          example: users
+        version:
+          type: string
+          description: Migration version
+          example: "20250101120000"
+        connection:
+          type: string
+          description: Connection name
+          example: core
+        backend:
+          type: string
+          description: Backend type
+          example: postgresql
+        applied_at:
+          type: string
+          format: date-time
+          description: Timestamp when this execution occurred
+          example: "2025-01-01T12:00:00Z"
+        status:
+          type: string
+          description: Execution status
+          enum:
+            - pending
+            - success
+            - failed
+            - rolled_back
+          example: success
+        error_message:
+          type: string
+          description: Error message (if any)
+          nullable: true
+          example: null
+        executed_by:
+          type: string
+          description: Who executed the migration
+          example: frontend_user
+        execution_method:
+          type: string
+          description: How the migration was executed
+          enum:
+            - manual
+            - api
+          example: manual
+        execution_context:
+          type: object
+          description: Additional execution context
+          additionalProperties: true
+
+    MigrationHistoryResponse:
+      type: object
+      description: Complete history for a migration
+      properties:
+        migration_id:
+          type: string
+          description: Migration ID
+          example: core_20250101120000_create_users
+        history:
+          type: array
+          description: List of execution history entries
+          items:
+            $ref: '#/components/schemas/MigrationHistoryItem'
+
+    RollbackResponse:
+      type: object
+      description: Response from rollback operation
+      properties:
+        success:
+          type: boolean
+          description: Whether the rollback was successful
+          example: true
+        message:
+          type: string
+          description: Rollback message
+          example: Migration rolled back successfully
+        errors:
+          type: array
+          description: List of error messages (if any)
+          items:
+            type: string
+          example: []
+
+    HealthResponse:
+      type: object
+      description: Health check response
+      properties:
+        status:
+          type: string
+          description: Overall health status
+          enum:
+            - healthy
+            - unhealthy
+          example: healthy
+        checks:
+          type: object
+          description: Individual health checks
+          additionalProperties:
+            type: string
+          example:
+            executor: ok
+
+    Error:
+      type: object
+      description: Error response
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Invalid request parameters

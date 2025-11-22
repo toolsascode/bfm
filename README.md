@@ -26,6 +26,13 @@ BfM is a comprehensive database migration system that supports multiple backends
 - Dry-run mode for testing
 - Idempotent migrations
 
+## Screenshots
+
+| | |
+|---|---|
+| <img src="./assets/screenshots/login.jpeg" alt="Login" width="400" /> | <img src="./assets/screenshots/dashboard.jpeg" alt="Dashboard" width="400" /> |
+| <img src="./assets/screenshots/MigrationList.jpeg" alt="Migration List" width="400" /> | <img src="./assets/screenshots/MigrationDetails.jpeg" alt="Migration Details" width="400" /> |
+
 ## Configuration
 
 ### Environment Variables
@@ -203,6 +210,8 @@ Once running, you can access:
 
 - **Frontend UI**: <http://localhost:7070>
 - **HTTP API**: <http://localhost:7070/api/v1>
+- **OpenAPI Spec (YAML)**: <http://localhost:7070/api/v1/openapi.yaml>
+- **OpenAPI Spec (JSON)**: <http://localhost:7070/api/v1/openapi.json>
 - **gRPC API**: localhost:9090
 - **Health Check**: <http://localhost:7070/health>
 
@@ -398,6 +407,37 @@ See `docs/DEPLOYMENT.md` for more detailed deployment instructions.
 
 ## Usage
 
+### OpenAPI Specification
+
+BfM provides a complete OpenAPI v3.2.0 specification for the HTTP API. The specification is available at:
+
+- **YAML format**: `http://localhost:7070/api/v1/openapi.yaml`
+- **JSON format**: `http://localhost:7070/api/v1/openapi.json`
+
+The OpenAPI specification includes:
+- Complete API endpoint documentation
+- Request/response schemas
+- Authentication requirements
+- Example requests and responses
+- Error response formats
+
+You can use the OpenAPI spec with tools like:
+
+- [Swagger UI](https://swagger.io/tools/swagger-ui/) - Interactive API documentation
+- [Postman](https://www.postman.com/) - API testing and development
+- [OpenAPI Generator](https://openapi-generator.tech/) - Generate client SDKs
+- [Redoc](https://github.com/Redocly/redoc) - Beautiful API documentation
+
+**Example: View OpenAPI spec in Swagger UI**
+
+```bash
+# Using Docker
+docker run -p 8080:8080 -e SWAGGER_JSON=/openapi.yaml -v $(pwd)/api/internal/api/http/openapi.yaml:/openapi.yaml swaggerapi/swagger-ui
+
+# Or use online Swagger Editor
+# Paste the content from http://localhost:7070/api/v1/openapi.yaml
+```
+
 ### HTTP API
 
 #### Migrate Endpoint
@@ -432,6 +472,8 @@ Response:
   "errors": []
 }
 ```
+
+**Note**: For complete API documentation, see the [OpenAPI Specification](#openapi-specification) section above.
 
 ### Health Check
 
