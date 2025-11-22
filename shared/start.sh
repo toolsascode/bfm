@@ -103,7 +103,7 @@ echo -e "${GREEN}Generating runtime config for frontend...${NC}"
 cat > /app/frontend/runtime-config.js << EOF
 window.__RUNTIME_CONFIG__ = {
   BFM_API_URL: '${BFM_FRONTEND_API_URL:-/api}',
-  BFM_API_TOKEN: '${BFM_FRONTEND_API_TOKEN:-}',
+  BFM_API_TOKEN: '${BFM_API_TOKEN:-}',
   BFM_AUTH_ENABLED: '${BFM_FRONTEND_AUTH_ENABLED:-true}',
   BFM_AUTH_USERNAME: '${BFM_FRONTEND_AUTH_USERNAME:-admin}',
   BFM_AUTH_PASSWORD: '${BFM_FRONTEND_AUTH_PASSWORD:-admin123}'

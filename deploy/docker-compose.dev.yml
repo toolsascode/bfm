@@ -128,16 +128,10 @@ services:
       - DOCKER=true
       # Frontend Configuration (BFM_* prefix, mapped to VITE_* for Vite dev server)
       - BFM_FRONTEND_API_URL=${BFM_FRONTEND_API_URL:-/api}
-      - BFM_FRONTEND_API_TOKEN=${BFM_FRONTEND_API_TOKEN:-${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}}
+      - BFM_API_TOKEN=${BFM_API_TOKEN:-${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}}
       - BFM_FRONTEND_AUTH_ENABLED=${BFM_FRONTEND_AUTH_ENABLED:-true}
       - BFM_FRONTEND_AUTH_USERNAME=${BFM_FRONTEND_AUTH_USERNAME:-admin}
       - BFM_FRONTEND_AUTH_PASSWORD=${BFM_FRONTEND_AUTH_PASSWORD:-admin123}
-      # Map BFM_* to VITE_* for Vite dev server (Vite only exposes VITE_* prefixed vars)
-      - VITE_BFM_API_URL=${BFM_FRONTEND_API_URL:-/api}
-      - VITE_BFM_API_TOKEN=${BFM_FRONTEND_API_TOKEN:-${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}}
-      - VITE_AUTH_ENABLED=${BFM_FRONTEND_AUTH_ENABLED:-true}
-      - VITE_AUTH_USERNAME=${BFM_FRONTEND_AUTH_USERNAME:-admin}
-      - VITE_AUTH_PASSWORD=${BFM_FRONTEND_AUTH_PASSWORD:-admin123}
       - NODE_ENV=development
     volumes:
       # Mount source code for hot-reload

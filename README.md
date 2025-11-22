@@ -311,8 +311,8 @@ The CLI expects migration scripts in the following structure:
 
 ```
 {sfm_path}/
-  {backend}/
-    {connection}/
+  {backend}/                    # The first folder after SfM is considered the backend.
+    {connection}/               # The last folder will be considered a connection.
       {version}_{name}.up.sql
       {version}_{name}.down.sql
       # OR for etcd
