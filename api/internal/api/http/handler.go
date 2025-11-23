@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 		api.GET("/migrations/:id/status", h.authenticate, h.getMigrationStatus)
 		api.GET("/migrations/:id/history", h.authenticate, h.getMigrationHistory)
 		api.POST("/migrations/:id/rollback", h.authenticate, h.rollbackMigration)
+		api.POST("/migrations/reindex", h.authenticate, h.reindexMigrations)
 		api.GET("/health", h.Health)
 		api.GET("/openapi.yaml", h.OpenAPISpec)
 		api.GET("/openapi.json", h.OpenAPISpecJSON)
@@ -299,19 +301,40 @@ func (h *Handler) getMigration(c *gin.Context) {
 		return
 	}
 
-	tableValue := ""
-	if migration.Table != nil {
+	// Get schema and table from state tracker (migrations_list table)
+	// These are populated when the migration is executed or registered
+	var schemaValue, tableValue string
+	migrationList, err := h.executor.GetMigrationList(c.Request.Context(), &state.MigrationFilters{})
+	if err == nil {
+		for _, item := range migrationList {
+			if item.MigrationID == migrationID {
+				schemaValue = item.Schema
+				tableValue = item.Table
+				break
+			}
+		}
+	}
+
+	// Fallback to registry values if not found in state tracker
+	if tableValue == "" && migration.Table != nil {
 		tableValue = *migration.Table
 	}
+	if schemaValue == "" {
+		schemaValue = migration.Schema
+	}
+
 	response := dto.MigrationDetailResponse{
-		MigrationID: migrationID,
-		Schema:      migration.Schema,
-		Table:       tableValue,
-		Version:     migration.Version,
-		Name:        migration.Name,
-		Connection:  migration.Connection,
-		Backend:     migration.Backend,
-		Applied:     applied,
+		MigrationID:  migrationID,
+		Schema:       schemaValue,
+		Table:        tableValue,
+		Version:      migration.Version,
+		Name:         migration.Name,
+		Connection:   migration.Connection,
+		Backend:      migration.Backend,
+		Applied:      applied,
+		UpSQL:        migration.UpSQL,
+		DownSQL:      migration.DownSQL,
+		Dependencies: migration.Dependencies,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -541,6 +564,31 @@ func (h *Handler) Health(c *gin.Context) {
 	}
 
 	c.JSON(statusCode, healthStatus)
+}
+
+// reindexMigrations reindexes all migration files and synchronizes with database
+func (h *Handler) reindexMigrations(c *gin.Context) {
+	// Get SFM path from environment variable
+	sfmPath := os.Getenv("BFM_SFM_PATH")
+	if sfmPath == "" {
+		// Default to ../sfm relative to bfm directory
+		sfmPath = "../sfm"
+	}
+
+	result, err := h.executor.ReindexMigrations(c.Request.Context(), sfmPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := dto.ReindexResponse{
+		Added:   result.Added,
+		Removed: result.Removed,
+		Updated: result.Updated,
+		Total:   result.Total,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 //go:embed openapi.yaml

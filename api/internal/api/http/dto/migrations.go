@@ -35,14 +35,17 @@ type MigrationListItem struct {
 
 // MigrationDetailResponse represents detailed migration information
 type MigrationDetailResponse struct {
-	MigrationID string `json:"migration_id"`
-	Schema      string `json:"schema"`
-	Table       string `json:"table"`
-	Version     string `json:"version"`
-	Name        string `json:"name"`
-	Connection  string `json:"connection"`
-	Backend     string `json:"backend"`
-	Applied     bool   `json:"applied"`
+	MigrationID  string   `json:"migration_id"`
+	Schema       string   `json:"schema"`
+	Table        string   `json:"table"`
+	Version      string   `json:"version"`
+	Name         string   `json:"name"`
+	Connection   string   `json:"connection"`
+	Backend      string   `json:"backend"`
+	Applied      bool     `json:"applied"`
+	UpSQL        string   `json:"up_sql,omitempty"`       // Contains SQL for SQL backends or JSON for NoSQL backends
+	DownSQL      string   `json:"down_sql,omitempty"`     // Contains SQL for SQL backends or JSON for NoSQL backends
+	Dependencies []string `json:"dependencies,omitempty"` // List of migration names this migration depends on
 }
 
 // RollbackResponse represents a rollback operation result
@@ -50,6 +53,14 @@ type RollbackResponse struct {
 	Success bool     `json:"success"`
 	Message string   `json:"message"`
 	Errors  []string `json:"errors,omitempty"`
+}
+
+// ReindexResponse represents the result of a reindex operation
+type ReindexResponse struct {
+	Added   []string `json:"added"`
+	Removed []string `json:"removed"`
+	Updated []string `json:"updated"`
+	Total   int      `json:"total"`
 }
 
 // MigrateUpRequest represents a request to execute up migrations

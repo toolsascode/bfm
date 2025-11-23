@@ -124,12 +124,19 @@ func (m *mockRegistry) GetByBackend(backendName string) []*backends.MigrationScr
 	return results
 }
 
-func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	// Match executor's getMigrationID format
-	if migration.Schema != "" {
-		return migration.Schema + "_" + migration.Connection + "_" + migration.Version + "_" + migration.Name
+func (m *mockRegistry) GetMigrationByName(name string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Name == name {
+			results = append(results, migration)
+		}
 	}
-	return migration.Connection + "_" + migration.Version + "_" + migration.Name
+	return results
+}
+
+func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
+	// Match executor's getMigrationID format: {version}_{name}
+	return migration.Version + "_" + migration.Name
 }
 
 // mockStateTracker is a mock implementation of state.StateTracker
@@ -176,6 +183,35 @@ func (m *mockStateTracker) GetLastMigrationVersion(ctx interface{}, schema, tabl
 }
 
 func (m *mockStateTracker) RegisterScannedMigration(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	return nil
+}
+
+func (m *mockStateTracker) DeleteMigration(ctx interface{}, migrationID string) error {
+	// Remove from appliedMigrations
+	delete(m.appliedMigrations, migrationID)
+	// Remove from listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems = append(m.listItems[:i], m.listItems[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	// Update listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems[i].Schema = schema
+			m.listItems[i].Table = table
+			m.listItems[i].Version = version
+			m.listItems[i].Name = name
+			m.listItems[i].Connection = connection
+			m.listItems[i].Backend = backend
+			break
+		}
+	}
 	return nil
 }
 

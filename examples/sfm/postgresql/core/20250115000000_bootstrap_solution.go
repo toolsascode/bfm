@@ -13,13 +13,14 @@ var downSQL string
 
 func init() {
 	migration := &migrations.MigrationScript{
-		Schema:     "", // Dynamic - provided in request
-		Version:    "20250115000000",
-		Name:       "bootstrap_solution",
-		Connection: "core",
-		Backend:    "postgresql",
-		UpSQL:      upSQL,
-		DownSQL:    downSQL,
+		Schema:       "core",
+		Version:      "20250115000000",
+		Name:         "bootstrap_solution",
+		Connection:   "core",
+		Backend:      "postgresql",
+		UpSQL:        upSQL,
+		DownSQL:      downSQL,
+		Dependencies: []string{}, // No dependencies - this is a base migration
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

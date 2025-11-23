@@ -345,7 +345,7 @@ dev-logs: ## Show logs from all services (development)
 
 dev-bfm: ## Start BFM backend with hot-reload (requires air)
 	@echo "$(GREEN)Starting BFM with hot-reload...$(NC)"
-	@echo "$(YELLOW)Note: Make sure 'air' is installed: go install github.com/cosmtrek/air@latest$(NC)"
+	@echo "$(YELLOW)Note: Make sure 'air' is installed: go install github.com/air-verse/air@latest$(NC)"
 	@cd bfm && air
 
 dev-ffm: ## Start FFM frontend with hot-reload

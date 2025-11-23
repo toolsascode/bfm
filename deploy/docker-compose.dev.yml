@@ -43,7 +43,7 @@ services:
   bfm-server:
     <<: *logging
     build:
-      context: ./api
+      context: ../api
       dockerfile: deploy/Dockerfile.dev
     container_name: bfm-server-dev
     ports:
@@ -96,9 +96,9 @@ services:
       - BFM_QUEUE_TYPE=${BFM_QUEUE_TYPE:-kafka}
     volumes:
       # Mount source code for hot-reload
-      - ./api:/app
+      - ../api:/app
       # Mount SFM examples to /sfm (separate from /app to avoid mount conflicts)
-      - ./examples/sfm:/sfm:ro
+      - ../examples/sfm:/sfm:ro
       # Exclude tmp directory from volume (let Air manage it)
       - /app/tmp
     depends_on:
@@ -118,7 +118,7 @@ services:
   ffm:
     <<: *logging
     build:
-      context: ./ffm
+      context: ../ffm
       dockerfile: Dockerfile.dev
     container_name: ffm-frontend-dev
     ports:
@@ -128,14 +128,14 @@ services:
       - DOCKER=true
       # Frontend Configuration (BFM_* prefix, mapped to VITE_* for Vite dev server)
       - BFM_FRONTEND_API_URL=${BFM_FRONTEND_API_URL:-/api}
-      - BFM_API_TOKEN=${BFM_API_TOKEN:-${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}}
+      - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
       - BFM_FRONTEND_AUTH_ENABLED=${BFM_FRONTEND_AUTH_ENABLED:-true}
       - BFM_FRONTEND_AUTH_USERNAME=${BFM_FRONTEND_AUTH_USERNAME:-admin}
       - BFM_FRONTEND_AUTH_PASSWORD=${BFM_FRONTEND_AUTH_PASSWORD:-admin123}
       - NODE_ENV=development
     volumes:
       # Mount source code for hot-reload
-      - ./ffm:/app
+      - ../ffm:/app
       # Preserve node_modules (use named volume to avoid conflicts)
       # Note: start.sh will install deps if volume is empty
       - ffm-node-modules:/app/node_modules

@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"bfm/api/internal/backends"
+	"bfm/api/internal/logger"
 	"bfm/api/internal/queue"
 	"bfm/api/internal/registry"
 	"bfm/api/internal/state"
@@ -187,6 +192,136 @@ func convertTarget(target *registry.MigrationTarget) *queue.MigrationTarget {
 	}
 }
 
+// topologicalSort sorts migrations based on their dependencies using topological sort
+// Returns sorted migrations and any errors (circular dependencies, missing dependencies)
+func (e *Executor) topologicalSort(migrations []*backends.MigrationScript) ([]*backends.MigrationScript, error) {
+	if len(migrations) == 0 {
+		return migrations, nil
+	}
+
+	// Build a map of migration name to migration(s) for quick lookup
+	// Since dependencies are by name, we need to handle multiple migrations with same name
+	nameToMigrations := make(map[string][]*backends.MigrationScript)
+	for _, migration := range migrations {
+		nameToMigrations[migration.Name] = append(nameToMigrations[migration.Name], migration)
+	}
+
+	// Build dependency graph: migration ID -> list of dependency migration IDs
+	// Also build reverse graph for topological sort
+	graph := make(map[string][]string)        // migration -> dependencies
+	reverseGraph := make(map[string][]string) // dependency -> dependents
+	inDegree := make(map[string]int)          // in-degree count for each migration
+
+	// Create a unique ID for each migration (using the same format as getMigrationID)
+	getID := func(m *backends.MigrationScript) string {
+		if m.Schema != "" {
+			return fmt.Sprintf("%s_%s_%s_%s", m.Schema, m.Connection, m.Version, m.Name)
+		}
+		return fmt.Sprintf("%s_%s_%s", m.Connection, m.Version, m.Name)
+	}
+
+	// Initialize all migrations in the graph
+	migrationMap := make(map[string]*backends.MigrationScript)
+	for _, migration := range migrations {
+		migrationID := getID(migration)
+		migrationMap[migrationID] = migration
+		graph[migrationID] = []string{}
+		reverseGraph[migrationID] = []string{}
+		inDegree[migrationID] = 0
+	}
+
+	// Build the dependency graph
+	var missingDeps []string
+	for _, migration := range migrations {
+		migrationID := getID(migration)
+		for _, depName := range migration.Dependencies {
+			// Find all migrations with this name (can be across different connections/backends)
+			depMigrations := e.registry.GetMigrationByName(depName)
+			if len(depMigrations) == 0 {
+				missingDeps = append(missingDeps, fmt.Sprintf("%s depends on %s (not found)", migrationID, depName))
+				continue
+			}
+
+			// For each dependency, check if it's in our current set of migrations
+			// If yes, add edge; if no, it's an external dependency (we'll treat as satisfied)
+			for _, depMigration := range depMigrations {
+				depID := getID(depMigration)
+				// Only add edge if dependency is in our current migration set
+				if _, exists := migrationMap[depID]; exists {
+					graph[migrationID] = append(graph[migrationID], depID)
+					reverseGraph[depID] = append(reverseGraph[depID], migrationID)
+					inDegree[migrationID]++
+				}
+			}
+		}
+	}
+
+	// Report missing dependencies
+	if len(missingDeps) > 0 {
+		return nil, fmt.Errorf("missing dependencies: %s", strings.Join(missingDeps, "; "))
+	}
+
+	// Detect circular dependencies and perform topological sort using Kahn's algorithm
+	// Start with migrations that have no dependencies (in-degree = 0)
+	queue := make([]string, 0)
+	for migrationID, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, migrationID)
+		}
+	}
+
+	// Sort initial queue by version for deterministic ordering
+	sort.Slice(queue, func(i, j int) bool {
+		return migrationMap[queue[i]].Version < migrationMap[queue[j]].Version
+	})
+
+	sorted := make([]*backends.MigrationScript, 0, len(migrations))
+	processed := make(map[string]bool)
+
+	// Process queue
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		if processed[currentID] {
+			continue
+		}
+
+		processed[currentID] = true
+		sorted = append(sorted, migrationMap[currentID])
+
+		// Reduce in-degree of dependents and add to queue
+		newQueueItems := make([]string, 0)
+		for _, dependentID := range reverseGraph[currentID] {
+			inDegree[dependentID]--
+			if inDegree[dependentID] == 0 {
+				newQueueItems = append(newQueueItems, dependentID)
+			}
+		}
+		// Sort new queue items by version before adding to maintain deterministic order
+		sort.Slice(newQueueItems, func(i, j int) bool {
+			return migrationMap[newQueueItems[i]].Version < migrationMap[newQueueItems[j]].Version
+		})
+		queue = append(queue, newQueueItems...)
+	}
+
+	// Check for circular dependencies (if not all migrations were processed)
+	if len(sorted) < len(migrations) {
+		var circular []string
+		for migrationID := range migrationMap {
+			if !processed[migrationID] {
+				circular = append(circular, migrationID)
+			}
+		}
+		return nil, fmt.Errorf("circular dependency detected involving migrations: %s", strings.Join(circular, ", "))
+	}
+
+	// The sorted list is already in topological order with version-based tiebreaking
+	// No need for additional sorting
+
+	return sorted, nil
+}
+
 // executeSync executes migrations synchronously
 func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
@@ -204,15 +339,27 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		}, nil
 	}
 
-	// Sort migrations by version
-	sort.Slice(migrations, func(i, j int) bool {
-		return migrations[i].Version < migrations[j].Version
-	})
+	// Sort migrations topologically based on dependencies
+	sortedMigrations, err := e.topologicalSort(migrations)
+	if err != nil {
+		// If topological sort fails, fall back to version-based sort and report error
+		logger.Warnf("Topological sort failed: %v, falling back to version-based sort", err)
+		sort.Slice(migrations, func(i, j int) bool {
+			return migrations[i].Version < migrations[j].Version
+		})
+		sortedMigrations = migrations
+		// Add error to result but continue execution
+	}
 
 	result := &ExecuteResult{
 		Applied: []string{},
 		Skipped: []string{},
 		Errors:  []string{},
+	}
+
+	// If topological sort had errors, add them to result
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", err))
 	}
 
 	// Get backend for the connection
@@ -233,10 +380,16 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 	defer func() { _ = backend.Close() }()
 
 	// Process each migration
-	for _, migration := range migrations {
+	for _, migration := range sortedMigrations {
 		migrationID := e.getMigrationID(migration)
 
-		// Check if already applied
+		// Resolve schema name (use provided or from migration)
+		schema := schemaName
+		if schema == "" {
+			schema = migration.Schema
+		}
+
+		// Check if already applied (use base migration ID for checking)
 		applied, err := e.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to check migration status for %s: %v", migrationID, err))
@@ -246,12 +399,6 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		if applied {
 			result.Skipped = append(result.Skipped, migrationID)
 			continue
-		}
-
-		// Resolve schema name (use provided or from migration)
-		schema := schemaName
-		if schema == "" {
-			schema = migration.Schema
 		}
 
 		// Execute migration
@@ -318,12 +465,37 @@ func (e *Executor) GetAllMigrations() []*backends.MigrationScript {
 }
 
 // GetMigrationByID finds a migration by its ID
+// Migration ID format: {version}_{name}
+// Also supports legacy formats for backward compatibility
 func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScript {
 	allMigrations := e.registry.GetAll()
 	for _, migration := range allMigrations {
+		// Primary format: {version}_{name}
 		id := e.getMigrationID(migration)
 		if id == migrationID {
 			return migration
+		}
+		// Legacy format support for backward compatibility: {connection}_{version}_{name}
+		legacyID := fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+		if legacyID == migrationID {
+			return migration
+		}
+		// Legacy format with schema: {schema}_{connection}_{version}_{name}
+		if migration.Schema != "" {
+			legacyIDWithSchema := fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+			if legacyIDWithSchema == migrationID {
+				return migration
+			}
+			// Legacy format with sanitized schema
+			sanitizedSchema := strings.ReplaceAll(migration.Schema, "/", "_")
+			sanitizedSchema = strings.Trim(sanitizedSchema, "_")
+			for strings.Contains(sanitizedSchema, "__") {
+				sanitizedSchema = strings.ReplaceAll(sanitizedSchema, "__", "_")
+			}
+			legacyIDWithSanitizedSchema := fmt.Sprintf("%s_%s_%s_%s", sanitizedSchema, migration.Connection, migration.Version, migration.Name)
+			if legacyIDWithSanitizedSchema == migrationID {
+				return migration
+			}
 		}
 	}
 	return nil
@@ -342,6 +514,185 @@ func (e *Executor) GetMigrationList(ctx context.Context, filters *state.Migratio
 // RegisterScannedMigration registers a scanned migration in migrations_list
 func (e *Executor) RegisterScannedMigration(ctx context.Context, migrationID, schema, table, version, name, connection, backend string) error {
 	return e.stateTracker.RegisterScannedMigration(ctx, migrationID, schema, table, version, name, connection, backend)
+}
+
+// UpdateMigrationInfo updates migration metadata without affecting status/history
+func (e *Executor) UpdateMigrationInfo(ctx context.Context, migrationID, schema, table, version, name, connection, backend string) error {
+	return e.stateTracker.UpdateMigrationInfo(ctx, migrationID, schema, table, version, name, connection, backend)
+}
+
+// ReindexResult represents the result of a reindex operation
+type ReindexResult struct {
+	Added   []string `json:"added"`
+	Removed []string `json:"removed"`
+	Updated []string `json:"updated"`
+	Total   int      `json:"total"`
+}
+
+// ReindexMigrations scans the filesystem and synchronizes the database with existing migration files
+func (e *Executor) ReindexMigrations(ctx context.Context, sfmPath string) (*ReindexResult, error) {
+	result := &ReindexResult{
+		Added:   []string{},
+		Removed: []string{},
+		Updated: []string{},
+	}
+
+	if sfmPath == "" {
+		return nil, fmt.Errorf("SFM path is required for reindexing")
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(sfmPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("SFM directory does not exist: %s", sfmPath)
+	}
+
+	// Scan all migration files from filesystem
+	// Structure: sfm/{backend}/{connection}/{version}_{name}.go
+	fileMigrations := make(map[string]struct {
+		backend    string
+		connection string
+		version    string
+		name       string
+		filePath   string
+		schema     string
+	})
+
+	err := filepath.Walk(sfmPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Only process .go files
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		// Skip test files
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		// Verify directory structure: sfm/{backend}/{connection}/{version}_{name}.go
+		relPath, err := filepath.Rel(sfmPath, path)
+		if err != nil {
+			return nil // Skip files we can't process
+		}
+
+		parts := strings.Split(relPath, string(filepath.Separator))
+		if len(parts) < 3 {
+			return nil // Not in expected structure
+		}
+
+		filename := parts[len(parts)-1]
+		filenameWithoutExt := strings.TrimSuffix(filename, ".go")
+
+		// Verify filename format: {version}_{name}.go where version is 14 digits
+		versionRegex := regexp.MustCompile(`^(\d{14})_(.+)$`)
+		matches := versionRegex.FindStringSubmatch(filenameWithoutExt)
+		if len(matches) != 3 {
+			return nil // Skip files that don't match expected format
+		}
+
+		version := matches[1]
+		name := matches[2]
+		backend := parts[0]
+		connection := parts[1]
+
+		// Extract schema from .go file (for reference, not used in ID)
+		schema := extractSchemaFromGoFile(path)
+
+		// Generate migration ID using the same format as getMigrationID
+		// Format: {version}_{name} (just the filename)
+		migrationID := fmt.Sprintf("%s_%s", version, name)
+
+		fileMigrations[migrationID] = struct {
+			backend    string
+			connection string
+			version    string
+			name       string
+			filePath   string
+			schema     string
+		}{backend, connection, version, name, path, schema}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error scanning SFM directory: %w", err)
+	}
+
+	// Get all migrations from database
+	dbMigrations, err := e.stateTracker.GetMigrationList(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get migrations from database: %w", err)
+	}
+
+	dbMigrationMap := make(map[string]*state.MigrationListItem)
+	for _, migration := range dbMigrations {
+		dbMigrationMap[migration.MigrationID] = migration
+	}
+
+	// Find migrations to add or update
+	for migrationID, fileMigration := range fileMigrations {
+		dbMigration, exists := dbMigrationMap[migrationID]
+		if !exists {
+			// Register this migration with schema from .go file
+			if err := e.stateTracker.RegisterScannedMigration(ctx, migrationID, fileMigration.schema, "", fileMigration.version, fileMigration.name, fileMigration.connection, fileMigration.backend); err != nil {
+				// Log error but continue
+				fmt.Printf("Warning: Failed to register migration %s: %v\n", migrationID, err)
+			} else {
+				result.Added = append(result.Added, migrationID)
+			}
+		} else {
+			// Migration exists - check if schema or other fields need updating
+			needsUpdate := false
+			updateSchema := dbMigration.Schema
+
+			// Check if schema differs (file schema takes precedence if non-empty)
+			if fileMigration.schema != "" && dbMigration.Schema != fileMigration.schema {
+				needsUpdate = true
+				updateSchema = fileMigration.schema
+			}
+
+			// Check if other fields differ (version, name, connection, backend)
+			if dbMigration.Version != fileMigration.version ||
+				dbMigration.Name != fileMigration.name ||
+				dbMigration.Connection != fileMigration.connection ||
+				dbMigration.Backend != fileMigration.backend {
+				needsUpdate = true
+			}
+
+			if needsUpdate {
+				// Update the migration metadata without affecting status/history
+				if err := e.UpdateMigrationInfo(ctx, migrationID, updateSchema, dbMigration.Table, fileMigration.version, fileMigration.name, fileMigration.connection, fileMigration.backend); err != nil {
+					fmt.Printf("Warning: Failed to update migration %s: %v\n", migrationID, err)
+				} else {
+					result.Updated = append(result.Updated, migrationID)
+				}
+			}
+		}
+	}
+
+	// Find migrations to remove (in database but not in filesystem)
+	for migrationID := range dbMigrationMap {
+		if _, exists := fileMigrations[migrationID]; !exists {
+			// Delete this migration from database
+			if err := e.stateTracker.DeleteMigration(ctx, migrationID); err != nil {
+				// Log error but continue
+				fmt.Printf("Warning: Failed to delete migration %s: %v\n", migrationID, err)
+			} else {
+				result.Removed = append(result.Removed, migrationID)
+			}
+		}
+	}
+
+	// Get updated count
+	updatedMigrations, err := e.stateTracker.GetMigrationList(ctx, nil)
+	if err == nil {
+		result.Total = len(updatedMigrations)
+	}
+
+	return result, nil
 }
 
 // IsMigrationApplied checks if a migration has been applied
@@ -513,11 +864,16 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 }
 
 // getMigrationIDWithSchema generates a migration ID with a specific schema
+// This is used when checking if a migration is applied to a specific schema
+// Base migration ID is {version}_{name}, but for schema-specific checks we include schema
 func (e *Executor) getMigrationIDWithSchema(migration *backends.MigrationScript, schema string) string {
+	baseID := e.getMigrationID(migration)
 	if schema != "" {
-		return fmt.Sprintf("%s_%s_%s_%s", schema, migration.Connection, migration.Version, migration.Name)
+		// For schema-specific checks, prefix with schema
+		// This allows the same migration to be tracked separately per schema
+		return fmt.Sprintf("%s_%s", schema, baseID)
 	}
-	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+	return baseID
 }
 
 // Rollback rolls back a migration
@@ -671,13 +1027,9 @@ type ExecuteResult struct {
 }
 
 // getMigrationID generates a unique migration ID
+// Migration ID is just the filename: {version}_{name}
 func (e *Executor) getMigrationID(migration *backends.MigrationScript) string {
-	// If schema is provided, include it in the ID for uniqueness
-	// Format: {schema}_{connection}_{version}_{name} or {connection}_{version}_{name}
-	if migration.Schema != "" {
-		return fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
-	}
-	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+	return fmt.Sprintf("%s_%s", migration.Version, migration.Name)
 }
 
 // getConnectionConfig gets connection config

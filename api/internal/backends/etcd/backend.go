@@ -208,13 +208,37 @@ func (b *Backend) HealthCheck(ctx context.Context) error {
 }
 
 // getSchemaKey builds a key for a schema
+// For etcd, if schemaName is provided, it should be used as the full prefix (not appended to connection prefix)
 func (b *Backend) getSchemaKey(schemaName, suffix string) string {
-	return b.prefix + schemaName + "/" + suffix
+	// If schemaName is provided and looks like a full path (starts with /), use it as the full prefix
+	if schemaName != "" && strings.HasPrefix(schemaName, "/") {
+		if !strings.HasSuffix(schemaName, "/") {
+			schemaName += "/"
+		}
+		return schemaName + suffix
+	}
+	// Otherwise, use connection prefix + schema name
+	if schemaName != "" {
+		return b.prefix + schemaName + "/" + suffix
+	}
+	return b.prefix + suffix
 }
 
 // getTableKey builds a key for a table within a schema
+// For etcd, if schemaName is provided and looks like a full path, use it as the full prefix
 // If tableName is nil or empty, only uses schema name
 func (b *Backend) getTableKey(schemaName string, tableName *string, key string) string {
+	// If schemaName is provided and looks like a full path (starts with /), use it as the full prefix
+	if schemaName != "" && strings.HasPrefix(schemaName, "/") {
+		if !strings.HasSuffix(schemaName, "/") {
+			schemaName += "/"
+		}
+		if tableName != nil && *tableName != "" {
+			return schemaName + *tableName + "/" + key
+		}
+		return schemaName + key
+	}
+	// Otherwise, use connection prefix + schema name
 	if tableName == nil || *tableName == "" {
 		return b.prefix + schemaName + "/" + key
 	}

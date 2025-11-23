@@ -199,10 +199,12 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		}
 
 		upsertListSQL := fmt.Sprintf(`
-			INSERT INTO %s (migration_id, schema, table_name, version, name, connection, backend,
+			INSERT INTO %s (migration_id, "schema", table_name, version, name, connection, backend,
 			                last_status, last_applied_at, last_error_message, last_history_id, first_seen_at, last_updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (migration_id) DO UPDATE SET
+				"schema" = EXCLUDED."schema",
+				table_name = EXCLUDED.table_name,
 				last_status = EXCLUDED.last_status,
 				last_applied_at = EXCLUDED.last_applied_at,
 				last_error_message = EXCLUDED.last_error_message,
@@ -480,7 +482,7 @@ func (t *Tracker) RegisterScannedMigration(ctx interface{}, migrationID, schema,
 		listTableName = quoteIdentifier(t.schema) + "." + quoteIdentifier("migrations_list")
 	}
 
-	insertListSQL := `INSERT INTO ` + listTableName + ` (migration_id, schema, table_name, version, name, connection, backend,
+	insertListSQL := `INSERT INTO ` + listTableName + ` (migration_id, "schema", table_name, version, name, connection, backend,
 		                last_status, first_seen_at, last_updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (migration_id) DO NOTHING`
@@ -491,6 +493,63 @@ func (t *Tracker) RegisterScannedMigration(ctx interface{}, migrationID, schema,
 		"pending", now, now)
 	if err != nil {
 		return fmt.Errorf("failed to register scanned migration: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateMigrationInfo updates migration metadata (schema, version, name, connection, backend) without affecting status/history
+func (t *Tracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	ctxVal := ctx.(context.Context)
+
+	listTableName := "migrations_list"
+	if t.schema != "" && t.schema != "public" {
+		listTableName = quoteIdentifier(t.schema) + "." + quoteIdentifier("migrations_list")
+	}
+
+	updateSQL := fmt.Sprintf(`
+		UPDATE %s
+		SET "schema" = $1,
+		    table_name = $2,
+		    version = $3,
+		    name = $4,
+		    connection = $5,
+		    backend = $6,
+		    last_updated_at = CURRENT_TIMESTAMP
+		WHERE migration_id = $7
+	`, listTableName)
+
+	result, err := t.db.ExecContext(ctxVal, updateSQL,
+		schema, table, version, name, connection, backend, migrationID)
+	if err != nil {
+		return fmt.Errorf("failed to update migration info: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("migration %s not found", migrationID)
+	}
+
+	return nil
+}
+
+// DeleteMigration deletes a migration from migrations_list (cascades to history via foreign key)
+func (t *Tracker) DeleteMigration(ctx interface{}, migrationID string) error {
+	ctxVal := ctx.(context.Context)
+
+	listTableName := "migrations_list"
+	if t.schema != "" && t.schema != "public" {
+		listTableName = quoteIdentifier(t.schema) + "." + quoteIdentifier("migrations_list")
+	}
+
+	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE migration_id = $1", listTableName)
+	_, err := t.db.ExecContext(ctxVal, deleteSQL, migrationID)
+	if err != nil {
+		return fmt.Errorf("failed to delete migration: %w", err)
 	}
 
 	return nil

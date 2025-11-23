@@ -26,13 +26,13 @@ Install Air using one of these methods:
 
 ```bash
 # Using Go
-go install github.com/cosmtrek/air@latest
+go install github.com/air-verse/air@latest
 
 # Using Homebrew (macOS)
 brew install air
 
 # Using curl (Linux/macOS)
-curl -sSfL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+curl -sSfL https://raw.githubusercontent.com/air-verse/air/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
 ```
 
 **Usage:**

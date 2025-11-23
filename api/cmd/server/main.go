@@ -97,14 +97,41 @@ func main() {
 		sfmPath = "../sfm"
 	}
 
+	// Validate SFM path exists
+	if _, err := os.Stat(sfmPath); os.IsNotExist(err) {
+		logger.Fatalf("SFM directory does not exist: %s (set BFM_SFM_PATH environment variable)", sfmPath)
+	}
+
+	logger.Infof("Loading migrations from SFM directory: %s", sfmPath)
+
 	loader := executor.NewLoader(sfmPath)
 	loader.SetExecutor(exec) // Set executor so loader can register scanned migrations
 	if err := loader.LoadAll(registry.GlobalRegistry); err != nil {
-		logger.Fatalf("Failed to load migrations: %v", err)
+		logger.Fatalf("Failed to load migrations from %s: %v", sfmPath, err)
 	}
 
 	migrationCount := len(registry.GlobalRegistry.GetAll())
-	logger.Infof("Loaded %d migration(s) from %s", migrationCount, sfmPath)
+	if migrationCount == 0 {
+		logger.Warnf("No migrations loaded from %s - ensure migration files exist in the expected directory structure", sfmPath)
+	} else {
+		logger.Infof("✅ Successfully loaded %d migration(s) from %s", migrationCount, sfmPath)
+
+		// Log migration breakdown by backend/connection for better visibility
+		allMigrations := registry.GlobalRegistry.GetAll()
+		backendCounts := make(map[string]map[string]int)
+		for _, mig := range allMigrations {
+			if backendCounts[mig.Backend] == nil {
+				backendCounts[mig.Backend] = make(map[string]int)
+			}
+			backendCounts[mig.Backend][mig.Connection]++
+		}
+
+		for backend, connections := range backendCounts {
+			for connection, count := range connections {
+				logger.Infof("  - %s/%s: %d migration(s)", backend, connection, count)
+			}
+		}
+	}
 
 	// Start watching for new migration files
 	loader.StartWatching()

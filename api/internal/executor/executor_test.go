@@ -81,11 +81,19 @@ func (m *mockRegistry) GetByBackend(backendName string) []*backends.MigrationScr
 	return results
 }
 
-func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	if migration.Schema != "" {
-		return migration.Schema + "_" + migration.Connection + "_" + migration.Version + "_" + migration.Name
+func (m *mockRegistry) GetMigrationByName(name string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Name == name {
+			results = append(results, migration)
+		}
 	}
-	return migration.Connection + "_" + migration.Version + "_" + migration.Name
+	return results
+}
+
+func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
+	// Migration ID is just the filename: {version}_{name}
+	return migration.Version + "_" + migration.Name
 }
 
 // mockStateTracker is a mock implementation of state.StateTracker
@@ -140,6 +148,35 @@ func (m *mockStateTracker) GetLastMigrationVersion(ctx interface{}, schema, tabl
 }
 
 func (m *mockStateTracker) RegisterScannedMigration(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	return nil
+}
+
+func (m *mockStateTracker) DeleteMigration(ctx interface{}, migrationID string) error {
+	// Remove from appliedMigrations
+	delete(m.appliedMigrations, migrationID)
+	// Remove from listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems = append(m.listItems[:i], m.listItems[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	// Update listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems[i].Schema = schema
+			m.listItems[i].Table = table
+			m.listItems[i].Version = version
+			m.listItems[i].Name = name
+			m.listItems[i].Connection = connection
+			m.listItems[i].Backend = backend
+			break
+		}
+	}
 	return nil
 }
 
@@ -349,7 +386,7 @@ func TestExecutor_GetMigrationByID(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
-	migrationID := "public_test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	found := exec.GetMigrationByID(migrationID)
 
 	if found == nil {
@@ -465,7 +502,7 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	target := &registry.MigrationTarget{
@@ -682,7 +719,7 @@ func TestExecutor_ExecuteDown_NotApplied(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	// Migration is not applied
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -723,7 +760,7 @@ func TestExecutor_ExecuteDown_Successful(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -770,9 +807,9 @@ func TestExecutor_ExecuteDown_WithSchemas(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
-	tracker.appliedMigrations["schema1_test_20240101120000_test_migration"] = true
-	tracker.appliedMigrations["schema2_test_20240101120000_test_migration"] = true
+	migrationID := "20240101120000_test_migration"
+	tracker.appliedMigrations["schema1_20240101120000_test_migration"] = true
+	tracker.appliedMigrations["schema2_20240101120000_test_migration"] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{"schema1", "schema2"}, false)
 	if err != nil {
@@ -812,7 +849,7 @@ func TestExecutor_ExecuteDown_NoDownSQL(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -854,7 +891,7 @@ func TestExecutor_ExecuteDown_ExecutionError(t *testing.T) {
 	backend.executeError = errors.New("execution failed")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -899,7 +936,7 @@ func TestExecutor_ExecuteDown_CheckStatusError(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
 	if err != nil {
@@ -942,7 +979,7 @@ func TestExecutor_Rollback_NotApplied(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	// Migration is not applied
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1013,7 +1050,7 @@ func TestExecutor_Rollback_NoDownSQL(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1057,7 +1094,7 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1102,7 +1139,7 @@ func TestExecutor_Rollback_ExecutionError(t *testing.T) {
 	backend.executeError = errors.New("rollback execution failed")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1581,7 +1618,7 @@ func TestExecutor_ExecuteDown_RecordMigrationError(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := "20240101120000_test_migration"
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)

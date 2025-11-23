@@ -31,6 +31,9 @@ type Registry interface {
 
 	// GetByBackend returns migrations for a specific backend
 	GetByBackend(backendName string) []*backends.MigrationScript
+
+	// GetMigrationByName finds migrations by name across all connections/backends
+	GetMigrationByName(name string) []*backends.MigrationScript
 }
 
 // GlobalRegistry is the global migration registry instance
@@ -119,11 +122,17 @@ func (r *inMemoryRegistry) GetByBackend(backendName string) []*backends.Migratio
 	return results
 }
 
-func (r *inMemoryRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	// If schema is provided, include it in the ID for uniqueness
-	// Format: {schema}_{connection}_{version}_{name} or {connection}_{version}_{name}
-	if migration.Schema != "" {
-		return fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+func (r *inMemoryRegistry) GetMigrationByName(name string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range r.migrations {
+		if migration.Name == name {
+			results = append(results, migration)
+		}
 	}
-	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+	return results
+}
+
+func (r *inMemoryRegistry) getMigrationID(migration *backends.MigrationScript) string {
+	// Migration ID is just the filename: {version}_{name}
+	return fmt.Sprintf("%s_%s", migration.Version, migration.Name)
 }

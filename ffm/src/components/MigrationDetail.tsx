@@ -186,6 +186,10 @@ export default function MigrationDetail() {
     confirmButtonClass?: string;
     onConfirm: () => void;
   } | null>(null);
+  const [expandedFiles, setExpandedFiles] = useState<{
+    up: boolean;
+    down: boolean;
+  }>({ up: false, down: false });
 
   useEffect(() => {
     if (id) {
@@ -511,11 +515,11 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Migration ID
               </label>
-              <div className="text-gray-800 text-base font-medium">
+              <div className="text-gray-800 text-base">
                 {migration.migration_id}
               </div>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col col-span-full">
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Name
               </label>
@@ -577,8 +581,187 @@ export default function MigrationDetail() {
                 {migration.applied ? "Yes" : "No"}
               </div>
             </div>
+            {migration.dependencies && migration.dependencies.length > 0 && (
+              <div className="flex flex-col col-span-full">
+                <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
+                  Dependencies
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {migration.dependencies.map((dep, index) => (
+                    <span
+                      key={index}
+                      className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                    >
+                      {dep}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-gray-500 text-xs mt-2 italic">
+                  This migration depends on the above migrations and will
+                  execute after them.
+                </p>
+              </div>
+            )}
           </div>
         </div>
+
+        {(migration.up_sql || migration.down_sql) && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Migration Files
+            </h2>
+            <div className="space-y-4">
+              {migration.up_sql && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      onClick={() =>
+                        setExpandedFiles((prev) => ({ ...prev, up: !prev.up }))
+                      }
+                      className="flex items-center gap-2 text-gray-700 text-base font-medium hover:text-gray-900 transition-colors"
+                    >
+                      <svg
+                        className={`w-5 h-5 transition-transform ${
+                          expandedFiles.up ? "rotate-90" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                      {isNoSQLBackend(migration.backend) ? (
+                        <>Up Migration (.up.json)</>
+                      ) : (
+                        <>Up Migration (.up.sql)</>
+                      )}
+                    </button>
+                    {expandedFiles.up && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(migration.up_sql || "");
+                          toastService.success("Copied to clipboard");
+                        }}
+                        className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                  {expandedFiles.up && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap break-words m-0">
+                        <code>
+                          {(() => {
+                            const content = migration.up_sql || "";
+                            // Try to format JSON if it looks like JSON
+                            if (
+                              isNoSQLBackend(migration.backend) &&
+                              content.trim().startsWith("{")
+                            ) {
+                              try {
+                                const parsed = JSON.parse(content);
+                                return JSON.stringify(parsed, null, 2);
+                              } catch {
+                                return content;
+                              }
+                            }
+                            return content;
+                          })()}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+              {migration.down_sql && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      onClick={() =>
+                        setExpandedFiles((prev) => ({
+                          ...prev,
+                          down: !prev.down,
+                        }))
+                      }
+                      className="flex items-center gap-2 text-gray-700 text-base font-medium hover:text-gray-900 transition-colors"
+                    >
+                      <svg
+                        className={`w-5 h-5 transition-transform ${
+                          expandedFiles.down ? "rotate-90" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                      {isNoSQLBackend(migration.backend) ? (
+                        <>Down Migration (.down.json)</>
+                      ) : (
+                        <>Down Migration (.down.sql)</>
+                      )}
+                    </button>
+                    {expandedFiles.down && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            migration.down_sql || "",
+                          );
+                          toastService.success("Copied to clipboard");
+                        }}
+                        className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                  {expandedFiles.down && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap break-words m-0">
+                        <code>
+                          {(() => {
+                            const content = migration.down_sql || "";
+                            // Try to format JSON if it looks like JSON
+                            if (
+                              isNoSQLBackend(migration.backend) &&
+                              content.trim().startsWith("{")
+                            ) {
+                              try {
+                                const parsed = JSON.parse(content);
+                                return JSON.stringify(parsed, null, 2);
+                              } catch {
+                                return content;
+                              }
+                            }
+                            return content;
+                          })()}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!migration.up_sql && !migration.down_sql && (
+                <p className="text-gray-500 text-sm italic">
+                  No migration files available
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {status && (
           <div className="bg-white p-6 rounded-lg shadow-md">

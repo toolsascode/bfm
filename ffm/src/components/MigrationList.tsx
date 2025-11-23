@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../services/api";
+import { toastService } from "../services/toast";
 import type { MigrationListItem, MigrationListFilters } from "../types/api";
 import { format } from "date-fns";
 
@@ -13,6 +14,7 @@ export default function MigrationList() {
   const [total, setTotal] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     loadMigrations();
@@ -99,6 +101,43 @@ export default function MigrationList() {
     setCurrentPage(1);
   };
 
+  const handleReindex = async () => {
+    if (reindexing) return;
+
+    setReindexing(true);
+    try {
+      const result = await apiClient.reindexMigrations();
+      const addedCount = result.added.length;
+      const removedCount = result.removed.length;
+
+      let message = `Reindexing completed. Total migrations: ${result.total}`;
+      if (addedCount > 0 || removedCount > 0) {
+        message += ` (Added: ${addedCount}, Removed: ${removedCount})`;
+      } else {
+        message += " (No changes)";
+      }
+
+      toastService.success(message);
+
+      // Reload migrations list to reflect changes
+      await loadMigrations();
+
+      // Also reload all migrations for filters
+      try {
+        const response = await apiClient.listMigrations({});
+        setAllMigrations(response.items);
+      } catch (err) {
+        // Silently fail
+      }
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to reindex migrations";
+      toastService.error(errorMsg);
+    } finally {
+      setReindexing(false);
+    }
+  };
+
   if (loading && migrations.length === 0) {
     return (
       <div className="space-y-4">
@@ -118,6 +157,13 @@ export default function MigrationList() {
       <div className="flex justify-between items-center mb-6 animate-slide-up">
         <h1 className="text-3xl font-semibold text-gray-800">Migrations</h1>
         <div className="flex items-center gap-4">
+          <button
+            onClick={handleReindex}
+            disabled={reindexing}
+            className="px-4 py-2 bg-bfm-blue text-white rounded text-sm transition-colors hover:bg-bfm-blue-dark disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {reindexing ? "Reindexing..." : "Reindex"}
+          </button>
           <div className="text-base text-gray-500">
             Showing {startIndex + 1}-{Math.min(endIndex, migrations.length)} of{" "}
             {total}

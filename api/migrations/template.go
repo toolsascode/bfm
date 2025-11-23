@@ -15,13 +15,14 @@ var downSQL string
 
 func init() {
 	migration := &migrations.MigrationScript{
-		Schema:     "", // Dynamic - provided in request
-		Version:    "{{.Version}}",
-		Name:       "{{.Name}}",
-		Connection: "{{.Connection}}",
-		Backend:    "{{.Backend}}",
-		UpSQL:      upSQL,
-		DownSQL:    downSQL,
+		Schema:       "", // Dynamic - provided in request
+		Version:      "{{.Version}}",
+		Name:         "{{.Name}}",
+		Connection:   "{{.Connection}}",
+		Backend:      "{{.Backend}}",
+		UpSQL:        upSQL,
+		DownSQL:      downSQL,
+		Dependencies: []string{ {{.Dependencies}} },
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

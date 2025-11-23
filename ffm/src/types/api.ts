@@ -68,6 +68,7 @@ export interface MigrationDetailResponse {
   applied: boolean;
   up_sql?: string;
   down_sql?: string;
+  dependencies?: string[];
 }
 
 export interface MigrationStatusResponse {
@@ -107,6 +108,12 @@ export interface RollbackResponse {
 export interface HealthResponse {
   status: string;
   checks: Record<string, string>;
+}
+
+export interface ReindexResponse {
+  added: string[];
+  removed: string[];
+  total: number;
 }
 
 export interface MigrationListFilters {

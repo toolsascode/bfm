@@ -6,14 +6,15 @@ import (
 
 // MigrationScript represents a migration script (moved here to avoid import cycle)
 type MigrationScript struct {
-	Schema     string
-	Table      *string // Optional: can be nil for backends that don't use tables
-	Version    string  // Required: version timestamp
-	Name       string
-	Connection string
-	Backend    string
-	UpSQL      string
-	DownSQL    string
+	Schema       string
+	Table        *string // Optional: can be nil for backends that don't use tables
+	Version      string  // Required: version timestamp
+	Name         string
+	Connection   string
+	Backend      string
+	UpSQL        string
+	DownSQL      string
+	Dependencies []string // Optional: list of migration names this migration depends on
 }
 
 // Backend represents a database backend that can execute migrations
