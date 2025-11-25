@@ -1,6 +1,7 @@
 package migrations
 
-const GoFileTemplate = `package {{.PackageName}}
+const GoFileTemplate = `//go:build ignore
+package {{.PackageName}}
 
 import (
 	"bfm/api/migrations"
@@ -23,6 +24,7 @@ func init() {
 		UpSQL:        upSQL,
 		DownSQL:      downSQL,
 		Dependencies: []string{ {{.Dependencies}} },
+		StructuredDependencies: []migrations.Dependency{},
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

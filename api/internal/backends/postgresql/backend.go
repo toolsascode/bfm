@@ -90,6 +90,23 @@ func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, er
 	return exists, nil
 }
 
+// TableExists checks if a table exists in a schema
+func (b *Backend) TableExists(ctx context.Context, schemaName, tableName string) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1 AND table_name = $2
+		)
+	`
+	var exists bool
+	err := b.db.QueryRowContext(ctx, query, schemaName, tableName).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check table existence: %w", err)
+	}
+	return exists, nil
+}
+
 // ExecuteMigration executes a migration script
 func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.MigrationScript) error {
 	// Ensure schema exists if specified

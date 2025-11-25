@@ -33,19 +33,30 @@ type MigrationListItem struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 }
 
+// DependencyResponse represents a structured dependency
+type DependencyResponse struct {
+	Connection     string `json:"connection"`
+	Schema         string `json:"schema"`
+	Target         string `json:"target"`
+	TargetType     string `json:"target_type"`
+	RequiresTable  string `json:"requires_table,omitempty"`
+	RequiresSchema string `json:"requires_schema,omitempty"`
+}
+
 // MigrationDetailResponse represents detailed migration information
 type MigrationDetailResponse struct {
-	MigrationID  string   `json:"migration_id"`
-	Schema       string   `json:"schema"`
-	Table        string   `json:"table"`
-	Version      string   `json:"version"`
-	Name         string   `json:"name"`
-	Connection   string   `json:"connection"`
-	Backend      string   `json:"backend"`
-	Applied      bool     `json:"applied"`
-	UpSQL        string   `json:"up_sql,omitempty"`       // Contains SQL for SQL backends or JSON for NoSQL backends
-	DownSQL      string   `json:"down_sql,omitempty"`     // Contains SQL for SQL backends or JSON for NoSQL backends
-	Dependencies []string `json:"dependencies,omitempty"` // List of migration names this migration depends on
+	MigrationID            string               `json:"migration_id"`
+	Schema                 string               `json:"schema"`
+	Table                  string               `json:"table"`
+	Version                string               `json:"version"`
+	Name                   string               `json:"name"`
+	Connection             string               `json:"connection"`
+	Backend                string               `json:"backend"`
+	Applied                bool                 `json:"applied"`
+	UpSQL                  string               `json:"up_sql,omitempty"`                  // Contains SQL for SQL backends or JSON for NoSQL backends
+	DownSQL                string               `json:"down_sql,omitempty"`                // Contains SQL for SQL backends or JSON for NoSQL backends
+	Dependencies           []string             `json:"dependencies,omitempty"`            // List of migration names this migration depends on (backward compatibility)
+	StructuredDependencies []DependencyResponse `json:"structured_dependencies,omitempty"` // Structured dependencies with validation requirements
 }
 
 // RollbackResponse represents a rollback operation result

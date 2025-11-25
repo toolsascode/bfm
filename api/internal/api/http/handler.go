@@ -323,18 +323,32 @@ func (h *Handler) getMigration(c *gin.Context) {
 		schemaValue = migration.Schema
 	}
 
+	// Convert structured dependencies to response format
+	structuredDeps := make([]dto.DependencyResponse, 0, len(migration.StructuredDependencies))
+	for _, dep := range migration.StructuredDependencies {
+		structuredDeps = append(structuredDeps, dto.DependencyResponse{
+			Connection:     dep.Connection,
+			Schema:         dep.Schema,
+			Target:         dep.Target,
+			TargetType:     dep.TargetType,
+			RequiresTable:  dep.RequiresTable,
+			RequiresSchema: dep.RequiresSchema,
+		})
+	}
+
 	response := dto.MigrationDetailResponse{
-		MigrationID:  migrationID,
-		Schema:       schemaValue,
-		Table:        tableValue,
-		Version:      migration.Version,
-		Name:         migration.Name,
-		Connection:   migration.Connection,
-		Backend:      migration.Backend,
-		Applied:      applied,
-		UpSQL:        migration.UpSQL,
-		DownSQL:      migration.DownSQL,
-		Dependencies: migration.Dependencies,
+		MigrationID:            migrationID,
+		Schema:                 schemaValue,
+		Table:                  tableValue,
+		Version:                migration.Version,
+		Name:                   migration.Name,
+		Connection:             migration.Connection,
+		Backend:                migration.Backend,
+		Applied:                applied,
+		UpSQL:                  migration.UpSQL,
+		DownSQL:                migration.DownSQL,
+		Dependencies:           migration.Dependencies,
+		StructuredDependencies: structuredDeps,
 	}
 
 	c.JSON(http.StatusOK, response)

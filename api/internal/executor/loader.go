@@ -406,6 +406,78 @@ func extractDependenciesFromGoFile(goFilePath string) []string {
 	return []string{} // Default to empty slice
 }
 
+// extractStructuredDependenciesFromGoFile extracts StructuredDependencies from a .go migration file
+func extractStructuredDependenciesFromGoFile(goFilePath string) []backends.Dependency {
+	// Read the .go file
+	goContent, err := os.ReadFile(goFilePath)
+	if err != nil {
+		return nil
+	}
+
+	content := string(goContent)
+
+	// Look for StructuredDependencies field
+	// Pattern: StructuredDependencies: []migrations.Dependency{ ... } or []backends.Dependency{ ... }
+	// This is a simplified parser - for full parsing, we'd need a proper Go parser
+	// For now, we'll look for the pattern and extract basic information
+	depsRegex := regexp.MustCompile(`StructuredDependencies:\s*\[\](?:migrations|backends)\.Dependency\s*\{([^}]*)\}`)
+	matches := depsRegex.FindStringSubmatch(content)
+	if len(matches) < 2 {
+		return nil
+	}
+
+	depsStr := strings.TrimSpace(matches[1])
+	if depsStr == "" {
+		return []backends.Dependency{}
+	}
+
+	// Parse individual dependency structs
+	// Pattern: { Connection: "core", Schema: "core", Target: "name", TargetType: "name", RequiresTable: "table", RequiresSchema: "schema" }
+	var dependencies []backends.Dependency
+
+	// Split by struct boundaries (simplified - assumes single-line structs or properly formatted)
+	// This is a basic parser - for production, consider using go/parser
+	depStructRegex := regexp.MustCompile(`\{[^}]*\}`)
+	structMatches := depStructRegex.FindAllString(depsStr, -1)
+
+	for _, structStr := range structMatches {
+		dep := backends.Dependency{}
+		// Extract Connection
+		if match := regexp.MustCompile(`Connection:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.Connection = match[1]
+		}
+		// Extract Schema
+		if match := regexp.MustCompile(`Schema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.Schema = match[1]
+		}
+		// Extract Target
+		if match := regexp.MustCompile(`Target:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.Target = match[1]
+		}
+		// Extract TargetType
+		if match := regexp.MustCompile(`TargetType:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.TargetType = match[1]
+		} else {
+			dep.TargetType = "name" // Default
+		}
+		// Extract RequiresTable
+		if match := regexp.MustCompile(`RequiresTable:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.RequiresTable = match[1]
+		}
+		// Extract RequiresSchema
+		if match := regexp.MustCompile(`RequiresSchema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+			dep.RequiresSchema = match[1]
+		}
+
+		// Only add if Target is set (required field)
+		if dep.Target != "" {
+			dependencies = append(dependencies, dep)
+		}
+	}
+
+	return dependencies
+}
+
 // loadMigrationFromFile loads a migration by reading the .go file and corresponding SQL/JSON files
 func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version, name string) error {
 	// Determine file extensions based on backend
@@ -439,19 +511,23 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 	// Extract schema from .go file if it exists
 	schema := extractSchemaFromGoFile(goFilePath)
 
-	// Extract dependencies from .go file if it exists
+	// Extract dependencies from .go file if it exists (backward compatibility)
 	dependencies := extractDependenciesFromGoFile(goFilePath)
+
+	// Extract structured dependencies from .go file if they exist
+	structuredDependencies := extractStructuredDependenciesFromGoFile(goFilePath)
 
 	// Create and register migration
 	migration := &backends.MigrationScript{
-		Schema:       schema, // Use schema from .go file if available, otherwise empty (dynamic)
-		Version:      version,
-		Name:         name,
-		Connection:   connection,
-		Backend:      backend,
-		UpSQL:        string(upSQL),
-		DownSQL:      string(downSQL),
-		Dependencies: dependencies,
+		Schema:                 schema, // Use schema from .go file if available, otherwise empty (dynamic)
+		Version:                version,
+		Name:                   name,
+		Connection:             connection,
+		Backend:                backend,
+		UpSQL:                  string(upSQL),
+		DownSQL:                string(downSQL),
+		Dependencies:           dependencies,
+		StructuredDependencies: structuredDependencies,
 	}
 
 	if err := l.registry.Register(migration); err != nil {
@@ -461,8 +537,8 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 	// Register scanned migration in migrations_list table if executor is available
 	if l.executor != nil {
 		// Generate migration ID using the same format as executor.getMigrationID
-		// Format: {version}_{name} (just the filename, no schema or connection)
-		migrationID := fmt.Sprintf("%s_%s", version, name)
+		// Format: {version}_{name}_{backend}_{connection}
+		migrationID := fmt.Sprintf("%s_%s_%s_%s", version, name, backend, connection)
 
 		// Register in database (use schema from .go file if available)
 		ctx := context.Background()

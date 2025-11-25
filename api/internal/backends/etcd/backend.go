@@ -53,7 +53,7 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 	// Get prefix
 	b.prefix = config.Extra["prefix"]
 	if b.prefix == "" {
-		b.prefix = "/bfm/metadata/"
+		b.prefix = "/"
 	}
 	if !strings.HasSuffix(b.prefix, "/") {
 		b.prefix += "/"
@@ -211,11 +211,15 @@ func (b *Backend) HealthCheck(ctx context.Context) error {
 // For etcd, if schemaName is provided, it should be used as the full prefix (not appended to connection prefix)
 func (b *Backend) getSchemaKey(schemaName, suffix string) string {
 	// If schemaName is provided and looks like a full path (starts with /), use it as the full prefix
+	// This takes precedence over the connection prefix to allow absolute paths
 	if schemaName != "" && strings.HasPrefix(schemaName, "/") {
-		if !strings.HasSuffix(schemaName, "/") {
-			schemaName += "/"
+		// Normalize the schema path (ensure it ends with /)
+		normalizedSchema := schemaName
+		if !strings.HasSuffix(normalizedSchema, "/") {
+			normalizedSchema += "/"
 		}
-		return schemaName + suffix
+		// Use schema as the full prefix, ignoring connection prefix
+		return normalizedSchema + suffix
 	}
 	// Otherwise, use connection prefix + schema name
 	if schemaName != "" {
@@ -229,18 +233,25 @@ func (b *Backend) getSchemaKey(schemaName, suffix string) string {
 // If tableName is nil or empty, only uses schema name
 func (b *Backend) getTableKey(schemaName string, tableName *string, key string) string {
 	// If schemaName is provided and looks like a full path (starts with /), use it as the full prefix
+	// This takes precedence over the connection prefix to allow absolute paths
 	if schemaName != "" && strings.HasPrefix(schemaName, "/") {
-		if !strings.HasSuffix(schemaName, "/") {
-			schemaName += "/"
+		// Normalize the schema path (ensure it ends with /)
+		normalizedSchema := schemaName
+		if !strings.HasSuffix(normalizedSchema, "/") {
+			normalizedSchema += "/"
 		}
+		// Use schema as the full prefix, ignoring connection prefix
 		if tableName != nil && *tableName != "" {
-			return schemaName + *tableName + "/" + key
+			return normalizedSchema + *tableName + "/" + key
 		}
-		return schemaName + key
+		return normalizedSchema + key
 	}
 	// Otherwise, use connection prefix + schema name
 	if tableName == nil || *tableName == "" {
-		return b.prefix + schemaName + "/" + key
+		if schemaName != "" {
+			return b.prefix + schemaName + "/" + key
+		}
+		return b.prefix + key
 	}
 	return b.prefix + schemaName + "/" + *tableName + "/" + key
 }

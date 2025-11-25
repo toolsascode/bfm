@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -134,9 +135,29 @@ func (m *mockRegistry) GetMigrationByName(name string) []*backends.MigrationScri
 	return results
 }
 
+func (m *mockRegistry) GetMigrationByVersion(version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
+func (m *mockRegistry) GetMigrationByConnectionAndVersion(connection, version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Connection == connection && migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
 func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	// Match executor's getMigrationID format: {version}_{name}
-	return migration.Version + "_" + migration.Name
+	// Match executor's getMigrationID format: {version}_{name}_{backend}_{connection}
+	return fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 }
 
 // mockStateTracker is a mock implementation of state.StateTracker

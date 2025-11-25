@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"bfm/api/internal/backends"
+	"bfm/api/internal/backends/postgresql"
 	"bfm/api/internal/logger"
 	"bfm/api/internal/queue"
 	"bfm/api/internal/registry"
@@ -214,10 +215,7 @@ func (e *Executor) topologicalSort(migrations []*backends.MigrationScript) ([]*b
 
 	// Create a unique ID for each migration (using the same format as getMigrationID)
 	getID := func(m *backends.MigrationScript) string {
-		if m.Schema != "" {
-			return fmt.Sprintf("%s_%s_%s_%s", m.Schema, m.Connection, m.Version, m.Name)
-		}
-		return fmt.Sprintf("%s_%s_%s", m.Connection, m.Version, m.Name)
+		return e.getMigrationID(m)
 	}
 
 	// Initialize all migrations in the graph
@@ -322,6 +320,35 @@ func (e *Executor) topologicalSort(migrations []*backends.MigrationScript) ([]*b
 	return sorted, nil
 }
 
+// resolveDependencies resolves dependencies using DependencyResolver for structured dependencies,
+// or falls back to topologicalSort for simple string dependencies
+func (e *Executor) resolveDependencies(migrations []*backends.MigrationScript) ([]*backends.MigrationScript, error) {
+	if len(migrations) == 0 {
+		return migrations, nil
+	}
+
+	// Check if any migration has structured dependencies
+	hasStructuredDeps := false
+	for _, migration := range migrations {
+		if len(migration.StructuredDependencies) > 0 {
+			hasStructuredDeps = true
+			break
+		}
+	}
+
+	// If structured dependencies exist, use DependencyResolver
+	if hasStructuredDeps {
+		resolver := registry.NewDependencyResolver(e.registry, e.stateTracker)
+		getMigrationID := func(m *backends.MigrationScript) string {
+			return e.getMigrationID(m)
+		}
+		return resolver.ResolveDependencies(migrations, getMigrationID)
+	}
+
+	// Otherwise, use the existing topologicalSort for backward compatibility
+	return e.topologicalSort(migrations)
+}
+
 // executeSync executes migrations synchronously
 func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
@@ -339,30 +366,7 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		}, nil
 	}
 
-	// Sort migrations topologically based on dependencies
-	sortedMigrations, err := e.topologicalSort(migrations)
-	if err != nil {
-		// If topological sort fails, fall back to version-based sort and report error
-		logger.Warnf("Topological sort failed: %v, falling back to version-based sort", err)
-		sort.Slice(migrations, func(i, j int) bool {
-			return migrations[i].Version < migrations[j].Version
-		})
-		sortedMigrations = migrations
-		// Add error to result but continue execution
-	}
-
-	result := &ExecuteResult{
-		Applied: []string{},
-		Skipped: []string{},
-		Errors:  []string{},
-	}
-
-	// If topological sort had errors, add them to result
-	if err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", err))
-	}
-
-	// Get backend for the connection
+	// Get backend for the connection (needed for validation)
 	connectionConfig, err := e.getConnectionConfig(connectionName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection config: %w", err)
@@ -378,6 +382,48 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		return nil, fmt.Errorf("failed to connect to backend: %w", err)
 	}
 	defer func() { _ = backend.Close() }()
+
+	// Validate dependencies before execution (for PostgreSQL backend)
+	if connectionConfig.Backend == "postgresql" {
+		pgBackend, ok := backend.(*postgresql.Backend)
+		if ok {
+			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
+			for _, migration := range migrations {
+				validationErrors := validator.ValidateDependencies(ctx, migration, schemaName)
+				if len(validationErrors) > 0 {
+					var errorMsgs []string
+					for _, err := range validationErrors {
+						errorMsgs = append(errorMsgs, err.Error())
+					}
+					return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
+				}
+			}
+		}
+	}
+
+	// Sort migrations topologically based on dependencies
+	// Use DependencyResolver for structured dependencies, fall back to simple topologicalSort for backward compatibility
+	sortedMigrations, err := e.resolveDependencies(migrations)
+	if err != nil {
+		// If dependency resolution fails, fall back to version-based sort and report error
+		logger.Warnf("Dependency resolution failed: %v, falling back to version-based sort", err)
+		sort.Slice(migrations, func(i, j int) bool {
+			return migrations[i].Version < migrations[j].Version
+		})
+		sortedMigrations = migrations
+		// Add error to result but continue execution
+	}
+
+	result := &ExecuteResult{
+		Applied: []string{},
+		Skipped: []string{},
+		Errors:  []string{},
+	}
+
+	// If dependency resolution had errors, add them to result
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", err))
+	}
 
 	// Process each migration
 	for _, migration := range sortedMigrations {
@@ -465,19 +511,24 @@ func (e *Executor) GetAllMigrations() []*backends.MigrationScript {
 }
 
 // GetMigrationByID finds a migration by its ID
-// Migration ID format: {version}_{name}
+// Migration ID format: {version}_{name}_{backend}_{connection}
 // Also supports legacy formats for backward compatibility
 func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScript {
 	allMigrations := e.registry.GetAll()
 	for _, migration := range allMigrations {
-		// Primary format: {version}_{name}
+		// Primary format: {version}_{name}_{backend}_{connection}
 		id := e.getMigrationID(migration)
 		if id == migrationID {
 			return migration
 		}
-		// Legacy format support for backward compatibility: {connection}_{version}_{name}
-		legacyID := fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+		// Legacy format: {version}_{name} (old format without backend/connection)
+		legacyID := fmt.Sprintf("%s_%s", migration.Version, migration.Name)
 		if legacyID == migrationID {
+			return migration
+		}
+		// Legacy format: {connection}_{version}_{name}
+		legacyIDWithConnection := fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+		if legacyIDWithConnection == migrationID {
 			return migration
 		}
 		// Legacy format with schema: {schema}_{connection}_{version}_{name}
@@ -602,8 +653,8 @@ func (e *Executor) ReindexMigrations(ctx context.Context, sfmPath string) (*Rein
 		schema := extractSchemaFromGoFile(path)
 
 		// Generate migration ID using the same format as getMigrationID
-		// Format: {version}_{name} (just the filename)
-		migrationID := fmt.Sprintf("%s_%s", version, name)
+		// Format: {version}_{name}_{backend}_{connection}
+		migrationID := fmt.Sprintf("%s_%s_%s_%s", version, name, backend, connection)
 
 		fileMigrations[migrationID] = struct {
 			backend    string
@@ -865,7 +916,7 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 
 // getMigrationIDWithSchema generates a migration ID with a specific schema
 // This is used when checking if a migration is applied to a specific schema
-// Base migration ID is {version}_{name}, but for schema-specific checks we include schema
+// Base migration ID is {version}_{name}_{backend}_{connection}, but for schema-specific checks we include schema
 func (e *Executor) getMigrationIDWithSchema(migration *backends.MigrationScript, schema string) string {
 	baseID := e.getMigrationID(migration)
 	if schema != "" {
@@ -1027,9 +1078,9 @@ type ExecuteResult struct {
 }
 
 // getMigrationID generates a unique migration ID
-// Migration ID is just the filename: {version}_{name}
+// Migration ID format: {version}_{name}_{backend}_{connection}
 func (e *Executor) getMigrationID(migration *backends.MigrationScript) string {
-	return fmt.Sprintf("%s_%s", migration.Version, migration.Name)
+	return fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 }
 
 // getConnectionConfig gets connection config

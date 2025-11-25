@@ -1,3 +1,4 @@
+//go:build ignore
 package metadata
 
 import (
@@ -20,7 +21,15 @@ func init() {
 		Backend:      "etcd",
 		UpSQL:        upSQL,
 		DownSQL:      downSQL,
-		Dependencies: []string{"bootstrap_solution"}, // Example: depends on postgresql migration
+		Dependencies: []string{"bootstrap_solution"}, // Example: simple name-based dependency
+		StructuredDependencies: []migrations.Dependency{
+			{
+				Connection: "core",
+				Schema:     "core",
+				Target:     "bootstrap_solution",
+				TargetType: "name",
+			},
+		},
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

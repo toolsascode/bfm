@@ -581,24 +581,138 @@ export default function MigrationDetail() {
                 {migration.applied ? "Yes" : "No"}
               </div>
             </div>
-            {migration.dependencies && migration.dependencies.length > 0 && (
+            {((migration.dependencies && migration.dependencies.length > 0) ||
+              (migration.structured_dependencies &&
+                migration.structured_dependencies.length > 0)) && (
               <div className="flex flex-col col-span-full">
                 <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                   Dependencies
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  {migration.dependencies.map((dep, index) => (
-                    <span
-                      key={index}
-                      className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
-                    >
-                      {dep}
-                    </span>
-                  ))}
-                </div>
+                {/* Simple string dependencies (backward compatibility) */}
+                {migration.dependencies &&
+                  migration.dependencies.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {migration.dependencies.map((dep, index) => (
+                        <span
+                          key={`simple-${index}`}
+                          className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                        >
+                          {dep}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                {/* Structured dependencies */}
+                {migration.structured_dependencies &&
+                  migration.structured_dependencies.length > 0 && (
+                    <div className="space-y-3">
+                      {migration.structured_dependencies.map((dep, index) => (
+                        <div
+                          key={`structured-${index}`}
+                          className="border border-gray-200 rounded-lg p-4 bg-gradient-to-br from-gray-50 to-white shadow-sm hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                                Target:
+                              </span>
+                              <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                {dep.target}
+                              </span>
+                            </div>
+                            {dep.connection && (
+                              <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                                <span className="font-semibold">
+                                  Connection:
+                                </span>{" "}
+                                {dep.connection}
+                              </span>
+                            )}
+                            {dep.schema && (
+                              <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                                <span className="font-semibold">Schema:</span>{" "}
+                                {dep.schema}
+                              </span>
+                            )}
+                            {dep.target_type && dep.target_type !== "name" && (
+                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs font-medium">
+                                <span className="font-semibold">Type:</span>{" "}
+                                {dep.target_type}
+                              </span>
+                            )}
+                          </div>
+                          {(dep.requires_table || dep.requires_schema) && (
+                            <div className="mt-3 pt-3 border-t border-gray-300">
+                              <p className="text-xs text-gray-700 font-semibold mb-2 flex items-center gap-1">
+                                <svg
+                                  className="w-4 h-4 text-orange-600"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                </svg>
+                                Validation Requirements
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {dep.requires_schema && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs font-medium">
+                                    <svg
+                                      className="w-3 h-3"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                                      />
+                                    </svg>
+                                    <span className="font-semibold">
+                                      Schema:
+                                    </span>{" "}
+                                    {dep.requires_schema}
+                                  </span>
+                                )}
+                                {dep.requires_table && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                                    <svg
+                                      className="w-3 h-3"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                      />
+                                    </svg>
+                                    <span className="font-semibold">
+                                      Table:
+                                    </span>{" "}
+                                    {dep.requires_table}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 <p className="text-gray-500 text-xs mt-2 italic">
                   This migration depends on the above migrations and will
-                  execute after them.
+                  execute after them. Structured dependencies include validation
+                  requirements that are checked before execution.
                 </p>
               </div>
             )}
