@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -119,12 +121,16 @@ func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) strin
 
 // mockStateTracker is a mock implementation of state.StateTracker
 type mockStateTracker struct {
-	appliedMigrations map[string]bool
-	history           []*state.MigrationRecord
-	listItems         []*state.MigrationListItem
-	healthCheckError  error
-	recordError       error
-	isAppliedError    error
+	appliedMigrations             map[string]bool
+	history                       []*state.MigrationRecord
+	listItems                     []*state.MigrationListItem
+	healthCheckError              error
+	recordError                   error
+	isAppliedError                error
+	getMigrationListError         error
+	getMigrationHistoryError      error
+	registerScannedMigrationError error
+	updateMigrationInfoError      error
 }
 
 func newMockStateTracker() *mockStateTracker {
@@ -150,11 +156,47 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 }
 
 func (m *mockStateTracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
+	if m.getMigrationHistoryError != nil {
+		return nil, m.getMigrationHistoryError
+	}
 	return m.history, nil
 }
 
 func (m *mockStateTracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationListItem, error) {
-	return m.listItems, nil
+	if m.getMigrationListError != nil {
+		return nil, m.getMigrationListError
+	}
+
+	// Apply filters if provided
+	if filters == nil {
+		return m.listItems, nil
+	}
+
+	var filtered []*state.MigrationListItem
+	for _, item := range m.listItems {
+		// Apply filters
+		if filters.Schema != "" && item.Schema != filters.Schema {
+			continue
+		}
+		if filters.Table != "" && item.Table != filters.Table {
+			continue
+		}
+		if filters.Connection != "" && item.Connection != filters.Connection {
+			continue
+		}
+		if filters.Backend != "" && item.Backend != filters.Backend {
+			continue
+		}
+		if filters.Status != "" && item.LastStatus != filters.Status {
+			continue
+		}
+		if filters.Version != "" && item.Version != filters.Version {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	return filtered, nil
 }
 
 func (m *mockStateTracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
@@ -169,6 +211,21 @@ func (m *mockStateTracker) GetLastMigrationVersion(ctx interface{}, schema, tabl
 }
 
 func (m *mockStateTracker) RegisterScannedMigration(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	if m.registerScannedMigrationError != nil {
+		return m.registerScannedMigrationError
+	}
+	// Add to listItems so it appears in GetMigrationList
+	m.listItems = append(m.listItems, &state.MigrationListItem{
+		MigrationID: migrationID,
+		Schema:      schema,
+		Table:       table,
+		Version:     version,
+		Name:        name,
+		Connection:  connection,
+		Backend:     backend,
+		LastStatus:  "pending",
+		Applied:     false,
+	})
 	return nil
 }
 
@@ -186,6 +243,9 @@ func (m *mockStateTracker) DeleteMigration(ctx interface{}, migrationID string) 
 }
 
 func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	if m.updateMigrationInfoError != nil {
+		return m.updateMigrationInfoError
+	}
 	// Update listItems
 	for i, item := range m.listItems {
 		if item.MigrationID == migrationID {
@@ -2252,5 +2312,168 @@ func TestExecutor_ExecuteSync_BothDependencyTypes(t *testing.T) {
 	// Should execute hybrid migration
 	if len(result.Applied) != 1 {
 		t.Errorf("Expected 1 applied migration, got %v", len(result.Applied))
+	}
+}
+
+func TestExecutor_UpdateMigrationInfo(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.UpdateMigrationInfo(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err != nil {
+		t.Errorf("UpdateMigrationInfo() error = %v", err)
+	}
+}
+
+func TestExecutor_ReindexMigrations_EmptyPath(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty path, got nil")
+	}
+	if result != nil {
+		t.Error("Expected nil result for error case")
+	}
+}
+
+func TestExecutor_ReindexMigrations_NonExistentPath(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, "/nonexistent/path/that/does/not/exist")
+	if err == nil {
+		t.Error("Expected error for non-existent path, got nil")
+	}
+	if result != nil {
+		t.Error("Expected nil result for error case")
+	}
+}
+
+func TestExecutor_ReindexMigrations_Success(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Create a temporary directory structure
+	tmpDir := t.TempDir()
+	backendDir := filepath.Join(tmpDir, "postgresql", "test_conn")
+	_ = os.MkdirAll(backendDir, 0755)
+
+	// Create a migration file
+	migrationFile := filepath.Join(backendDir, "20240101120000_test_migration.go")
+	migrationContent := `package test_conn
+
+import "github.com/toolsascode/bfm/api/migrations"
+
+func init() {
+	migrations.Register(migrations.Migration{
+		Up:   "CREATE TABLE test (id INT);",
+		Down: "DROP TABLE test;",
+		Schema: "test_schema",
+	})
+}
+`
+	_ = os.WriteFile(migrationFile, []byte(migrationContent), 0644)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ReindexMigrations() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Should have found and registered the migration
+	if result.Total < 1 {
+		t.Errorf("Expected at least 1 migration, got %d", result.Total)
+	}
+}
+
+func TestExecutor_GetMigrationList_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationListError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.GetMigrationList(ctx, nil)
+	if err == nil {
+		t.Error("Expected error from GetMigrationList, got nil")
+	}
+}
+
+func TestExecutor_GetMigrationHistory_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationHistoryError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.GetMigrationHistory(ctx, nil)
+	if err == nil {
+		t.Error("Expected error from GetMigrationHistory, got nil")
+	}
+}
+
+func TestExecutor_IsMigrationApplied_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.isAppliedError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.IsMigrationApplied(ctx, "test_migration")
+	if err == nil {
+		t.Error("Expected error from IsMigrationApplied, got nil")
+	}
+}
+
+func TestExecutor_RegisterScannedMigration_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.registerScannedMigrationError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.RegisterScannedMigration(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err == nil {
+		t.Error("Expected error from RegisterScannedMigration, got nil")
+	}
+}
+
+func TestExecutor_UpdateMigrationInfo_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.updateMigrationInfoError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.UpdateMigrationInfo(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err == nil {
+		t.Error("Expected error from UpdateMigrationInfo, got nil")
+	}
+}
+
+func TestExecutor_ReindexMigrations_GetMigrationListError(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationListError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+	_, err := exec.ReindexMigrations(ctx, tmpDir)
+	if err == nil {
+		t.Error("Expected error from ReindexMigrations when GetMigrationList fails, got nil")
 	}
 }

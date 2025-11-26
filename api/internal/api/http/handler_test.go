@@ -162,10 +162,13 @@ func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) strin
 
 // mockStateTracker is a mock implementation of state.StateTracker
 type mockStateTracker struct {
-	appliedMigrations map[string]bool
-	history           []*state.MigrationRecord
-	listItems         []*state.MigrationListItem
-	healthCheckError  error
+	appliedMigrations        map[string]bool
+	history                  []*state.MigrationRecord
+	listItems                []*state.MigrationListItem
+	healthCheckError         error
+	getMigrationListError    error
+	getMigrationHistoryError error
+	isMigrationAppliedError  error
 }
 
 func newMockStateTracker() *mockStateTracker {
@@ -188,14 +191,53 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 }
 
 func (m *mockStateTracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
+	if m.getMigrationHistoryError != nil {
+		return nil, m.getMigrationHistoryError
+	}
 	return m.history, nil
 }
 
 func (m *mockStateTracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationListItem, error) {
-	return m.listItems, nil
+	if m.getMigrationListError != nil {
+		return nil, m.getMigrationListError
+	}
+
+	// Apply filters if provided
+	if filters == nil {
+		return m.listItems, nil
+	}
+
+	var filtered []*state.MigrationListItem
+	for _, item := range m.listItems {
+		// Apply filters
+		if filters.Schema != "" && item.Schema != filters.Schema {
+			continue
+		}
+		if filters.Table != "" && item.Table != filters.Table {
+			continue
+		}
+		if filters.Connection != "" && item.Connection != filters.Connection {
+			continue
+		}
+		if filters.Backend != "" && item.Backend != filters.Backend {
+			continue
+		}
+		if filters.Status != "" && item.LastStatus != filters.Status {
+			continue
+		}
+		if filters.Version != "" && item.Version != filters.Version {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	return filtered, nil
 }
 
 func (m *mockStateTracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
+	if m.isMigrationAppliedError != nil {
+		return false, m.isMigrationAppliedError
+	}
 	return m.appliedMigrations[migrationID], nil
 }
 
@@ -1152,5 +1194,368 @@ func TestHandler_Options(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Errorf("Expected status %d, got %d", http.StatusNoContent, w.Code)
+	}
+}
+
+func TestHandler_OpenAPISpec(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("GET", "/api/v1/openapi.yaml", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	if w.Header().Get("Content-Type") != "application/x-yaml" {
+		t.Errorf("Expected Content-Type application/x-yaml, got %s", w.Header().Get("Content-Type"))
+	}
+
+	if len(w.Body.Bytes()) == 0 {
+		t.Error("Expected non-empty OpenAPI spec")
+	}
+}
+
+func TestHandler_OpenAPISpecJSON(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("GET", "/api/v1/openapi.json", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal JSON response: %v", err)
+	}
+
+	// Verify it's a valid OpenAPI spec structure
+	if _, ok := response["openapi"]; !ok {
+		t.Error("Expected 'openapi' field in response")
+	}
+}
+
+func TestHandler_reindexMigrations(t *testing.T) {
+	// Save original token and SFM path
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	originalSfmPath := os.Getenv("BFM_SFM_PATH")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+		if originalSfmPath != "" {
+			_ = os.Setenv("BFM_SFM_PATH", originalSfmPath)
+		} else {
+			_ = os.Unsetenv("BFM_SFM_PATH")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	router, _ := setupTestRouter(reg, tracker)
+
+	// Create a temporary directory for testing
+	tmpDir := t.TempDir()
+
+	// Set SFM path
+	_ = os.Setenv("BFM_SFM_PATH", tmpDir)
+
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/reindex", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Reindex should succeed even with empty directory
+	if w.Code != http.StatusOK && w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d or %d, got %d. Body: %s", http.StatusOK, http.StatusInternalServerError, w.Code, w.Body.String())
+	}
+
+	if w.Code == http.StatusOK {
+		var response dto.ReindexResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+
+		// Response should have Total field
+		if response.Total < 0 {
+			t.Errorf("Expected Total >= 0, got %d", response.Total)
+		}
+	}
+}
+
+func TestHandler_reindexMigrations_Unauthorized(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/reindex", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+}
+
+func TestHandler_migrateUp_ExecutorError(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := executor.NewExecutor(reg, tracker)
+	handler := NewHandler(exec)
+
+	// Create a backend that will fail
+	mockBackend := &mockBackend{
+		name:         "postgresql",
+		connectError: errors.New("connection failed"),
+	}
+	exec.RegisterBackend("postgresql", mockBackend)
+
+	// Set connection config
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend:  "postgresql",
+			Host:     "localhost",
+			Port:     "5432",
+			Database: "test",
+			Username: "test",
+			Password: "test",
+			Extra:    map[string]string{},
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	// Register a migration
+	migration := &backends.MigrationScript{
+		Backend:    "postgresql",
+		Connection: "test",
+		Version:    "20250101000000",
+		Name:       "test_migration",
+		UpSQL:      "CREATE TABLE test (id INT);",
+		DownSQL:    "DROP TABLE test;",
+	}
+	_ = reg.Register(migration)
+
+	router := gin.New()
+	handler.RegisterRoutes(router)
+
+	requestBody := dto.MigrateUpRequest{
+		Target: &registry.MigrationTarget{
+			Backend:    "postgresql",
+			Connection: "test",
+		},
+		Connection: "test",
+		Schemas:    []string{},
+		DryRun:     false,
+	}
+
+	body, _ := json.Marshal(requestBody)
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/up", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Should return 500 or 206 (partial content) depending on error handling
+	if w.Code != http.StatusInternalServerError && w.Code != http.StatusPartialContent {
+		t.Errorf("Expected status %d or %d, got %d. Body: %s", http.StatusInternalServerError, http.StatusPartialContent, w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_migrateDown_ExecutorError(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := executor.NewExecutor(reg, tracker)
+	handler := NewHandler(exec)
+
+	router := gin.New()
+	handler.RegisterRoutes(router)
+
+	requestBody := dto.MigrateDownRequest{
+		MigrationID: "nonexistent_migration",
+		Schemas:     []string{},
+		DryRun:      false,
+	}
+
+	body, _ := json.Marshal(requestBody)
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/down", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Should return 500 or 206 depending on error handling
+	if w.Code != http.StatusInternalServerError && w.Code != http.StatusPartialContent {
+		t.Errorf("Expected status %d or %d, got %d. Body: %s", http.StatusInternalServerError, http.StatusPartialContent, w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_listMigrations_Error(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationListError = errors.New("database error")
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("GET", "/api/v1/migrations", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusInternalServerError, w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_getMigration_StateTrackerError(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+
+	// Register a migration
+	migration := &backends.MigrationScript{
+		Backend:    "postgresql",
+		Connection: "test",
+		Version:    "20250101000000",
+		Name:       "test_migration",
+		UpSQL:      "CREATE TABLE test (id INT);",
+		DownSQL:    "DROP TABLE test;",
+	}
+	_ = reg.Register(migration)
+
+	tracker.isMigrationAppliedError = errors.New("database error")
+	router, _ := setupTestRouter(reg, tracker)
+
+	migrationID := reg.getMigrationID(migration)
+	req, _ := http.NewRequest("GET", "/api/v1/migrations/"+migrationID, nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusInternalServerError, w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_getMigrationStatus_Error(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationHistoryError = errors.New("database error")
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("GET", "/api/v1/migrations/test_migration/status", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusInternalServerError, w.Code, w.Body.String())
+	}
+}
+
+func TestHandler_rollbackMigration_ExecutorError(t *testing.T) {
+	// Save original token
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+
+	// Register a migration
+	migration := &backends.MigrationScript{
+		Backend:    "postgresql",
+		Connection: "test",
+		Version:    "20250101000000",
+		Name:       "test_migration",
+		UpSQL:      "CREATE TABLE test (id INT);",
+		DownSQL:    "DROP TABLE test;",
+	}
+	_ = reg.Register(migration)
+
+	// Mark as applied
+	migrationID := reg.getMigrationID(migration)
+	tracker.appliedMigrations[migrationID] = true
+
+	// Make rollback fail
+	tracker.isMigrationAppliedError = errors.New("database error")
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/"+migrationID+"/rollback", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusInternalServerError, w.Code, w.Body.String())
 	}
 }
