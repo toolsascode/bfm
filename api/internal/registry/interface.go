@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 )
 
 // MigrationTarget specifies which migrations to execute (moved here to avoid import cycle)

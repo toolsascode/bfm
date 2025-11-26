@@ -1,8 +1,9 @@
 package logs
 
 import (
-	"bfm/api/migrations"
 	_ "embed"
+
+	"github.com/toolsascode/bfm/api/migrations"
 )
 
 //go:embed 20250115000000_stream_metrics.up.sql

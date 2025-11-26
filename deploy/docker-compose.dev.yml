@@ -126,7 +126,7 @@ services:
     environment:
       # Set DOCKER env var so Vite knows to use service name for proxy
       - DOCKER=true
-      # Frontend Configuration (BFM_* prefix, mapped to VITE_* for Vite dev server)
+      # Frontend Configuration (BFM_* prefix)
       - BFM_FRONTEND_API_URL=${BFM_FRONTEND_API_URL:-/api}
       - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
       - BFM_FRONTEND_AUTH_ENABLED=${BFM_FRONTEND_AUTH_ENABLED:-true}

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 )
 
 // Config holds the application configuration

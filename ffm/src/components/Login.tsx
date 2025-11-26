@@ -75,7 +75,7 @@ export default function Login({ onLogin }: LoginProps) {
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              className="w-full px-3 py-3 border border-gray-300 rounded text-base focus:outline-none focus:border-bfm-teal focus:ring-2 focus:ring-bfm-teal/20"
+              className="w-full px-3 py-3 border border-gray-300 rounded text-base bg-white text-gray-800 focus:outline-none focus:border-bfm-teal focus:ring-2 focus:ring-bfm-teal/20"
             />
           </div>
           <div className="mb-4">
@@ -91,7 +91,7 @@ export default function Login({ onLogin }: LoginProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-3 border border-gray-300 rounded text-base focus:outline-none focus:border-bfm-teal focus:ring-2 focus:ring-bfm-teal/20"
+              className="w-full px-3 py-3 border border-gray-300 rounded text-base bg-white text-gray-800 focus:outline-none focus:border-bfm-teal focus:ring-2 focus:ring-bfm-teal/20"
             />
           </div>
           {error && (

@@ -10,7 +10,7 @@
 //	package main
 //
 //	import (
-//		"bfm/api/migrations"
+//		"github.com/toolsascode/bfm/api/migrations"
 //		_ "embed"
 //	)
 //

@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"bfm/api/internal/api/http/dto"
-	"bfm/api/internal/backends"
-	"bfm/api/internal/executor"
-	"bfm/api/internal/registry"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/api/http/dto"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
 
 	"github.com/gin-gonic/gin"
 )

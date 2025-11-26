@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/state"
 
 	_ "github.com/lib/pq"
 )

@@ -1,6 +1,6 @@
 package migrations
 
-import "bfm/api/internal/backends"
+import "github.com/toolsascode/bfm/api/internal/backends"
 
 // MigrationScript represents a database migration script with up and down SQL.
 // MigrationScript is a public alias for backends.MigrationScript that allows

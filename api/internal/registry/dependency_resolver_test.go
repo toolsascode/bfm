@@ -3,8 +3,8 @@ package registry
 import (
 	"testing"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/state"
 )
 
 // mockStateTracker for testing

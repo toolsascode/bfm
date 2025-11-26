@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 
 	_ "github.com/lib/pq"
 )

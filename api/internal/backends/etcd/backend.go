@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 )

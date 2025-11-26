@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 
-	"bfm/api/internal/executor"
-	"bfm/api/internal/logger"
-	"bfm/api/internal/queue"
-	"bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/logger"
+	"github.com/toolsascode/bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/registry"
 )
 
 // Worker processes migration jobs from the queue

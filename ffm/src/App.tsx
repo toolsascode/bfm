@@ -38,6 +38,8 @@ function App() {
   const handleLogout = () => {
     authService.logout();
     setIsAuthenticated(false);
+    // When auth is enabled, the component will automatically re-render
+    // and show the Login page due to the conditional rendering
   };
 
   if (!authService.isAuthEnabled()) {

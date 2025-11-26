@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 )
 
 // Backend implements the Backend interface for GreptimeDB

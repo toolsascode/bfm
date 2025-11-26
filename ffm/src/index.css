@@ -28,4 +28,15 @@
     width: 100%;
     min-height: 100vh;
   }
+
+  /* Custom checkbox styling to ensure white background */
+  input[type="checkbox"] {
+    background-color: white;
+    border-color: #d1d5db;
+  }
+
+  input[type="checkbox"]:checked {
+    background-color: #3498db;
+    border-color: #3498db;
+  }
 }

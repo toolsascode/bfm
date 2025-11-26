@@ -1,9 +1,9 @@
 package pulsar
 
 import (
-	"bfm/api/internal/queue"
 	"context"
 	"fmt"
+	"github.com/toolsascode/bfm/api/internal/queue"
 )
 
 // Queue implements queue.Queue using Pulsar

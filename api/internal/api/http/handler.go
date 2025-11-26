@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"bfm/api/internal/api/http/dto"
-	"bfm/api/internal/auth"
-	"bfm/api/internal/executor"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/api/http/dto"
+	"github.com/toolsascode/bfm/api/internal/auth"
+	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/state"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"

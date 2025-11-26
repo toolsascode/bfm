@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/queue"
-	"bfm/api/internal/registry"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
 )
 
 // mockRegistry is a mock implementation of registry.Registry

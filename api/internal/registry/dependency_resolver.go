@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/state"
 )
 
 // MigrationNode represents a node in the dependency graph

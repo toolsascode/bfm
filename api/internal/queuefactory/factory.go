@@ -1,10 +1,10 @@
 package queuefactory
 
 import (
-	"bfm/api/internal/queue"
-	"bfm/api/internal/queue/kafka"
-	"bfm/api/internal/queue/pulsar"
 	"fmt"
+	"github.com/toolsascode/bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/queue/kafka"
+	"github.com/toolsascode/bfm/api/internal/queue/pulsar"
 	"strings"
 )
 

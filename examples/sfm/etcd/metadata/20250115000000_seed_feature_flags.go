@@ -1,9 +1,11 @@
 //go:build ignore
+
 package metadata
 
 import (
-	"bfm/api/migrations"
 	_ "embed"
+
+	"github.com/toolsascode/bfm/api/migrations"
 )
 
 //go:embed 20250115000000_seed_feature_flags.up.json

@@ -11,10 +11,10 @@ import (
 	"text/template"
 	"time"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/logger"
-	"bfm/api/internal/registry"
-	"bfm/api/migrations"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/logger"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/migrations"
 )
 
 // Loader loads migration scripts from the SFM directory

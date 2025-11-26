@@ -1,6 +1,6 @@
 package dto
 
-import "bfm/api/internal/registry"
+import "github.com/toolsascode/bfm/api/internal/registry"
 
 // MigrationListFilters specifies filters for listing migrations
 type MigrationListFilters struct {

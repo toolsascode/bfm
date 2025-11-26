@@ -7,17 +7,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	"bfm/api/internal/backends/etcd"
-	"bfm/api/internal/backends/greptimedb"
-	"bfm/api/internal/backends/postgresql"
-	"bfm/api/internal/config"
-	"bfm/api/internal/executor"
-	"bfm/api/internal/logger"
-	"bfm/api/internal/queuefactory"
-	"bfm/api/internal/registry"
-	"bfm/api/internal/state"
-	statepg "bfm/api/internal/state/postgresql"
-	"bfm/api/internal/worker"
+	"github.com/toolsascode/bfm/api/internal/backends/etcd"
+	"github.com/toolsascode/bfm/api/internal/backends/greptimedb"
+	"github.com/toolsascode/bfm/api/internal/backends/postgresql"
+	"github.com/toolsascode/bfm/api/internal/config"
+	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/logger"
+	"github.com/toolsascode/bfm/api/internal/queuefactory"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
+	statepg "github.com/toolsascode/bfm/api/internal/state/postgresql"
+	"github.com/toolsascode/bfm/api/internal/worker"
 )
 
 func main() {

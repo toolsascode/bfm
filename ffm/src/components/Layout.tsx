@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
+import { authService } from "../services/auth";
 
 interface LayoutProps {
   onLogout: () => void;
@@ -9,6 +10,22 @@ export default function Layout({ onLogout }: LayoutProps) {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [authEnabled, setAuthEnabled] = useState(() =>
+    authService.isAuthEnabled(),
+  );
+
+  // Re-check auth enabled status in case runtime config loads after component mount
+  useEffect(() => {
+    // Check immediately
+    setAuthEnabled(authService.isAuthEnabled());
+
+    // Also check after a short delay to catch late-loading runtime config
+    const timeout = setTimeout(() => {
+      setAuthEnabled(authService.isAuthEnabled());
+    }, 100);
+
+    return () => clearTimeout(timeout);
+  }, []);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -176,37 +193,51 @@ export default function Layout({ onLogout }: LayoutProps) {
             </Link>
           </li>
         </ul>
-        <div
-          className={`p-4 pt-4 border-t border-white/10 ${
-            sidebarCollapsed ? "px-2" : ""
-          }`}
-        >
-          <button
-            onClick={onLogout}
-            className={`w-full py-2 bg-gradient-to-br from-bfm-blue to-bfm-blue-dark text-white border-none rounded text-sm transition-all duration-200 font-medium hover:from-bfm-blue-dark hover:to-bfm-dark-blue hover:-translate-y-0.5 hover:shadow-lg hover:shadow-bfm-blue/30 active:scale-95 ${
+        {authEnabled && (
+          <div
+            className={`p-4 pt-4 border-t border-white/10 relative z-10 ${
               sidebarCollapsed ? "px-2" : ""
             }`}
-            title={sidebarCollapsed ? "Logout" : undefined}
           >
-            {sidebarCollapsed ? (
-              <svg
-                className="w-5 h-5 mx-auto"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-            ) : (
-              "Logout"
-            )}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Close mobile sidebar if open
+                if (sidebarOpen) {
+                  setSidebarOpen(false);
+                }
+                if (onLogout && typeof onLogout === "function") {
+                  onLogout();
+                }
+              }}
+              className={`w-full py-2 bg-gradient-to-br from-bfm-blue to-bfm-blue-dark text-white border-none rounded text-sm transition-all duration-200 font-medium hover:from-bfm-blue-dark hover:to-bfm-dark-blue hover:-translate-y-0.5 hover:shadow-lg hover:shadow-bfm-blue/30 active:scale-95 cursor-pointer relative z-10 ${
+                sidebarCollapsed ? "px-2" : ""
+              }`}
+              title={sidebarCollapsed ? "Logout" : undefined}
+              style={{ pointerEvents: "auto" }}
+            >
+              {sidebarCollapsed ? (
+                <svg
+                  className="w-5 h-5 mx-auto"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                  />
+                </svg>
+              ) : (
+                "Logout"
+              )}
+            </button>
+          </div>
+        )}
       </nav>
       <main
         className={`flex-1 p-4 md:p-8 min-h-screen transition-all duration-300 ${

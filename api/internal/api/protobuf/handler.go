@@ -3,13 +3,15 @@ package protobuf
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"time"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/executor"
-	"bfm/api/internal/registry"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -205,5 +207,388 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 	return nil
 }
 
-// Helper methods (these would need to be added to executor)
-// For now, we'll add them as needed
+// MigrateDown executes down migrations (rollback)
+func (s *Server) MigrateDown(ctx context.Context, req *MigrateDownRequest) (*MigrateResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Convert schemas slice
+	schemas := req.Schemas
+	if len(schemas) == 0 {
+		schemas = []string{""}
+	}
+
+	// Execute down migrations
+	result, err := s.executor.ExecuteDown(ctx, req.MigrationId, schemas, req.DryRun)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to execute down migrations: %v", err)
+	}
+
+	response := &MigrateResponse{
+		Success: result.Success,
+		Applied: result.Applied,
+		Skipped: result.Skipped,
+		Errors:  result.Errors,
+	}
+
+	return response, nil
+}
+
+// ListMigrations lists all migrations with optional filtering
+func (s *Server) ListMigrations(ctx context.Context, req *ListMigrationsRequest) (*ListMigrationsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request is required")
+	}
+
+	// Convert protobuf filters to state filters
+	stateFilters := &state.MigrationFilters{
+		Schema:     req.Schema,
+		Table:      req.Table,
+		Connection: req.Connection,
+		Backend:    req.Backend,
+		Status:     req.Status,
+		Version:    req.Version,
+	}
+
+	// Get migration list from state tracker
+	migrationList, err := s.executor.GetMigrationList(ctx, stateFilters)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get migration list: %v", err)
+	}
+
+	// Convert to protobuf response
+	items := make([]*MigrationListItem, 0, len(migrationList))
+	for _, item := range migrationList {
+		items = append(items, &MigrationListItem{
+			MigrationId:  item.MigrationID,
+			Schema:       item.Schema,
+			Table:        item.Table,
+			Version:      item.Version,
+			Name:         item.Name,
+			Connection:   item.Connection,
+			Backend:      item.Backend,
+			Applied:      item.Applied,
+			Status:       item.LastStatus,
+			AppliedAt:    item.LastAppliedAt,
+			ErrorMessage: item.LastErrorMessage,
+		})
+	}
+
+	response := &ListMigrationsResponse{
+		Items: items,
+		Total: int32(len(items)),
+	}
+
+	return response, nil
+}
+
+// GetMigration gets detailed information about a specific migration
+func (s *Server) GetMigration(ctx context.Context, req *GetMigrationRequest) (*MigrationDetailResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Get migration from registry
+	migration := s.executor.GetMigrationByID(req.MigrationId)
+	if migration == nil {
+		return nil, status.Errorf(codes.NotFound, "migration not found: %s", req.MigrationId)
+	}
+
+	// Get status from state tracker
+	applied, err := s.executor.IsMigrationApplied(ctx, req.MigrationId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check migration status: %v", err)
+	}
+
+	// Get schema and table from state tracker
+	var schemaValue, tableValue string
+	migrationList, err := s.executor.GetMigrationList(ctx, &state.MigrationFilters{})
+	if err == nil {
+		for _, item := range migrationList {
+			if item.MigrationID == req.MigrationId {
+				schemaValue = item.Schema
+				tableValue = item.Table
+				break
+			}
+		}
+	}
+
+	// Fallback to registry values if not found in state tracker
+	if tableValue == "" && migration.Table != nil {
+		tableValue = *migration.Table
+	}
+	if schemaValue == "" {
+		schemaValue = migration.Schema
+	}
+
+	// Convert structured dependencies to response format
+	structuredDeps := make([]*DependencyResponse, 0, len(migration.StructuredDependencies))
+	for _, dep := range migration.StructuredDependencies {
+		structuredDeps = append(structuredDeps, &DependencyResponse{
+			Connection:     dep.Connection,
+			Schema:         dep.Schema,
+			Target:         dep.Target,
+			TargetType:     dep.TargetType,
+			RequiresTable:  dep.RequiresTable,
+			RequiresSchema: dep.RequiresSchema,
+		})
+	}
+
+	response := &MigrationDetailResponse{
+		MigrationId:            req.MigrationId,
+		Schema:                 schemaValue,
+		Table:                  tableValue,
+		Version:                migration.Version,
+		Name:                   migration.Name,
+		Connection:             migration.Connection,
+		Backend:                migration.Backend,
+		Applied:                applied,
+		UpSql:                  migration.UpSQL,
+		DownSql:                migration.DownSQL,
+		Dependencies:           migration.Dependencies,
+		StructuredDependencies: structuredDeps,
+	}
+
+	return response, nil
+}
+
+// GetMigrationStatus gets the current status of a specific migration
+func (s *Server) GetMigrationStatus(ctx context.Context, req *GetMigrationStatusRequest) (*MigrationStatusResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Get all migration history to find the latest status
+	allHistory, err := s.executor.GetMigrationHistory(ctx, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get migration history: %v", err)
+	}
+
+	// Find all related records (base migration and rollbacks)
+	var relatedRecords []*state.MigrationRecord
+	for _, record := range allHistory {
+		if record.MigrationID == req.MigrationId ||
+			record.MigrationID == req.MigrationId+"_rollback" ||
+			(len(record.MigrationID) > len(req.MigrationId) && record.MigrationID[:len(req.MigrationId)] == req.MigrationId && record.MigrationID[len(req.MigrationId)] == '_') {
+			relatedRecords = append(relatedRecords, record)
+		}
+	}
+
+	// Determine applied status and get latest applied_at
+	applied := false
+	statusVal := "pending"
+	var appliedAt string
+	var errorMessage string
+
+	if len(relatedRecords) > 0 {
+		// Get the latest record (first in the list since history is sorted DESC)
+		latestRecord := relatedRecords[0]
+
+		// Find the latest successful, non-rollback record
+		var latestSuccessRecord *state.MigrationRecord
+		for _, record := range relatedRecords {
+			if !strings.Contains(record.MigrationID, "_rollback") && record.Status == "success" {
+				latestSuccessRecord = record
+				break
+			}
+		}
+
+		// Find the latest rollback record
+		var latestRollbackRecord *state.MigrationRecord
+		for _, record := range relatedRecords {
+			if strings.Contains(record.MigrationID, "_rollback") {
+				latestRollbackRecord = record
+				break
+			}
+		}
+
+		// Determine status based on which is more recent
+		if latestSuccessRecord != nil && latestRollbackRecord != nil {
+			successTime, _ := time.Parse(time.RFC3339, latestSuccessRecord.AppliedAt)
+			rollbackTime, _ := time.Parse(time.RFC3339, latestRollbackRecord.AppliedAt)
+
+			if successTime.After(rollbackTime) {
+				applied = true
+				statusVal = latestSuccessRecord.Status
+				appliedAt = latestSuccessRecord.AppliedAt
+				errorMessage = latestSuccessRecord.ErrorMessage
+			} else {
+				applied = false
+				statusVal = "rolled_back"
+				appliedAt = latestSuccessRecord.AppliedAt
+				errorMessage = latestRollbackRecord.ErrorMessage
+			}
+		} else if latestSuccessRecord != nil {
+			applied = true
+			statusVal = latestSuccessRecord.Status
+			appliedAt = latestSuccessRecord.AppliedAt
+			errorMessage = latestSuccessRecord.ErrorMessage
+		} else if latestRollbackRecord != nil {
+			applied = false
+			statusVal = "rolled_back"
+			errorMessage = latestRollbackRecord.ErrorMessage
+		} else {
+			applied = !strings.Contains(latestRecord.MigrationID, "_rollback")
+			statusVal = latestRecord.Status
+			appliedAt = latestRecord.AppliedAt
+			errorMessage = latestRecord.ErrorMessage
+		}
+	}
+
+	response := &MigrationStatusResponse{
+		MigrationId: req.MigrationId,
+		Status:      statusVal,
+		Applied:     applied,
+	}
+
+	if appliedAt != "" {
+		response.AppliedAt = appliedAt
+	}
+
+	if errorMessage != "" {
+		response.ErrorMessage = errorMessage
+	}
+
+	return response, nil
+}
+
+// GetMigrationHistory gets the execution history for a specific migration
+func (s *Server) GetMigrationHistory(ctx context.Context, req *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Get migration from registry to verify it exists
+	migration := s.executor.GetMigrationByID(req.MigrationId)
+	if migration == nil {
+		return nil, status.Errorf(codes.NotFound, "migration not found: %s", req.MigrationId)
+	}
+
+	// Get all migration history
+	allHistory, err := s.executor.GetMigrationHistory(ctx, nil)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get migration history: %v", err)
+	}
+
+	// Filter history to include related records
+	var relatedHistory []*state.MigrationRecord
+	for _, record := range allHistory {
+		if record.MigrationID == req.MigrationId ||
+			record.MigrationID == req.MigrationId+"_rollback" ||
+			(len(record.MigrationID) > len(req.MigrationId) && record.MigrationID[:len(req.MigrationId)] == req.MigrationId && record.MigrationID[len(req.MigrationId)] == '_') {
+			relatedHistory = append(relatedHistory, record)
+		}
+	}
+
+	// Convert to response format
+	historyItems := make([]*MigrationHistoryItem, 0, len(relatedHistory))
+	for _, record := range relatedHistory {
+		historyItems = append(historyItems, &MigrationHistoryItem{
+			MigrationId:      record.MigrationID,
+			Schema:           record.Schema,
+			Table:            record.Table,
+			Version:          record.Version,
+			Connection:       record.Connection,
+			Backend:          record.Backend,
+			AppliedAt:        record.AppliedAt,
+			Status:           record.Status,
+			ErrorMessage:     record.ErrorMessage,
+			ExecutedBy:       record.ExecutedBy,
+			ExecutionMethod:  record.ExecutionMethod,
+			ExecutionContext: record.ExecutionContext,
+		})
+	}
+
+	response := &MigrationHistoryResponse{
+		MigrationId: req.MigrationId,
+		History:     historyItems,
+	}
+
+	return response, nil
+}
+
+// RollbackMigration rolls back a specific migration
+func (s *Server) RollbackMigration(ctx context.Context, req *RollbackMigrationRequest) (*RollbackResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Get migration from registry
+	migration := s.executor.GetMigrationByID(req.MigrationId)
+	if migration == nil {
+		return nil, status.Errorf(codes.NotFound, "migration not found: %s", req.MigrationId)
+	}
+
+	// Check if migration is applied
+	applied, err := s.executor.IsMigrationApplied(ctx, req.MigrationId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check migration status: %v", err)
+	}
+
+	if !applied {
+		return nil, status.Errorf(codes.FailedPrecondition, "migration is not applied: %s", req.MigrationId)
+	}
+
+	// Execute rollback
+	result, err := s.executor.Rollback(ctx, req.MigrationId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to rollback migration: %v", err)
+	}
+
+	response := &RollbackResponse{
+		Success: result.Success,
+		Message: result.Message,
+		Errors:  result.Errors,
+	}
+
+	return response, nil
+}
+
+// ReindexMigrations reindexes all migration files and synchronizes with database
+func (s *Server) ReindexMigrations(ctx context.Context, req *ReindexMigrationsRequest) (*ReindexResponse, error) {
+	// Get SFM path from request or environment variable
+	sfmPath := req.SfmPath
+	if sfmPath == "" {
+		sfmPath = os.Getenv("BFM_SFM_PATH")
+		if sfmPath == "" {
+			// Default to ../sfm relative to bfm directory
+			sfmPath = "../sfm"
+		}
+	}
+
+	result, err := s.executor.ReindexMigrations(ctx, sfmPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to reindex migrations: %v", err)
+	}
+
+	response := &ReindexResponse{
+		Added:   result.Added,
+		Removed: result.Removed,
+		Updated: result.Updated,
+		Total:   int32(result.Total),
+	}
+
+	return response, nil
+}
+
+// Health checks the health status of the service
+func (s *Server) Health(ctx context.Context, req *HealthRequest) (*HealthResponse, error) {
+	healthStatus := "healthy"
+	checks := make(map[string]string)
+
+	// Add backend health checks if executor supports it
+	if err := s.executor.HealthCheck(ctx); err != nil {
+		healthStatus = "unhealthy"
+		checks["executor"] = err.Error()
+	} else {
+		checks["executor"] = "ok"
+	}
+
+	response := &HealthResponse{
+		Status: healthStatus,
+		Checks: checks,
+	}
+
+	return response, nil
+}
