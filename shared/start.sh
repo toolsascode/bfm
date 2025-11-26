@@ -53,6 +53,12 @@ trap cleanup SIGTERM SIGINT
 # Create PID directory
 mkdir -p "$PID_DIR"
 
+# Create SFM directory if it doesn't exist and BFM_SFM_PATH is set
+if [ -n "$BFM_SFM_PATH" ]; then
+    echo -e "${YELLOW}Creating SFM directory at $BFM_SFM_PATH if it doesn't exist...${NC}"
+    mkdir -p "$BFM_SFM_PATH" || true
+fi
+
 # Start BfM Server
 echo -e "${GREEN}Starting BfM Server...${NC}"
 /app/bin/bfm-server &
