@@ -2,15 +2,39 @@ syntax = "proto3";
 
 package migration;
 
-option go_package = "bfm/api/internal/api/protobuf";
+option go_package = "github.com/toolsascode/bfm/api/internal/api/protobuf";
 
 // MigrationService provides migration operations via gRPC
 service MigrationService {
-  // Migrate executes database migrations
+  // Migrate executes database migrations (up)
   rpc Migrate(MigrateRequest) returns (MigrateResponse);
 
   // StreamMigrate executes migrations with streaming progress updates
   rpc StreamMigrate(MigrateRequest) returns (stream MigrateProgress);
+
+  // MigrateDown executes down migrations (rollback)
+  rpc MigrateDown(MigrateDownRequest) returns (MigrateResponse);
+
+  // ListMigrations lists all migrations with optional filtering
+  rpc ListMigrations(ListMigrationsRequest) returns (ListMigrationsResponse);
+
+  // GetMigration gets detailed information about a specific migration
+  rpc GetMigration(GetMigrationRequest) returns (MigrationDetailResponse);
+
+  // GetMigrationStatus gets the current status of a specific migration
+  rpc GetMigrationStatus(GetMigrationStatusRequest) returns (MigrationStatusResponse);
+
+  // GetMigrationHistory gets the execution history for a specific migration
+  rpc GetMigrationHistory(GetMigrationHistoryRequest) returns (MigrationHistoryResponse);
+
+  // RollbackMigration rolls back a specific migration
+  rpc RollbackMigration(RollbackMigrationRequest) returns (RollbackResponse);
+
+  // ReindexMigrations reindexes all migration files and synchronizes with database
+  rpc ReindexMigrations(ReindexMigrationsRequest) returns (ReindexResponse);
+
+  // Health checks the health status of the service
+  rpc Health(HealthRequest) returns (HealthResponse);
 }
 
 // MigrationTarget specifies which migrations to execute
@@ -45,4 +69,150 @@ message MigrateProgress {
   string status = 2;         // "pending", "running", "success", "failed"
   string message = 3;
   int32 progress = 4;        // 0-100
+}
+
+// MigrateDownRequest represents a request to execute down migrations
+message MigrateDownRequest {
+  string migration_id = 1;   // Required: ID of migration to rollback
+  repeated string schemas = 2; // Optional: Array for dynamic schemas
+  bool dry_run = 3;          // Optional, default false
+}
+
+// ListMigrationsRequest represents a request to list migrations with filters
+message ListMigrationsRequest {
+  string schema = 1;         // Optional filter
+  string table = 2;          // Optional filter
+  string connection = 3;     // Optional filter
+  string backend = 4;        // Optional filter
+  string status = 5;         // Optional filter: "applied", "pending", etc.
+  string version = 6;        // Optional filter
+}
+
+// ListMigrationsResponse represents a list of migrations
+message ListMigrationsResponse {
+  repeated MigrationListItem items = 1;
+  int32 total = 2;
+}
+
+// MigrationListItem represents a single migration in the list
+message MigrationListItem {
+  string migration_id = 1;
+  string schema = 2;
+  string table = 3;
+  string version = 4;
+  string name = 5;
+  string connection = 6;
+  string backend = 7;
+  bool applied = 8;
+  string status = 9;
+  string applied_at = 10;    // RFC3339 timestamp
+  string error_message = 11;
+}
+
+// GetMigrationRequest represents a request to get a specific migration
+message GetMigrationRequest {
+  string migration_id = 1;   // Required: ID of migration to retrieve
+}
+
+// MigrationDetailResponse represents detailed migration information
+message MigrationDetailResponse {
+  string migration_id = 1;
+  string schema = 2;
+  string table = 3;
+  string version = 4;
+  string name = 5;
+  string connection = 6;
+  string backend = 7;
+  bool applied = 8;
+  string up_sql = 9;         // Contains SQL for SQL backends or JSON for NoSQL backends
+  string down_sql = 10;      // Contains SQL for SQL backends or JSON for NoSQL backends
+  repeated string dependencies = 11;  // List of migration names this migration depends on
+  repeated DependencyResponse structured_dependencies = 12;
+}
+
+// DependencyResponse represents a structured dependency
+message DependencyResponse {
+  string connection = 1;
+  string schema = 2;
+  string target = 3;
+  string target_type = 4;    // "name", "version", etc.
+  string requires_table = 5; // Optional
+  string requires_schema = 6; // Optional
+}
+
+// GetMigrationStatusRequest represents a request to get migration status
+message GetMigrationStatusRequest {
+  string migration_id = 1;   // Required: ID of migration
+}
+
+// MigrationStatusResponse represents the status of a migration
+message MigrationStatusResponse {
+  string migration_id = 1;
+  string status = 2;         // "pending", "applied", "rolled_back", "failed", etc.
+  bool applied = 3;
+  string applied_at = 4;     // RFC3339 timestamp, optional
+  string error_message = 5;  // Optional
+}
+
+// GetMigrationHistoryRequest represents a request to get migration history
+message GetMigrationHistoryRequest {
+  string migration_id = 1;   // Required: ID of migration
+}
+
+// MigrationHistoryResponse represents the execution history of a migration
+message MigrationHistoryResponse {
+  string migration_id = 1;
+  repeated MigrationHistoryItem history = 2;
+}
+
+// MigrationHistoryItem represents a single history entry
+message MigrationHistoryItem {
+  string migration_id = 1;
+  string schema = 2;
+  string table = 3;
+  string version = 4;
+  string connection = 5;
+  string backend = 6;
+  string applied_at = 7;     // RFC3339 timestamp
+  string status = 8;         // "success", "failed", "pending", etc.
+  string error_message = 9;  // Optional
+  string executed_by = 10;   // Who executed the migration
+  string execution_method = 11; // "manual", "api", etc.
+  string execution_context = 12; // JSON string with execution context
+}
+
+// RollbackMigrationRequest represents a request to rollback a migration
+message RollbackMigrationRequest {
+  string migration_id = 1;   // Required: ID of migration to rollback
+}
+
+// RollbackResponse represents the result of a rollback operation
+message RollbackResponse {
+  bool success = 1;
+  string message = 2;
+  repeated string errors = 3;
+}
+
+// ReindexMigrationsRequest represents a request to reindex migrations
+message ReindexMigrationsRequest {
+  string sfm_path = 1;       // Optional: Path to SFM directory, defaults to env var
+}
+
+// ReindexResponse represents the result of a reindex operation
+message ReindexResponse {
+  repeated string added = 1;
+  repeated string removed = 2;
+  repeated string updated = 3;
+  int32 total = 4;
+}
+
+// HealthRequest represents a health check request
+message HealthRequest {
+  // Empty - health check doesn't require parameters
+}
+
+// HealthResponse represents the health status of the service
+message HealthResponse {
+  string status = 1;         // "healthy", "unhealthy"
+  map<string, string> checks = 2; // Map of check name to status/error message
 }

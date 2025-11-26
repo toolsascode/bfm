@@ -3,7 +3,7 @@ package registry
 import (
 	"testing"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 )
 
 func TestNewInMemoryRegistry(t *testing.T) {

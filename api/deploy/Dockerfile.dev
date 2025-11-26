@@ -9,7 +9,7 @@ WORKDIR /app
 # Use latest Air which supports Go 1.25+
 # Add Go bin to PATH so air command is available
 ENV PATH=$PATH:/go/bin
-RUN go install github.com/cosmtrek/air@latest && \
+RUN go install github.com/air-verse/air@latest && \
     apk add --no-cache bash protobuf-dev git make wget
 
 # Copy go mod files first for better caching

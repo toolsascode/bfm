@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	migrationpkg "bfm/api/migrations"
+	migrationpkg "github.com/toolsascode/bfm/api/migrations"
 
 	"github.com/spf13/cobra"
 )

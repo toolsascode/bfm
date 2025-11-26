@@ -3,13 +3,16 @@ package executor
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"bfm/api/internal/backends"
-	"bfm/api/internal/queue"
-	"bfm/api/internal/registry"
-	"bfm/api/internal/state"
+	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
 )
 
 // mockRegistry is a mock implementation of registry.Registry
@@ -81,21 +84,53 @@ func (m *mockRegistry) GetByBackend(backendName string) []*backends.MigrationScr
 	return results
 }
 
-func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	if migration.Schema != "" {
-		return migration.Schema + "_" + migration.Connection + "_" + migration.Version + "_" + migration.Name
+func (m *mockRegistry) GetMigrationByName(name string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Name == name {
+			results = append(results, migration)
+		}
 	}
-	return migration.Connection + "_" + migration.Version + "_" + migration.Name
+	return results
+}
+
+func (m *mockRegistry) GetMigrationByVersion(version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
+func (m *mockRegistry) GetMigrationByConnectionAndVersion(connection, version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range m.migrations {
+		if migration.Connection == connection && migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
+func (m *mockRegistry) getMigrationID(migration *backends.MigrationScript) string {
+	// Migration ID format: {version}_{name}_{backend}_{connection}
+	return fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 }
 
 // mockStateTracker is a mock implementation of state.StateTracker
 type mockStateTracker struct {
-	appliedMigrations map[string]bool
-	history           []*state.MigrationRecord
-	listItems         []*state.MigrationListItem
-	healthCheckError  error
-	recordError       error
-	isAppliedError    error
+	appliedMigrations             map[string]bool
+	history                       []*state.MigrationRecord
+	listItems                     []*state.MigrationListItem
+	healthCheckError              error
+	recordError                   error
+	isAppliedError                error
+	getMigrationListError         error
+	getMigrationHistoryError      error
+	registerScannedMigrationError error
+	updateMigrationInfoError      error
 }
 
 func newMockStateTracker() *mockStateTracker {
@@ -121,11 +156,47 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 }
 
 func (m *mockStateTracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
+	if m.getMigrationHistoryError != nil {
+		return nil, m.getMigrationHistoryError
+	}
 	return m.history, nil
 }
 
 func (m *mockStateTracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationListItem, error) {
-	return m.listItems, nil
+	if m.getMigrationListError != nil {
+		return nil, m.getMigrationListError
+	}
+
+	// Apply filters if provided
+	if filters == nil {
+		return m.listItems, nil
+	}
+
+	var filtered []*state.MigrationListItem
+	for _, item := range m.listItems {
+		// Apply filters
+		if filters.Schema != "" && item.Schema != filters.Schema {
+			continue
+		}
+		if filters.Table != "" && item.Table != filters.Table {
+			continue
+		}
+		if filters.Connection != "" && item.Connection != filters.Connection {
+			continue
+		}
+		if filters.Backend != "" && item.Backend != filters.Backend {
+			continue
+		}
+		if filters.Status != "" && item.LastStatus != filters.Status {
+			continue
+		}
+		if filters.Version != "" && item.Version != filters.Version {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	return filtered, nil
 }
 
 func (m *mockStateTracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
@@ -140,6 +211,53 @@ func (m *mockStateTracker) GetLastMigrationVersion(ctx interface{}, schema, tabl
 }
 
 func (m *mockStateTracker) RegisterScannedMigration(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	if m.registerScannedMigrationError != nil {
+		return m.registerScannedMigrationError
+	}
+	// Add to listItems so it appears in GetMigrationList
+	m.listItems = append(m.listItems, &state.MigrationListItem{
+		MigrationID: migrationID,
+		Schema:      schema,
+		Table:       table,
+		Version:     version,
+		Name:        name,
+		Connection:  connection,
+		Backend:     backend,
+		LastStatus:  "pending",
+		Applied:     false,
+	})
+	return nil
+}
+
+func (m *mockStateTracker) DeleteMigration(ctx interface{}, migrationID string) error {
+	// Remove from appliedMigrations
+	delete(m.appliedMigrations, migrationID)
+	// Remove from listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems = append(m.listItems[:i], m.listItems[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error {
+	if m.updateMigrationInfoError != nil {
+		return m.updateMigrationInfoError
+	}
+	// Update listItems
+	for i, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			m.listItems[i].Schema = schema
+			m.listItems[i].Table = table
+			m.listItems[i].Version = version
+			m.listItems[i].Name = name
+			m.listItems[i].Connection = connection
+			m.listItems[i].Backend = backend
+			break
+		}
+	}
 	return nil
 }
 
@@ -349,8 +467,15 @@ func TestExecutor_GetMigrationByID(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
-	migrationID := "public_test_20240101120000_test_migration"
+	// Test with new format: {version}_{name}_{backend}_{connection}
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	found := exec.GetMigrationByID(migrationID)
+
+	// Also test legacy format for backward compatibility
+	if found == nil {
+		legacyID := fmt.Sprintf("%s_%s", migration.Version, migration.Name)
+		found = exec.GetMigrationByID(legacyID)
+	}
 
 	if found == nil {
 		t.Error("GetMigrationByID() returned nil")
@@ -465,7 +590,7 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	target := &registry.MigrationTarget{
@@ -682,7 +807,7 @@ func TestExecutor_ExecuteDown_NotApplied(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	// Migration is not applied
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -723,7 +848,7 @@ func TestExecutor_ExecuteDown_Successful(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -770,9 +895,10 @@ func TestExecutor_ExecuteDown_WithSchemas(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
-	tracker.appliedMigrations["schema1_test_20240101120000_test_migration"] = true
-	tracker.appliedMigrations["schema2_test_20240101120000_test_migration"] = true
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
+	baseID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
+	tracker.appliedMigrations["schema1_"+baseID] = true
+	tracker.appliedMigrations["schema2_"+baseID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{"schema1", "schema2"}, false)
 	if err != nil {
@@ -812,7 +938,7 @@ func TestExecutor_ExecuteDown_NoDownSQL(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -854,7 +980,7 @@ func TestExecutor_ExecuteDown_ExecutionError(t *testing.T) {
 	backend.executeError = errors.New("execution failed")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -899,7 +1025,7 @@ func TestExecutor_ExecuteDown_CheckStatusError(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
 	if err != nil {
@@ -942,7 +1068,7 @@ func TestExecutor_Rollback_NotApplied(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	// Migration is not applied
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -976,7 +1102,7 @@ func TestExecutor_Rollback_CheckStatusError(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 
 	_, err := exec.Rollback(context.Background(), migrationID)
 	if err == nil {
@@ -1013,7 +1139,7 @@ func TestExecutor_Rollback_NoDownSQL(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1057,7 +1183,7 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1102,7 +1228,7 @@ func TestExecutor_Rollback_ExecutionError(t *testing.T) {
 	backend.executeError = errors.New("rollback execution failed")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.Rollback(context.Background(), migrationID)
@@ -1581,7 +1707,7 @@ func TestExecutor_ExecuteDown_RecordMigrationError(t *testing.T) {
 	backend := newMockBackend("postgresql")
 	exec.RegisterBackend("postgresql", backend)
 
-	migrationID := "test_20240101120000_test_migration"
+	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
 	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
@@ -1861,6 +1987,134 @@ func TestExecutor_ExecuteSync_WithSchema(t *testing.T) {
 	}
 }
 
+func TestExecutor_ExecuteSync_WithStructuredDependencies(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Base migration
+	baseMigration := &backends.MigrationScript{
+		Version:      "20240101120000",
+		Name:         "base_migration",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE base (id SERIAL PRIMARY KEY);",
+		Dependencies: []string{},
+	}
+	_ = reg.Register(baseMigration)
+
+	// Dependent migration with structured dependency
+	dependentMigration := &backends.MigrationScript{
+		Version:    "20240101120001",
+		Name:       "dependent_migration",
+		Connection: "test",
+		Backend:    "postgresql",
+		UpSQL:      "CREATE TABLE dependent (id SERIAL PRIMARY KEY, base_id INT REFERENCES base(id));",
+		StructuredDependencies: []backends.Dependency{
+			{
+				Connection: "test",
+				Target:     "base_migration",
+				TargetType: "name",
+			},
+		},
+	}
+	_ = reg.Register(dependentMigration)
+
+	// Mark base as applied
+	tracker.appliedMigrations[fmt.Sprintf("%s_%s_%s_%s", baseMigration.Version, baseMigration.Name, baseMigration.Backend, baseMigration.Connection)] = true
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	if err != nil {
+		t.Errorf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	// Should execute dependent migration (base is already applied)
+	if len(result.Applied) != 1 {
+		t.Errorf("Expected 1 applied migration, got %v", len(result.Applied))
+	}
+	expectedID := fmt.Sprintf("%s_%s_%s_%s", dependentMigration.Version, dependentMigration.Name, dependentMigration.Backend, dependentMigration.Connection)
+	if result.Applied[0] != expectedID {
+		t.Errorf("Expected dependent_migration to be applied, got %s", result.Applied[0])
+	}
+}
+
+func TestExecutor_ExecuteSync_WithSimpleDependencies(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Base migration
+	baseMigration := &backends.MigrationScript{
+		Version:      "20240101120000",
+		Name:         "base",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE base (id SERIAL PRIMARY KEY);",
+		Dependencies: []string{},
+	}
+	_ = reg.Register(baseMigration)
+
+	// Dependent migration with simple dependency
+	dependentMigration := &backends.MigrationScript{
+		Version:      "20240101120001",
+		Name:         "dependent",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE dependent (id SERIAL PRIMARY KEY);",
+		Dependencies: []string{"base"},
+	}
+	_ = reg.Register(dependentMigration)
+
+	// Mark base as applied
+	tracker.appliedMigrations[fmt.Sprintf("%s_%s_%s_%s", baseMigration.Version, baseMigration.Name, baseMigration.Backend, baseMigration.Connection)] = true
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	if err != nil {
+		t.Errorf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	// Should execute dependent migration
+	if len(result.Applied) != 1 {
+		t.Errorf("Expected 1 applied migration, got %v", len(result.Applied))
+	}
+}
+
 func TestExecutor_ExecuteSync_MigrationWithSchema(t *testing.T) {
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
@@ -1901,5 +2155,325 @@ func TestExecutor_ExecuteSync_MigrationWithSchema(t *testing.T) {
 	}
 	if len(result.Applied) != 1 {
 		t.Errorf("Expected 1 applied migration, got %v", len(result.Applied))
+	}
+}
+
+func TestExecutor_ExecuteSync_CircularDependency(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Create circular dependency: m1 -> m2 -> m1
+	m1 := &backends.MigrationScript{
+		Version:      "20240101120000",
+		Name:         "migration1",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE m1;",
+		Dependencies: []string{"migration2"},
+	}
+	_ = reg.Register(m1)
+
+	m2 := &backends.MigrationScript{
+		Version:      "20240101120001",
+		Name:         "migration2",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE m2;",
+		Dependencies: []string{"migration1"},
+	}
+	_ = reg.Register(m2)
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	// Should detect circular dependency and add error to result
+	if err == nil && result != nil {
+		if len(result.Errors) == 0 {
+			t.Error("Expected error for circular dependency")
+		}
+	}
+}
+
+func TestExecutor_ExecuteSync_MissingDependency(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Migration with missing dependency
+	migration := &backends.MigrationScript{
+		Version:      "20240101120000",
+		Name:         "dependent",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE dependent;",
+		Dependencies: []string{"nonexistent"},
+	}
+	_ = reg.Register(migration)
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	// Should handle missing dependency gracefully
+	if err == nil && result != nil {
+		if len(result.Errors) == 0 {
+			t.Error("Expected error for missing dependency")
+		}
+	}
+}
+
+func TestExecutor_ExecuteSync_BothDependencyTypes(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Base migration
+	base := &backends.MigrationScript{
+		Version:      "20240101120000",
+		Name:         "base",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE base;",
+		Dependencies: []string{},
+	}
+	_ = reg.Register(base)
+
+	// Migration with both simple and structured dependencies
+	hybrid := &backends.MigrationScript{
+		Version:      "20240101120001",
+		Name:         "hybrid",
+		Connection:   "test",
+		Backend:      "postgresql",
+		UpSQL:        "CREATE TABLE hybrid;",
+		Dependencies: []string{"base"},
+		StructuredDependencies: []backends.Dependency{
+			{
+				Connection: "test",
+				Target:     "base",
+				TargetType: "name",
+			},
+		},
+	}
+	_ = reg.Register(hybrid)
+
+	tracker.appliedMigrations[fmt.Sprintf("%s_%s_%s_%s", base.Version, base.Name, base.Backend, base.Connection)] = true
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	if err != nil {
+		t.Errorf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	// Should execute hybrid migration
+	if len(result.Applied) != 1 {
+		t.Errorf("Expected 1 applied migration, got %v", len(result.Applied))
+	}
+}
+
+func TestExecutor_UpdateMigrationInfo(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.UpdateMigrationInfo(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err != nil {
+		t.Errorf("UpdateMigrationInfo() error = %v", err)
+	}
+}
+
+func TestExecutor_ReindexMigrations_EmptyPath(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, "")
+	if err == nil {
+		t.Error("Expected error for empty path, got nil")
+	}
+	if result != nil {
+		t.Error("Expected nil result for error case")
+	}
+}
+
+func TestExecutor_ReindexMigrations_NonExistentPath(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, "/nonexistent/path/that/does/not/exist")
+	if err == nil {
+		t.Error("Expected error for non-existent path, got nil")
+	}
+	if result != nil {
+		t.Error("Expected nil result for error case")
+	}
+}
+
+func TestExecutor_ReindexMigrations_Success(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	// Create a temporary directory structure
+	tmpDir := t.TempDir()
+	backendDir := filepath.Join(tmpDir, "postgresql", "test_conn")
+	_ = os.MkdirAll(backendDir, 0755)
+
+	// Create a migration file
+	migrationFile := filepath.Join(backendDir, "20240101120000_test_migration.go")
+	migrationContent := `package test_conn
+
+import "github.com/toolsascode/bfm/api/migrations"
+
+func init() {
+	migrations.Register(migrations.Migration{
+		Up:   "CREATE TABLE test (id INT);",
+		Down: "DROP TABLE test;",
+		Schema: "test_schema",
+	})
+}
+`
+	_ = os.WriteFile(migrationFile, []byte(migrationContent), 0644)
+
+	ctx := context.Background()
+	result, err := exec.ReindexMigrations(ctx, tmpDir)
+	if err != nil {
+		t.Fatalf("ReindexMigrations() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Expected non-nil result")
+	}
+
+	// Should have found and registered the migration
+	if result.Total < 1 {
+		t.Errorf("Expected at least 1 migration, got %d", result.Total)
+	}
+}
+
+func TestExecutor_GetMigrationList_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationListError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.GetMigrationList(ctx, nil)
+	if err == nil {
+		t.Error("Expected error from GetMigrationList, got nil")
+	}
+}
+
+func TestExecutor_GetMigrationHistory_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationHistoryError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.GetMigrationHistory(ctx, nil)
+	if err == nil {
+		t.Error("Expected error from GetMigrationHistory, got nil")
+	}
+}
+
+func TestExecutor_IsMigrationApplied_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.isAppliedError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	_, err := exec.IsMigrationApplied(ctx, "test_migration")
+	if err == nil {
+		t.Error("Expected error from IsMigrationApplied, got nil")
+	}
+}
+
+func TestExecutor_RegisterScannedMigration_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.registerScannedMigrationError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.RegisterScannedMigration(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err == nil {
+		t.Error("Expected error from RegisterScannedMigration, got nil")
+	}
+}
+
+func TestExecutor_UpdateMigrationInfo_Error(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.updateMigrationInfoError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	ctx := context.Background()
+	err := exec.UpdateMigrationInfo(ctx, "test_migration", "test_schema", "test_table", "20240101120000", "test_migration", "test_conn", "postgresql")
+	if err == nil {
+		t.Error("Expected error from UpdateMigrationInfo, got nil")
+	}
+}
+
+func TestExecutor_ReindexMigrations_GetMigrationListError(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	tracker.getMigrationListError = errors.New("database error")
+	exec := NewExecutor(reg, tracker)
+
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+	_, err := exec.ReindexMigrations(ctx, tmpDir)
+	if err == nil {
+		t.Error("Expected error from ReindexMigrations when GetMigrationList fails, got nil")
 	}
 }

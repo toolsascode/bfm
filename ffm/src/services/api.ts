@@ -11,6 +11,7 @@ import type {
   RollbackResponse,
   HealthResponse,
   MigrationListFilters,
+  ReindexResponse,
 } from "../types/api";
 import { toastService } from "./toast";
 
@@ -239,6 +240,13 @@ class BFMApiClient {
 
   async healthCheck(): Promise<HealthResponse> {
     const response = await this.client.get<HealthResponse>("/v1/health");
+    return response.data;
+  }
+
+  async reindexMigrations(): Promise<ReindexResponse> {
+    const response = await this.client.post<ReindexResponse>(
+      "/v1/migrations/reindex",
+    );
     return response.data;
   }
 }

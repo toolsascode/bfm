@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 )
 
 // MigrationTarget specifies which migrations to execute (moved here to avoid import cycle)
@@ -31,6 +31,15 @@ type Registry interface {
 
 	// GetByBackend returns migrations for a specific backend
 	GetByBackend(backendName string) []*backends.MigrationScript
+
+	// GetMigrationByName finds migrations by name across all connections/backends
+	GetMigrationByName(name string) []*backends.MigrationScript
+
+	// GetMigrationByVersion finds migrations by version across all connections/backends
+	GetMigrationByVersion(version string) []*backends.MigrationScript
+
+	// GetMigrationByConnectionAndVersion finds migrations by connection and version
+	GetMigrationByConnectionAndVersion(connection, version string) []*backends.MigrationScript
 }
 
 // GlobalRegistry is the global migration registry instance
@@ -119,11 +128,37 @@ func (r *inMemoryRegistry) GetByBackend(backendName string) []*backends.Migratio
 	return results
 }
 
-func (r *inMemoryRegistry) getMigrationID(migration *backends.MigrationScript) string {
-	// If schema is provided, include it in the ID for uniqueness
-	// Format: {schema}_{connection}_{version}_{name} or {connection}_{version}_{name}
-	if migration.Schema != "" {
-		return fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+func (r *inMemoryRegistry) GetMigrationByName(name string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range r.migrations {
+		if migration.Name == name {
+			results = append(results, migration)
+		}
 	}
-	return fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+	return results
+}
+
+func (r *inMemoryRegistry) GetMigrationByVersion(version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range r.migrations {
+		if migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
+func (r *inMemoryRegistry) GetMigrationByConnectionAndVersion(connection, version string) []*backends.MigrationScript {
+	var results []*backends.MigrationScript
+	for _, migration := range r.migrations {
+		if migration.Connection == connection && migration.Version == version {
+			results = append(results, migration)
+		}
+	}
+	return results
+}
+
+func (r *inMemoryRegistry) getMigrationID(migration *backends.MigrationScript) string {
+	// Migration ID format: {version}_{name}_{backend}_{connection}
+	return fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 }

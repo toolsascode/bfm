@@ -57,6 +57,15 @@ export interface MigrationListResponse {
   total: number;
 }
 
+export interface Dependency {
+  connection: string;
+  schema: string;
+  target: string;
+  target_type: string;
+  requires_table?: string;
+  requires_schema?: string;
+}
+
 export interface MigrationDetailResponse {
   migration_id: string;
   schema: string;
@@ -68,6 +77,8 @@ export interface MigrationDetailResponse {
   applied: boolean;
   up_sql?: string;
   down_sql?: string;
+  dependencies?: string[];
+  structured_dependencies?: Dependency[];
 }
 
 export interface MigrationStatusResponse {
@@ -107,6 +118,12 @@ export interface RollbackResponse {
 export interface HealthResponse {
   status: string;
   checks: Record<string, string>;
+}
+
+export interface ReindexResponse {
+  added: string[];
+  removed: string[];
+  total: number;
 }
 
 export interface MigrationListFilters {

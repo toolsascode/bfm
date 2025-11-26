@@ -1,6 +1,6 @@
 package executor
 
-import "bfm/api/internal/backends"
+import "github.com/toolsascode/bfm/api/internal/backends"
 
 // MigrationScript is an alias for backends.MigrationScript
 type MigrationScript = backends.MigrationScript

@@ -313,6 +313,1256 @@ func (x *MigrateProgress) GetProgress() int32 {
 	return 0
 }
 
+// MigrateDownRequest represents a request to execute down migrations
+type MigrateDownRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to rollback
+	Schemas       []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                            // Optional: Array for dynamic schemas
+	DryRun        bool                   `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`               // Optional, default false
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrateDownRequest) Reset() {
+	*x = MigrateDownRequest{}
+	mi := &file_migration_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrateDownRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrateDownRequest) ProtoMessage() {}
+
+func (x *MigrateDownRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrateDownRequest.ProtoReflect.Descriptor instead.
+func (*MigrateDownRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *MigrateDownRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrateDownRequest) GetSchemas() []string {
+	if x != nil {
+		return x.Schemas
+	}
+	return nil
+}
+
+func (x *MigrateDownRequest) GetDryRun() bool {
+	if x != nil {
+		return x.DryRun
+	}
+	return false
+}
+
+// ListMigrationsRequest represents a request to list migrations with filters
+type ListMigrationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schema        string                 `protobuf:"bytes,1,opt,name=schema,proto3" json:"schema,omitempty"`         // Optional filter
+	Table         string                 `protobuf:"bytes,2,opt,name=table,proto3" json:"table,omitempty"`           // Optional filter
+	Connection    string                 `protobuf:"bytes,3,opt,name=connection,proto3" json:"connection,omitempty"` // Optional filter
+	Backend       string                 `protobuf:"bytes,4,opt,name=backend,proto3" json:"backend,omitempty"`       // Optional filter
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`         // Optional filter: "applied", "pending", etc.
+	Version       string                 `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`       // Optional filter
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMigrationsRequest) Reset() {
+	*x = ListMigrationsRequest{}
+	mi := &file_migration_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMigrationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMigrationsRequest) ProtoMessage() {}
+
+func (x *ListMigrationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMigrationsRequest.ProtoReflect.Descriptor instead.
+func (*ListMigrationsRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListMigrationsRequest) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *ListMigrationsRequest) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *ListMigrationsRequest) GetConnection() string {
+	if x != nil {
+		return x.Connection
+	}
+	return ""
+}
+
+func (x *ListMigrationsRequest) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *ListMigrationsRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ListMigrationsRequest) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+// ListMigrationsResponse represents a list of migrations
+type ListMigrationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*MigrationListItem   `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListMigrationsResponse) Reset() {
+	*x = ListMigrationsResponse{}
+	mi := &file_migration_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListMigrationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListMigrationsResponse) ProtoMessage() {}
+
+func (x *ListMigrationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListMigrationsResponse.ProtoReflect.Descriptor instead.
+func (*ListMigrationsResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ListMigrationsResponse) GetItems() []*MigrationListItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListMigrationsResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+// MigrationListItem represents a single migration in the list
+type MigrationListItem struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	Schema        string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Table         string                 `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Name          string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	Connection    string                 `protobuf:"bytes,6,opt,name=connection,proto3" json:"connection,omitempty"`
+	Backend       string                 `protobuf:"bytes,7,opt,name=backend,proto3" json:"backend,omitempty"`
+	Applied       bool                   `protobuf:"varint,8,opt,name=applied,proto3" json:"applied,omitempty"`
+	Status        string                 `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
+	AppliedAt     string                 `protobuf:"bytes,10,opt,name=applied_at,json=appliedAt,proto3" json:"applied_at,omitempty"` // RFC3339 timestamp
+	ErrorMessage  string                 `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationListItem) Reset() {
+	*x = MigrationListItem{}
+	mi := &file_migration_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationListItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationListItem) ProtoMessage() {}
+
+func (x *MigrationListItem) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationListItem.ProtoReflect.Descriptor instead.
+func (*MigrationListItem) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MigrationListItem) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetConnection() string {
+	if x != nil {
+		return x.Connection
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *MigrationListItem) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetAppliedAt() string {
+	if x != nil {
+		return x.AppliedAt
+	}
+	return ""
+}
+
+func (x *MigrationListItem) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+// GetMigrationRequest represents a request to get a specific migration
+type GetMigrationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to retrieve
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMigrationRequest) Reset() {
+	*x = GetMigrationRequest{}
+	mi := &file_migration_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMigrationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMigrationRequest) ProtoMessage() {}
+
+func (x *GetMigrationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMigrationRequest.ProtoReflect.Descriptor instead.
+func (*GetMigrationRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetMigrationRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+// MigrationDetailResponse represents detailed migration information
+type MigrationDetailResponse struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId            string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	Schema                 string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Table                  string                 `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	Version                string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Name                   string                 `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
+	Connection             string                 `protobuf:"bytes,6,opt,name=connection,proto3" json:"connection,omitempty"`
+	Backend                string                 `protobuf:"bytes,7,opt,name=backend,proto3" json:"backend,omitempty"`
+	Applied                bool                   `protobuf:"varint,8,opt,name=applied,proto3" json:"applied,omitempty"`
+	UpSql                  string                 `protobuf:"bytes,9,opt,name=up_sql,json=upSql,proto3" json:"up_sql,omitempty"`        // Contains SQL for SQL backends or JSON for NoSQL backends
+	DownSql                string                 `protobuf:"bytes,10,opt,name=down_sql,json=downSql,proto3" json:"down_sql,omitempty"` // Contains SQL for SQL backends or JSON for NoSQL backends
+	Dependencies           []string               `protobuf:"bytes,11,rep,name=dependencies,proto3" json:"dependencies,omitempty"`      // List of migration names this migration depends on
+	StructuredDependencies []*DependencyResponse  `protobuf:"bytes,12,rep,name=structured_dependencies,json=structuredDependencies,proto3" json:"structured_dependencies,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *MigrationDetailResponse) Reset() {
+	*x = MigrationDetailResponse{}
+	mi := &file_migration_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationDetailResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationDetailResponse) ProtoMessage() {}
+
+func (x *MigrationDetailResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationDetailResponse.ProtoReflect.Descriptor instead.
+func (*MigrationDetailResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *MigrationDetailResponse) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetConnection() string {
+	if x != nil {
+		return x.Connection
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *MigrationDetailResponse) GetUpSql() string {
+	if x != nil {
+		return x.UpSql
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetDownSql() string {
+	if x != nil {
+		return x.DownSql
+	}
+	return ""
+}
+
+func (x *MigrationDetailResponse) GetDependencies() []string {
+	if x != nil {
+		return x.Dependencies
+	}
+	return nil
+}
+
+func (x *MigrationDetailResponse) GetStructuredDependencies() []*DependencyResponse {
+	if x != nil {
+		return x.StructuredDependencies
+	}
+	return nil
+}
+
+// DependencyResponse represents a structured dependency
+type DependencyResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Connection     string                 `protobuf:"bytes,1,opt,name=connection,proto3" json:"connection,omitempty"`
+	Schema         string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Target         string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	TargetType     string                 `protobuf:"bytes,4,opt,name=target_type,json=targetType,proto3" json:"target_type,omitempty"`             // "name", "version", etc.
+	RequiresTable  string                 `protobuf:"bytes,5,opt,name=requires_table,json=requiresTable,proto3" json:"requires_table,omitempty"`    // Optional
+	RequiresSchema string                 `protobuf:"bytes,6,opt,name=requires_schema,json=requiresSchema,proto3" json:"requires_schema,omitempty"` // Optional
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DependencyResponse) Reset() {
+	*x = DependencyResponse{}
+	mi := &file_migration_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DependencyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DependencyResponse) ProtoMessage() {}
+
+func (x *DependencyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DependencyResponse.ProtoReflect.Descriptor instead.
+func (*DependencyResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DependencyResponse) GetConnection() string {
+	if x != nil {
+		return x.Connection
+	}
+	return ""
+}
+
+func (x *DependencyResponse) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *DependencyResponse) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *DependencyResponse) GetTargetType() string {
+	if x != nil {
+		return x.TargetType
+	}
+	return ""
+}
+
+func (x *DependencyResponse) GetRequiresTable() string {
+	if x != nil {
+		return x.RequiresTable
+	}
+	return ""
+}
+
+func (x *DependencyResponse) GetRequiresSchema() string {
+	if x != nil {
+		return x.RequiresSchema
+	}
+	return ""
+}
+
+// GetMigrationStatusRequest represents a request to get migration status
+type GetMigrationStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMigrationStatusRequest) Reset() {
+	*x = GetMigrationStatusRequest{}
+	mi := &file_migration_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMigrationStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMigrationStatusRequest) ProtoMessage() {}
+
+func (x *GetMigrationStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMigrationStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetMigrationStatusRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetMigrationStatusRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+// MigrationStatusResponse represents the status of a migration
+type MigrationStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"` // "pending", "applied", "rolled_back", "failed", etc.
+	Applied       bool                   `protobuf:"varint,3,opt,name=applied,proto3" json:"applied,omitempty"`
+	AppliedAt     string                 `protobuf:"bytes,4,opt,name=applied_at,json=appliedAt,proto3" json:"applied_at,omitempty"`          // RFC3339 timestamp, optional
+	ErrorMessage  string                 `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"` // Optional
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationStatusResponse) Reset() {
+	*x = MigrationStatusResponse{}
+	mi := &file_migration_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationStatusResponse) ProtoMessage() {}
+
+func (x *MigrationStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationStatusResponse.ProtoReflect.Descriptor instead.
+func (*MigrationStatusResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *MigrationStatusResponse) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationStatusResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *MigrationStatusResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
+func (x *MigrationStatusResponse) GetAppliedAt() string {
+	if x != nil {
+		return x.AppliedAt
+	}
+	return ""
+}
+
+func (x *MigrationStatusResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+// GetMigrationHistoryRequest represents a request to get migration history
+type GetMigrationHistoryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetMigrationHistoryRequest) Reset() {
+	*x = GetMigrationHistoryRequest{}
+	mi := &file_migration_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetMigrationHistoryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetMigrationHistoryRequest) ProtoMessage() {}
+
+func (x *GetMigrationHistoryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetMigrationHistoryRequest.ProtoReflect.Descriptor instead.
+func (*GetMigrationHistoryRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetMigrationHistoryRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+// MigrationHistoryResponse represents the execution history of a migration
+type MigrationHistoryResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	MigrationId   string                  `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	History       []*MigrationHistoryItem `protobuf:"bytes,2,rep,name=history,proto3" json:"history,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationHistoryResponse) Reset() {
+	*x = MigrationHistoryResponse{}
+	mi := &file_migration_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationHistoryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationHistoryResponse) ProtoMessage() {}
+
+func (x *MigrationHistoryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationHistoryResponse.ProtoReflect.Descriptor instead.
+func (*MigrationHistoryResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MigrationHistoryResponse) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationHistoryResponse) GetHistory() []*MigrationHistoryItem {
+	if x != nil {
+		return x.History
+	}
+	return nil
+}
+
+// MigrationHistoryItem represents a single history entry
+type MigrationHistoryItem struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId      string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`
+	Schema           string                 `protobuf:"bytes,2,opt,name=schema,proto3" json:"schema,omitempty"`
+	Table            string                 `protobuf:"bytes,3,opt,name=table,proto3" json:"table,omitempty"`
+	Version          string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Connection       string                 `protobuf:"bytes,5,opt,name=connection,proto3" json:"connection,omitempty"`
+	Backend          string                 `protobuf:"bytes,6,opt,name=backend,proto3" json:"backend,omitempty"`
+	AppliedAt        string                 `protobuf:"bytes,7,opt,name=applied_at,json=appliedAt,proto3" json:"applied_at,omitempty"`                       // RFC3339 timestamp
+	Status           string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`                                              // "success", "failed", "pending", etc.
+	ErrorMessage     string                 `protobuf:"bytes,9,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`              // Optional
+	ExecutedBy       string                 `protobuf:"bytes,10,opt,name=executed_by,json=executedBy,proto3" json:"executed_by,omitempty"`                   // Who executed the migration
+	ExecutionMethod  string                 `protobuf:"bytes,11,opt,name=execution_method,json=executionMethod,proto3" json:"execution_method,omitempty"`    // "manual", "api", etc.
+	ExecutionContext string                 `protobuf:"bytes,12,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"` // JSON string with execution context
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *MigrationHistoryItem) Reset() {
+	*x = MigrationHistoryItem{}
+	mi := &file_migration_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationHistoryItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationHistoryItem) ProtoMessage() {}
+
+func (x *MigrationHistoryItem) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationHistoryItem.ProtoReflect.Descriptor instead.
+func (*MigrationHistoryItem) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *MigrationHistoryItem) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetSchema() string {
+	if x != nil {
+		return x.Schema
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetTable() string {
+	if x != nil {
+		return x.Table
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetConnection() string {
+	if x != nil {
+		return x.Connection
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetAppliedAt() string {
+	if x != nil {
+		return x.AppliedAt
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetExecutedBy() string {
+	if x != nil {
+		return x.ExecutedBy
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetExecutionMethod() string {
+	if x != nil {
+		return x.ExecutionMethod
+	}
+	return ""
+}
+
+func (x *MigrationHistoryItem) GetExecutionContext() string {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return ""
+}
+
+// RollbackMigrationRequest represents a request to rollback a migration
+type RollbackMigrationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to rollback
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackMigrationRequest) Reset() {
+	*x = RollbackMigrationRequest{}
+	mi := &file_migration_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackMigrationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackMigrationRequest) ProtoMessage() {}
+
+func (x *RollbackMigrationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackMigrationRequest.ProtoReflect.Descriptor instead.
+func (*RollbackMigrationRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RollbackMigrationRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+// RollbackResponse represents the result of a rollback operation
+type RollbackResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Errors        []string               `protobuf:"bytes,3,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RollbackResponse) Reset() {
+	*x = RollbackResponse{}
+	mi := &file_migration_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RollbackResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RollbackResponse) ProtoMessage() {}
+
+func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RollbackResponse.ProtoReflect.Descriptor instead.
+func (*RollbackResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RollbackResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *RollbackResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *RollbackResponse) GetErrors() []string {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
+// ReindexMigrationsRequest represents a request to reindex migrations
+type ReindexMigrationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SfmPath       string                 `protobuf:"bytes,1,opt,name=sfm_path,json=sfmPath,proto3" json:"sfm_path,omitempty"` // Optional: Path to SFM directory, defaults to env var
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReindexMigrationsRequest) Reset() {
+	*x = ReindexMigrationsRequest{}
+	mi := &file_migration_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReindexMigrationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReindexMigrationsRequest) ProtoMessage() {}
+
+func (x *ReindexMigrationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReindexMigrationsRequest.ProtoReflect.Descriptor instead.
+func (*ReindexMigrationsRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ReindexMigrationsRequest) GetSfmPath() string {
+	if x != nil {
+		return x.SfmPath
+	}
+	return ""
+}
+
+// ReindexResponse represents the result of a reindex operation
+type ReindexResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Added         []string               `protobuf:"bytes,1,rep,name=added,proto3" json:"added,omitempty"`
+	Removed       []string               `protobuf:"bytes,2,rep,name=removed,proto3" json:"removed,omitempty"`
+	Updated       []string               `protobuf:"bytes,3,rep,name=updated,proto3" json:"updated,omitempty"`
+	Total         int32                  `protobuf:"varint,4,opt,name=total,proto3" json:"total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReindexResponse) Reset() {
+	*x = ReindexResponse{}
+	mi := &file_migration_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReindexResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReindexResponse) ProtoMessage() {}
+
+func (x *ReindexResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReindexResponse.ProtoReflect.Descriptor instead.
+func (*ReindexResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReindexResponse) GetAdded() []string {
+	if x != nil {
+		return x.Added
+	}
+	return nil
+}
+
+func (x *ReindexResponse) GetRemoved() []string {
+	if x != nil {
+		return x.Removed
+	}
+	return nil
+}
+
+func (x *ReindexResponse) GetUpdated() []string {
+	if x != nil {
+		return x.Updated
+	}
+	return nil
+}
+
+func (x *ReindexResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+// HealthRequest represents a health check request
+type HealthRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthRequest) Reset() {
+	*x = HealthRequest{}
+	mi := &file_migration_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthRequest) ProtoMessage() {}
+
+func (x *HealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
+func (*HealthRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{20}
+}
+
+// HealthResponse represents the health status of the service
+type HealthResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`                                                                           // "healthy", "unhealthy"
+	Checks        map[string]string      `protobuf:"bytes,2,rep,name=checks,proto3" json:"checks,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Map of check name to status/error message
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthResponse) Reset() {
+	*x = HealthResponse{}
+	mi := &file_migration_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthResponse) ProtoMessage() {}
+
+func (x *HealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
+func (*HealthResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *HealthResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *HealthResponse) GetChecks() map[string]string {
+	if x != nil {
+		return x.Checks
+	}
+	return nil
+}
+
 var File_migration_proto protoreflect.FileDescriptor
 
 const file_migration_proto_rawDesc = "" +
@@ -344,10 +1594,130 @@ const file_migration_proto_rawDesc = "" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1a\n" +
-	"\bprogress\x18\x04 \x01(\x05R\bprogress2\x9e\x01\n" +
+	"\bprogress\x18\x04 \x01(\x05R\bprogress\"j\n" +
+	"\x12MigrateDownRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x18\n" +
+	"\aschemas\x18\x02 \x03(\tR\aschemas\x12\x17\n" +
+	"\adry_run\x18\x03 \x01(\bR\x06dryRun\"\xb1\x01\n" +
+	"\x15ListMigrationsRequest\x12\x16\n" +
+	"\x06schema\x18\x01 \x01(\tR\x06schema\x12\x14\n" +
+	"\x05table\x18\x02 \x01(\tR\x05table\x12\x1e\n" +
+	"\n" +
+	"connection\x18\x03 \x01(\tR\n" +
+	"connection\x12\x18\n" +
+	"\abackend\x18\x04 \x01(\tR\abackend\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\"b\n" +
+	"\x16ListMigrationsResponse\x122\n" +
+	"\x05items\x18\x01 \x03(\v2\x1c.migration.MigrationListItemR\x05items\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\xc2\x02\n" +
+	"\x11MigrationListItem\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"connection\x18\x06 \x01(\tR\n" +
+	"connection\x12\x18\n" +
+	"\abackend\x18\a \x01(\tR\abackend\x12\x18\n" +
+	"\aapplied\x18\b \x01(\bR\aapplied\x12\x16\n" +
+	"\x06status\x18\t \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"applied_at\x18\n" +
+	" \x01(\tR\tappliedAt\x12#\n" +
+	"\rerror_message\x18\v \x01(\tR\ferrorMessage\"8\n" +
+	"\x13GetMigrationRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"\x9a\x03\n" +
+	"\x17MigrationDetailResponse\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
+	"\x04name\x18\x05 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"connection\x18\x06 \x01(\tR\n" +
+	"connection\x12\x18\n" +
+	"\abackend\x18\a \x01(\tR\abackend\x12\x18\n" +
+	"\aapplied\x18\b \x01(\bR\aapplied\x12\x15\n" +
+	"\x06up_sql\x18\t \x01(\tR\x05upSql\x12\x19\n" +
+	"\bdown_sql\x18\n" +
+	" \x01(\tR\adownSql\x12\"\n" +
+	"\fdependencies\x18\v \x03(\tR\fdependencies\x12V\n" +
+	"\x17structured_dependencies\x18\f \x03(\v2\x1d.migration.DependencyResponseR\x16structuredDependencies\"\xd5\x01\n" +
+	"\x12DependencyResponse\x12\x1e\n" +
+	"\n" +
+	"connection\x18\x01 \x01(\tR\n" +
+	"connection\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x16\n" +
+	"\x06target\x18\x03 \x01(\tR\x06target\x12\x1f\n" +
+	"\vtarget_type\x18\x04 \x01(\tR\n" +
+	"targetType\x12%\n" +
+	"\x0erequires_table\x18\x05 \x01(\tR\rrequiresTable\x12'\n" +
+	"\x0frequires_schema\x18\x06 \x01(\tR\x0erequiresSchema\">\n" +
+	"\x19GetMigrationStatusRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"\xb2\x01\n" +
+	"\x17MigrationStatusResponse\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
+	"\aapplied\x18\x03 \x01(\bR\aapplied\x12\x1d\n" +
+	"\n" +
+	"applied_at\x18\x04 \x01(\tR\tappliedAt\x12#\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"?\n" +
+	"\x1aGetMigrationHistoryRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"x\n" +
+	"\x18MigrationHistoryResponse\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x129\n" +
+	"\ahistory\x18\x02 \x03(\v2\x1f.migration.MigrationHistoryItemR\ahistory\"\x90\x03\n" +
+	"\x14MigrationHistoryItem\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
+	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
+	"\x05table\x18\x03 \x01(\tR\x05table\x12\x18\n" +
+	"\aversion\x18\x04 \x01(\tR\aversion\x12\x1e\n" +
+	"\n" +
+	"connection\x18\x05 \x01(\tR\n" +
+	"connection\x12\x18\n" +
+	"\abackend\x18\x06 \x01(\tR\abackend\x12\x1d\n" +
+	"\n" +
+	"applied_at\x18\a \x01(\tR\tappliedAt\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12#\n" +
+	"\rerror_message\x18\t \x01(\tR\ferrorMessage\x12\x1f\n" +
+	"\vexecuted_by\x18\n" +
+	" \x01(\tR\n" +
+	"executedBy\x12)\n" +
+	"\x10execution_method\x18\v \x01(\tR\x0fexecutionMethod\x12+\n" +
+	"\x11execution_context\x18\f \x01(\tR\x10executionContext\"=\n" +
+	"\x18RollbackMigrationRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"^\n" +
+	"\x10RollbackResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
+	"\x06errors\x18\x03 \x03(\tR\x06errors\"5\n" +
+	"\x18ReindexMigrationsRequest\x12\x19\n" +
+	"\bsfm_path\x18\x01 \x01(\tR\asfmPath\"q\n" +
+	"\x0fReindexResponse\x12\x14\n" +
+	"\x05added\x18\x01 \x03(\tR\x05added\x12\x18\n" +
+	"\aremoved\x18\x02 \x03(\tR\aremoved\x12\x18\n" +
+	"\aupdated\x18\x03 \x03(\tR\aupdated\x12\x14\n" +
+	"\x05total\x18\x04 \x01(\x05R\x05total\"\x0f\n" +
+	"\rHealthRequest\"\xa2\x01\n" +
+	"\x0eHealthResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\x12=\n" +
+	"\x06checks\x18\x02 \x03(\v2%.migration.HealthResponse.ChecksEntryR\x06checks\x1a9\n" +
+	"\vChecksEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xc2\x06\n" +
 	"\x10MigrationService\x12@\n" +
 	"\aMigrate\x12\x19.migration.MigrateRequest\x1a\x1a.migration.MigrateResponse\x12H\n" +
-	"\rStreamMigrate\x12\x19.migration.MigrateRequest\x1a\x1a.migration.MigrateProgress0\x01B\x1fZ\x1dbfm/api/internal/api/protobufb\x06proto3"
+	"\rStreamMigrate\x12\x19.migration.MigrateRequest\x1a\x1a.migration.MigrateProgress0\x01\x12H\n" +
+	"\vMigrateDown\x12\x1d.migration.MigrateDownRequest\x1a\x1a.migration.MigrateResponse\x12U\n" +
+	"\x0eListMigrations\x12 .migration.ListMigrationsRequest\x1a!.migration.ListMigrationsResponse\x12R\n" +
+	"\fGetMigration\x12\x1e.migration.GetMigrationRequest\x1a\".migration.MigrationDetailResponse\x12^\n" +
+	"\x12GetMigrationStatus\x12$.migration.GetMigrationStatusRequest\x1a\".migration.MigrationStatusResponse\x12a\n" +
+	"\x13GetMigrationHistory\x12%.migration.GetMigrationHistoryRequest\x1a#.migration.MigrationHistoryResponse\x12U\n" +
+	"\x11RollbackMigration\x12#.migration.RollbackMigrationRequest\x1a\x1b.migration.RollbackResponse\x12T\n" +
+	"\x11ReindexMigrations\x12#.migration.ReindexMigrationsRequest\x1a\x1a.migration.ReindexResponse\x12=\n" +
+	"\x06Health\x12\x18.migration.HealthRequest\x1a\x19.migration.HealthResponseB6Z4github.com/toolsascode/bfm/api/internal/api/protobufb\x06proto3"
 
 var (
 	file_migration_proto_rawDescOnce sync.Once
@@ -361,24 +1731,63 @@ func file_migration_proto_rawDescGZIP() []byte {
 	return file_migration_proto_rawDescData
 }
 
-var file_migration_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_migration_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_migration_proto_goTypes = []any{
-	(*MigrationTarget)(nil), // 0: migration.MigrationTarget
-	(*MigrateRequest)(nil),  // 1: migration.MigrateRequest
-	(*MigrateResponse)(nil), // 2: migration.MigrateResponse
-	(*MigrateProgress)(nil), // 3: migration.MigrateProgress
+	(*MigrationTarget)(nil),            // 0: migration.MigrationTarget
+	(*MigrateRequest)(nil),             // 1: migration.MigrateRequest
+	(*MigrateResponse)(nil),            // 2: migration.MigrateResponse
+	(*MigrateProgress)(nil),            // 3: migration.MigrateProgress
+	(*MigrateDownRequest)(nil),         // 4: migration.MigrateDownRequest
+	(*ListMigrationsRequest)(nil),      // 5: migration.ListMigrationsRequest
+	(*ListMigrationsResponse)(nil),     // 6: migration.ListMigrationsResponse
+	(*MigrationListItem)(nil),          // 7: migration.MigrationListItem
+	(*GetMigrationRequest)(nil),        // 8: migration.GetMigrationRequest
+	(*MigrationDetailResponse)(nil),    // 9: migration.MigrationDetailResponse
+	(*DependencyResponse)(nil),         // 10: migration.DependencyResponse
+	(*GetMigrationStatusRequest)(nil),  // 11: migration.GetMigrationStatusRequest
+	(*MigrationStatusResponse)(nil),    // 12: migration.MigrationStatusResponse
+	(*GetMigrationHistoryRequest)(nil), // 13: migration.GetMigrationHistoryRequest
+	(*MigrationHistoryResponse)(nil),   // 14: migration.MigrationHistoryResponse
+	(*MigrationHistoryItem)(nil),       // 15: migration.MigrationHistoryItem
+	(*RollbackMigrationRequest)(nil),   // 16: migration.RollbackMigrationRequest
+	(*RollbackResponse)(nil),           // 17: migration.RollbackResponse
+	(*ReindexMigrationsRequest)(nil),   // 18: migration.ReindexMigrationsRequest
+	(*ReindexResponse)(nil),            // 19: migration.ReindexResponse
+	(*HealthRequest)(nil),              // 20: migration.HealthRequest
+	(*HealthResponse)(nil),             // 21: migration.HealthResponse
+	nil,                                // 22: migration.HealthResponse.ChecksEntry
 }
 var file_migration_proto_depIdxs = []int32{
-	0, // 0: migration.MigrateRequest.target:type_name -> migration.MigrationTarget
-	1, // 1: migration.MigrationService.Migrate:input_type -> migration.MigrateRequest
-	1, // 2: migration.MigrationService.StreamMigrate:input_type -> migration.MigrateRequest
-	2, // 3: migration.MigrationService.Migrate:output_type -> migration.MigrateResponse
-	3, // 4: migration.MigrationService.StreamMigrate:output_type -> migration.MigrateProgress
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: migration.MigrateRequest.target:type_name -> migration.MigrationTarget
+	7,  // 1: migration.ListMigrationsResponse.items:type_name -> migration.MigrationListItem
+	10, // 2: migration.MigrationDetailResponse.structured_dependencies:type_name -> migration.DependencyResponse
+	15, // 3: migration.MigrationHistoryResponse.history:type_name -> migration.MigrationHistoryItem
+	22, // 4: migration.HealthResponse.checks:type_name -> migration.HealthResponse.ChecksEntry
+	1,  // 5: migration.MigrationService.Migrate:input_type -> migration.MigrateRequest
+	1,  // 6: migration.MigrationService.StreamMigrate:input_type -> migration.MigrateRequest
+	4,  // 7: migration.MigrationService.MigrateDown:input_type -> migration.MigrateDownRequest
+	5,  // 8: migration.MigrationService.ListMigrations:input_type -> migration.ListMigrationsRequest
+	8,  // 9: migration.MigrationService.GetMigration:input_type -> migration.GetMigrationRequest
+	11, // 10: migration.MigrationService.GetMigrationStatus:input_type -> migration.GetMigrationStatusRequest
+	13, // 11: migration.MigrationService.GetMigrationHistory:input_type -> migration.GetMigrationHistoryRequest
+	16, // 12: migration.MigrationService.RollbackMigration:input_type -> migration.RollbackMigrationRequest
+	18, // 13: migration.MigrationService.ReindexMigrations:input_type -> migration.ReindexMigrationsRequest
+	20, // 14: migration.MigrationService.Health:input_type -> migration.HealthRequest
+	2,  // 15: migration.MigrationService.Migrate:output_type -> migration.MigrateResponse
+	3,  // 16: migration.MigrationService.StreamMigrate:output_type -> migration.MigrateProgress
+	2,  // 17: migration.MigrationService.MigrateDown:output_type -> migration.MigrateResponse
+	6,  // 18: migration.MigrationService.ListMigrations:output_type -> migration.ListMigrationsResponse
+	9,  // 19: migration.MigrationService.GetMigration:output_type -> migration.MigrationDetailResponse
+	12, // 20: migration.MigrationService.GetMigrationStatus:output_type -> migration.MigrationStatusResponse
+	14, // 21: migration.MigrationService.GetMigrationHistory:output_type -> migration.MigrationHistoryResponse
+	17, // 22: migration.MigrationService.RollbackMigration:output_type -> migration.RollbackResponse
+	19, // 23: migration.MigrationService.ReindexMigrations:output_type -> migration.ReindexResponse
+	21, // 24: migration.MigrationService.Health:output_type -> migration.HealthResponse
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_migration_proto_init() }
@@ -392,7 +1801,7 @@ func file_migration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_migration_proto_rawDesc), len(file_migration_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

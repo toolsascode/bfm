@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/backends"
 
 	_ "github.com/lib/pq"
 )
@@ -86,6 +86,23 @@ func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, er
 	err := b.db.QueryRowContext(ctx, query, schemaName).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check schema existence: %w", err)
+	}
+	return exists, nil
+}
+
+// TableExists checks if a table exists in a schema
+func (b *Backend) TableExists(ctx context.Context, schemaName, tableName string) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1
+			FROM information_schema.tables
+			WHERE table_schema = $1 AND table_name = $2
+		)
+	`
+	var exists bool
+	err := b.db.QueryRowContext(ctx, query, schemaName, tableName).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check table existence: %w", err)
 	}
 	return exists, nil
 }

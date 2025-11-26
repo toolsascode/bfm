@@ -186,6 +186,10 @@ export default function MigrationDetail() {
     confirmButtonClass?: string;
     onConfirm: () => void;
   } | null>(null);
+  const [expandedFiles, setExpandedFiles] = useState<{
+    up: boolean;
+    down: boolean;
+  }>({ up: false, down: false });
 
   useEffect(() => {
     if (id) {
@@ -511,11 +515,11 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Migration ID
               </label>
-              <div className="text-gray-800 text-base font-medium">
+              <div className="text-gray-800 text-base">
                 {migration.migration_id}
               </div>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col col-span-full">
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Name
               </label>
@@ -577,8 +581,301 @@ export default function MigrationDetail() {
                 {migration.applied ? "Yes" : "No"}
               </div>
             </div>
+            {((migration.dependencies && migration.dependencies.length > 0) ||
+              (migration.structured_dependencies &&
+                migration.structured_dependencies.length > 0)) && (
+              <div className="flex flex-col col-span-full">
+                <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
+                  Dependencies
+                </label>
+                {/* Simple string dependencies (backward compatibility) */}
+                {migration.dependencies &&
+                  migration.dependencies.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {migration.dependencies.map((dep, index) => (
+                        <span
+                          key={`simple-${index}`}
+                          className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
+                        >
+                          {dep}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                {/* Structured dependencies */}
+                {migration.structured_dependencies &&
+                  migration.structured_dependencies.length > 0 && (
+                    <div className="space-y-3">
+                      {migration.structured_dependencies.map((dep, index) => (
+                        <div
+                          key={`structured-${index}`}
+                          className="border border-gray-200 rounded-lg p-4 bg-gradient-to-br from-gray-50 to-white shadow-sm hover:shadow-md transition-shadow"
+                        >
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                                Target:
+                              </span>
+                              <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                {dep.target}
+                              </span>
+                            </div>
+                            {dep.connection && (
+                              <span className="inline-block px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                                <span className="font-semibold">
+                                  Connection:
+                                </span>{" "}
+                                {dep.connection}
+                              </span>
+                            )}
+                            {dep.schema && (
+                              <span className="inline-block px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                                <span className="font-semibold">Schema:</span>{" "}
+                                {dep.schema}
+                              </span>
+                            )}
+                            {dep.target_type && dep.target_type !== "name" && (
+                              <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs font-medium">
+                                <span className="font-semibold">Type:</span>{" "}
+                                {dep.target_type}
+                              </span>
+                            )}
+                          </div>
+                          {(dep.requires_table || dep.requires_schema) && (
+                            <div className="mt-3 pt-3 border-t border-gray-300">
+                              <p className="text-xs text-gray-700 font-semibold mb-2 flex items-center gap-1">
+                                <svg
+                                  className="w-4 h-4 text-orange-600"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                  />
+                                </svg>
+                                Validation Requirements
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {dep.requires_schema && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs font-medium">
+                                    <svg
+                                      className="w-3 h-3"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+                                      />
+                                    </svg>
+                                    <span className="font-semibold">
+                                      Schema:
+                                    </span>{" "}
+                                    {dep.requires_schema}
+                                  </span>
+                                )}
+                                {dep.requires_table && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                                    <svg
+                                      className="w-3 h-3"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                      />
+                                    </svg>
+                                    <span className="font-semibold">
+                                      Table:
+                                    </span>{" "}
+                                    {dep.requires_table}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                <p className="text-gray-500 text-xs mt-2 italic">
+                  This migration depends on the above migrations and will
+                  execute after them. Structured dependencies include validation
+                  requirements that are checked before execution.
+                </p>
+              </div>
+            )}
           </div>
         </div>
+
+        {(migration.up_sql || migration.down_sql) && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Migration Files
+            </h2>
+            <div className="space-y-4">
+              {migration.up_sql && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      onClick={() =>
+                        setExpandedFiles((prev) => ({ ...prev, up: !prev.up }))
+                      }
+                      className="flex items-center gap-2 text-gray-700 text-base font-medium hover:text-gray-900 transition-colors"
+                    >
+                      <svg
+                        className={`w-5 h-5 transition-transform ${
+                          expandedFiles.up ? "rotate-90" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                      {isNoSQLBackend(migration.backend) ? (
+                        <>Up Migration (.up.json)</>
+                      ) : (
+                        <>Up Migration (.up.sql)</>
+                      )}
+                    </button>
+                    {expandedFiles.up && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(migration.up_sql || "");
+                          toastService.success("Copied to clipboard");
+                        }}
+                        className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                  {expandedFiles.up && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap break-words m-0">
+                        <code>
+                          {(() => {
+                            const content = migration.up_sql || "";
+                            // Try to format JSON if it looks like JSON
+                            if (
+                              isNoSQLBackend(migration.backend) &&
+                              content.trim().startsWith("{")
+                            ) {
+                              try {
+                                const parsed = JSON.parse(content);
+                                return JSON.stringify(parsed, null, 2);
+                              } catch {
+                                return content;
+                              }
+                            }
+                            return content;
+                          })()}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+              {migration.down_sql && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      onClick={() =>
+                        setExpandedFiles((prev) => ({
+                          ...prev,
+                          down: !prev.down,
+                        }))
+                      }
+                      className="flex items-center gap-2 text-gray-700 text-base font-medium hover:text-gray-900 transition-colors"
+                    >
+                      <svg
+                        className={`w-5 h-5 transition-transform ${
+                          expandedFiles.down ? "rotate-90" : ""
+                        }`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                      {isNoSQLBackend(migration.backend) ? (
+                        <>Down Migration (.down.json)</>
+                      ) : (
+                        <>Down Migration (.down.sql)</>
+                      )}
+                    </button>
+                    {expandedFiles.down && (
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(
+                            migration.down_sql || "",
+                          );
+                          toastService.success("Copied to clipboard");
+                        }}
+                        className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                        title="Copy to clipboard"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                  {expandedFiles.down && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                      <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap break-words m-0">
+                        <code>
+                          {(() => {
+                            const content = migration.down_sql || "";
+                            // Try to format JSON if it looks like JSON
+                            if (
+                              isNoSQLBackend(migration.backend) &&
+                              content.trim().startsWith("{")
+                            ) {
+                              try {
+                                const parsed = JSON.parse(content);
+                                return JSON.stringify(parsed, null, 2);
+                              } catch {
+                                return content;
+                              }
+                            }
+                            return content;
+                          })()}
+                        </code>
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!migration.up_sql && !migration.down_sql && (
+                <p className="text-gray-500 text-sm italic">
+                  No migration files available
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {status && (
           <div className="bg-white p-6 rounded-lg shadow-md">

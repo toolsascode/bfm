@@ -9,7 +9,7 @@ Backend For Migrations (BfM)
 
 <p align="center">
 
-[![Go Reference](https://pkg.go.dev/badge/bfm/api/migrations.svg)](https://pkg.go.dev/bfm/api/migrations) [![Release CLI](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml) [![Release Docker](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml) [![codecov](https://codecov.io/github/toolsascode/bfm/graph/badge.svg?token=NTDG468UNG)](https://codecov.io/github/toolsascode/bfm)
+[![Go Reference](https://pkg.go.dev/badge/github.com/toolsascode/bfm/api/migrations.svg)](https://pkg.go.dev/github.com/toolsascode/bfm/api/migrations) [![Release CLI](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-cli.yml) [![Release Docker](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml/badge.svg)](https://github.com/toolsascode/bfm/actions/workflows/release-docker.yml) [![codecov](https://codecov.io/github/toolsascode/bfm/graph/badge.svg?token=NTDG468UNG)](https://codecov.io/github/toolsascode/bfm)
 
 </p>
 

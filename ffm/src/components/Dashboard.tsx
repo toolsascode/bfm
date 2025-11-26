@@ -187,6 +187,15 @@ export default function Dashboard() {
     })
     .slice(0, 10);
 
+  // Recently added files - show migrations sorted by version (newest first)
+  // The version field contains a timestamp (YYYYMMDDHHmmss), so higher version = more recent
+  const recentlyAddedFiles = [...migrations]
+    .sort((a, b) => {
+      // Sort by version (descending) to get newest first
+      return b.version.localeCompare(a.version);
+    })
+    .slice(0, 5);
+
   return (
     <div className="w-full px-4 md:px-6 lg:px-8 animate-fade-in">
       <div className="flex justify-between items-center mb-8 animate-slide-up">
@@ -389,6 +398,84 @@ export default function Dashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h2 className="mb-4 text-gray-800 text-xl font-semibold">
+          Recently Added Files
+        </h2>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Migration ID
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Backend
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Connection
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Status
+              </th>
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                Version
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentlyAddedFiles.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-center text-gray-500 py-8">
+                  No migrations found
+                </td>
+              </tr>
+            ) : (
+              recentlyAddedFiles.map((migration) => (
+                <tr
+                  key={migration.migration_id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
+                  <td className="p-3 border-b border-gray-200">
+                    <Link
+                      to={`/migrations/${migration.migration_id}`}
+                      className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline"
+                    >
+                      {migration.migration_id}
+                    </Link>
+                  </td>
+                  <td className="p-3 border-b border-gray-200">
+                    {migration.backend}
+                  </td>
+                  <td className="p-3 border-b border-gray-200">
+                    {migration.connection || "-"}
+                  </td>
+                  <td className="p-3 border-b border-gray-200">
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                        migration.status === "success"
+                          ? "bg-green-100 text-green-800"
+                          : migration.status === "failed"
+                            ? "bg-red-100 text-red-800"
+                            : migration.status === "rolled_back"
+                              ? "bg-orange-100 text-orange-800"
+                              : "bg-yellow-100 text-yellow-800"
+                      }`}
+                    >
+                      {migration.status === "rolled_back"
+                        ? "Rolled Back"
+                        : migration.status || "pending"}
+                    </span>
+                  </td>
+                  <td className="p-3 border-b border-gray-200 font-mono text-sm">
+                    {migration.version}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div className="bg-white p-6 rounded-lg shadow-md">

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"bfm/api/internal/logger"
-	"bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/logger"
+	"github.com/toolsascode/bfm/api/internal/queue"
 
 	"github.com/segmentio/kafka-go"
 )

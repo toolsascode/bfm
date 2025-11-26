@@ -8,19 +8,32 @@ const getRuntimeConfig = () => {
   return {};
 };
 
-const runtimeConfig = getRuntimeConfig();
-// Support both BFM_* (production via runtime config) and VITE_* (dev via Vite)
-const AUTH_ENABLED =
-  runtimeConfig.BFM_AUTH_ENABLED === "true" ||
-  import.meta.env.VITE_AUTH_ENABLED === "true";
-const AUTH_USERNAME =
-  runtimeConfig.BFM_AUTH_USERNAME ||
-  import.meta.env.VITE_AUTH_USERNAME ||
-  "admin";
-const AUTH_PASSWORD =
-  runtimeConfig.BFM_AUTH_PASSWORD ||
-  import.meta.env.VITE_AUTH_PASSWORD ||
-  "admin123";
+// Get auth config dynamically (checks runtime config each time)
+const getAuthEnabled = (): boolean => {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    runtimeConfig.BFM_AUTH_ENABLED === "true" ||
+    import.meta.env.VITE_AUTH_ENABLED === "true"
+  );
+};
+
+const getAuthUsername = (): string => {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    runtimeConfig.BFM_AUTH_USERNAME ||
+    import.meta.env.VITE_AUTH_USERNAME ||
+    "admin"
+  );
+};
+
+const getAuthPassword = (): string => {
+  const runtimeConfig = getRuntimeConfig();
+  return (
+    runtimeConfig.BFM_AUTH_PASSWORD ||
+    import.meta.env.VITE_AUTH_PASSWORD ||
+    "admin123"
+  );
+};
 
 export interface AuthCredentials {
   username: string;
@@ -32,7 +45,8 @@ export class AuthService {
 
   constructor() {
     // Check if already authenticated (from localStorage)
-    if (!AUTH_ENABLED) {
+    // Note: We check auth enabled dynamically in case runtime config loads later
+    if (!getAuthEnabled()) {
       // Auth disabled, always authenticated
       this.isAuthenticated = true;
       localStorage.setItem("auth_authenticated", "true");
@@ -44,19 +58,20 @@ export class AuthService {
   }
 
   isAuthEnabled(): boolean {
-    return AUTH_ENABLED;
+    // Check dynamically each time (runtime config may load after module initialization)
+    return getAuthEnabled();
   }
 
   async login(credentials: AuthCredentials): Promise<boolean> {
-    if (!AUTH_ENABLED) {
+    if (!getAuthEnabled()) {
       this.isAuthenticated = true;
       localStorage.setItem("auth_authenticated", "true");
       return true;
     }
 
     if (
-      credentials.username === AUTH_USERNAME &&
-      credentials.password === AUTH_PASSWORD
+      credentials.username === getAuthUsername() &&
+      credentials.password === getAuthPassword()
     ) {
       this.isAuthenticated = true;
       localStorage.setItem("auth_authenticated", "true");

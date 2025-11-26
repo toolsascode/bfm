@@ -115,6 +115,7 @@ jobs:
             -e BFM_STATE_DB_USERNAME=postgres \
             -e BFM_STATE_DB_NAME=migration_state \
             -e BFM_STATE_SCHEMA=public \
+            -e BFM_SFM_PATH=/tmp/sfm \
             bfm:test)
 
           echo "BfM container started with ID: $BFM_CONTAINER"

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"bfm/api/internal/logger"
-	"bfm/api/internal/queue"
+	"github.com/toolsascode/bfm/api/internal/logger"
+	"github.com/toolsascode/bfm/api/internal/queue"
 
 	"github.com/apache/pulsar-client-go/pulsar"
 )

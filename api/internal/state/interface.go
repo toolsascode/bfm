@@ -52,6 +52,12 @@ type StateTracker interface {
 	// RegisterScannedMigration registers a scanned migration in migrations_list (status: pending)
 	RegisterScannedMigration(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error
 
+	// UpdateMigrationInfo updates migration metadata (schema, version, name, connection, backend) without affecting status/history
+	UpdateMigrationInfo(ctx interface{}, migrationID, schema, table, version, name, connection, backend string) error
+
+	// DeleteMigration deletes a migration from migrations_list (cascades to history via foreign key)
+	DeleteMigration(ctx interface{}, migrationID string) error
+
 	// Initialize sets up the state tracking tables
 	Initialize(ctx interface{}) error
 }

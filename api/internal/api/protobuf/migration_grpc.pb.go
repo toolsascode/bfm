@@ -19,8 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MigrationService_Migrate_FullMethodName       = "/migration.MigrationService/Migrate"
-	MigrationService_StreamMigrate_FullMethodName = "/migration.MigrationService/StreamMigrate"
+	MigrationService_Migrate_FullMethodName             = "/migration.MigrationService/Migrate"
+	MigrationService_StreamMigrate_FullMethodName       = "/migration.MigrationService/StreamMigrate"
+	MigrationService_MigrateDown_FullMethodName         = "/migration.MigrationService/MigrateDown"
+	MigrationService_ListMigrations_FullMethodName      = "/migration.MigrationService/ListMigrations"
+	MigrationService_GetMigration_FullMethodName        = "/migration.MigrationService/GetMigration"
+	MigrationService_GetMigrationStatus_FullMethodName  = "/migration.MigrationService/GetMigrationStatus"
+	MigrationService_GetMigrationHistory_FullMethodName = "/migration.MigrationService/GetMigrationHistory"
+	MigrationService_RollbackMigration_FullMethodName   = "/migration.MigrationService/RollbackMigration"
+	MigrationService_ReindexMigrations_FullMethodName   = "/migration.MigrationService/ReindexMigrations"
+	MigrationService_Health_FullMethodName              = "/migration.MigrationService/Health"
 )
 
 // MigrationServiceClient is the client API for MigrationService service.
@@ -29,10 +37,26 @@ const (
 //
 // MigrationService provides migration operations via gRPC
 type MigrationServiceClient interface {
-	// Migrate executes database migrations
+	// Migrate executes database migrations (up)
 	Migrate(ctx context.Context, in *MigrateRequest, opts ...grpc.CallOption) (*MigrateResponse, error)
 	// StreamMigrate executes migrations with streaming progress updates
 	StreamMigrate(ctx context.Context, in *MigrateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MigrateProgress], error)
+	// MigrateDown executes down migrations (rollback)
+	MigrateDown(ctx context.Context, in *MigrateDownRequest, opts ...grpc.CallOption) (*MigrateResponse, error)
+	// ListMigrations lists all migrations with optional filtering
+	ListMigrations(ctx context.Context, in *ListMigrationsRequest, opts ...grpc.CallOption) (*ListMigrationsResponse, error)
+	// GetMigration gets detailed information about a specific migration
+	GetMigration(ctx context.Context, in *GetMigrationRequest, opts ...grpc.CallOption) (*MigrationDetailResponse, error)
+	// GetMigrationStatus gets the current status of a specific migration
+	GetMigrationStatus(ctx context.Context, in *GetMigrationStatusRequest, opts ...grpc.CallOption) (*MigrationStatusResponse, error)
+	// GetMigrationHistory gets the execution history for a specific migration
+	GetMigrationHistory(ctx context.Context, in *GetMigrationHistoryRequest, opts ...grpc.CallOption) (*MigrationHistoryResponse, error)
+	// RollbackMigration rolls back a specific migration
+	RollbackMigration(ctx context.Context, in *RollbackMigrationRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	// ReindexMigrations reindexes all migration files and synchronizes with database
+	ReindexMigrations(ctx context.Context, in *ReindexMigrationsRequest, opts ...grpc.CallOption) (*ReindexResponse, error)
+	// Health checks the health status of the service
+	Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
 }
 
 type migrationServiceClient struct {
@@ -72,16 +96,112 @@ func (c *migrationServiceClient) StreamMigrate(ctx context.Context, in *MigrateR
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MigrationService_StreamMigrateClient = grpc.ServerStreamingClient[MigrateProgress]
 
+func (c *migrationServiceClient) MigrateDown(ctx context.Context, in *MigrateDownRequest, opts ...grpc.CallOption) (*MigrateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MigrateResponse)
+	err := c.cc.Invoke(ctx, MigrationService_MigrateDown_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) ListMigrations(ctx context.Context, in *ListMigrationsRequest, opts ...grpc.CallOption) (*ListMigrationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMigrationsResponse)
+	err := c.cc.Invoke(ctx, MigrationService_ListMigrations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) GetMigration(ctx context.Context, in *GetMigrationRequest, opts ...grpc.CallOption) (*MigrationDetailResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MigrationDetailResponse)
+	err := c.cc.Invoke(ctx, MigrationService_GetMigration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) GetMigrationStatus(ctx context.Context, in *GetMigrationStatusRequest, opts ...grpc.CallOption) (*MigrationStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MigrationStatusResponse)
+	err := c.cc.Invoke(ctx, MigrationService_GetMigrationStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) GetMigrationHistory(ctx context.Context, in *GetMigrationHistoryRequest, opts ...grpc.CallOption) (*MigrationHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MigrationHistoryResponse)
+	err := c.cc.Invoke(ctx, MigrationService_GetMigrationHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) RollbackMigration(ctx context.Context, in *RollbackMigrationRequest, opts ...grpc.CallOption) (*RollbackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RollbackResponse)
+	err := c.cc.Invoke(ctx, MigrationService_RollbackMigration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) ReindexMigrations(ctx context.Context, in *ReindexMigrationsRequest, opts ...grpc.CallOption) (*ReindexResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReindexResponse)
+	err := c.cc.Invoke(ctx, MigrationService_ReindexMigrations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *migrationServiceClient) Health(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthResponse)
+	err := c.cc.Invoke(ctx, MigrationService_Health_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MigrationServiceServer is the server API for MigrationService service.
 // All implementations must embed UnimplementedMigrationServiceServer
 // for forward compatibility.
 //
 // MigrationService provides migration operations via gRPC
 type MigrationServiceServer interface {
-	// Migrate executes database migrations
+	// Migrate executes database migrations (up)
 	Migrate(context.Context, *MigrateRequest) (*MigrateResponse, error)
 	// StreamMigrate executes migrations with streaming progress updates
 	StreamMigrate(*MigrateRequest, grpc.ServerStreamingServer[MigrateProgress]) error
+	// MigrateDown executes down migrations (rollback)
+	MigrateDown(context.Context, *MigrateDownRequest) (*MigrateResponse, error)
+	// ListMigrations lists all migrations with optional filtering
+	ListMigrations(context.Context, *ListMigrationsRequest) (*ListMigrationsResponse, error)
+	// GetMigration gets detailed information about a specific migration
+	GetMigration(context.Context, *GetMigrationRequest) (*MigrationDetailResponse, error)
+	// GetMigrationStatus gets the current status of a specific migration
+	GetMigrationStatus(context.Context, *GetMigrationStatusRequest) (*MigrationStatusResponse, error)
+	// GetMigrationHistory gets the execution history for a specific migration
+	GetMigrationHistory(context.Context, *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error)
+	// RollbackMigration rolls back a specific migration
+	RollbackMigration(context.Context, *RollbackMigrationRequest) (*RollbackResponse, error)
+	// ReindexMigrations reindexes all migration files and synchronizes with database
+	ReindexMigrations(context.Context, *ReindexMigrationsRequest) (*ReindexResponse, error)
+	// Health checks the health status of the service
+	Health(context.Context, *HealthRequest) (*HealthResponse, error)
 	mustEmbedUnimplementedMigrationServiceServer()
 }
 
@@ -97,6 +217,30 @@ func (UnimplementedMigrationServiceServer) Migrate(context.Context, *MigrateRequ
 }
 func (UnimplementedMigrationServiceServer) StreamMigrate(*MigrateRequest, grpc.ServerStreamingServer[MigrateProgress]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamMigrate not implemented")
+}
+func (UnimplementedMigrationServiceServer) MigrateDown(context.Context, *MigrateDownRequest) (*MigrateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MigrateDown not implemented")
+}
+func (UnimplementedMigrationServiceServer) ListMigrations(context.Context, *ListMigrationsRequest) (*ListMigrationsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListMigrations not implemented")
+}
+func (UnimplementedMigrationServiceServer) GetMigration(context.Context, *GetMigrationRequest) (*MigrationDetailResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMigration not implemented")
+}
+func (UnimplementedMigrationServiceServer) GetMigrationStatus(context.Context, *GetMigrationStatusRequest) (*MigrationStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMigrationStatus not implemented")
+}
+func (UnimplementedMigrationServiceServer) GetMigrationHistory(context.Context, *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMigrationHistory not implemented")
+}
+func (UnimplementedMigrationServiceServer) RollbackMigration(context.Context, *RollbackMigrationRequest) (*RollbackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RollbackMigration not implemented")
+}
+func (UnimplementedMigrationServiceServer) ReindexMigrations(context.Context, *ReindexMigrationsRequest) (*ReindexResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReindexMigrations not implemented")
+}
+func (UnimplementedMigrationServiceServer) Health(context.Context, *HealthRequest) (*HealthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Health not implemented")
 }
 func (UnimplementedMigrationServiceServer) mustEmbedUnimplementedMigrationServiceServer() {}
 func (UnimplementedMigrationServiceServer) testEmbeddedByValue()                          {}
@@ -148,6 +292,150 @@ func _MigrationService_StreamMigrate_Handler(srv interface{}, stream grpc.Server
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type MigrationService_StreamMigrateServer = grpc.ServerStreamingServer[MigrateProgress]
 
+func _MigrationService_MigrateDown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MigrateDownRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).MigrateDown(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_MigrateDown_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).MigrateDown(ctx, req.(*MigrateDownRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_ListMigrations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMigrationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).ListMigrations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_ListMigrations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).ListMigrations(ctx, req.(*ListMigrationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_GetMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).GetMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_GetMigration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).GetMigration(ctx, req.(*GetMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_GetMigrationStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMigrationStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).GetMigrationStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_GetMigrationStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).GetMigrationStatus(ctx, req.(*GetMigrationStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_GetMigrationHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMigrationHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).GetMigrationHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_GetMigrationHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).GetMigrationHistory(ctx, req.(*GetMigrationHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_RollbackMigration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RollbackMigrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).RollbackMigration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_RollbackMigration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).RollbackMigration(ctx, req.(*RollbackMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_ReindexMigrations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReindexMigrationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).ReindexMigrations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_ReindexMigrations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).ReindexMigrations(ctx, req.(*ReindexMigrationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MigrationService_Health_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).Health(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_Health_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).Health(ctx, req.(*HealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MigrationService_ServiceDesc is the grpc.ServiceDesc for MigrationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -158,6 +446,38 @@ var MigrationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Migrate",
 			Handler:    _MigrationService_Migrate_Handler,
+		},
+		{
+			MethodName: "MigrateDown",
+			Handler:    _MigrationService_MigrateDown_Handler,
+		},
+		{
+			MethodName: "ListMigrations",
+			Handler:    _MigrationService_ListMigrations_Handler,
+		},
+		{
+			MethodName: "GetMigration",
+			Handler:    _MigrationService_GetMigration_Handler,
+		},
+		{
+			MethodName: "GetMigrationStatus",
+			Handler:    _MigrationService_GetMigrationStatus_Handler,
+		},
+		{
+			MethodName: "GetMigrationHistory",
+			Handler:    _MigrationService_GetMigrationHistory_Handler,
+		},
+		{
+			MethodName: "RollbackMigration",
+			Handler:    _MigrationService_RollbackMigration_Handler,
+		},
+		{
+			MethodName: "ReindexMigrations",
+			Handler:    _MigrationService_ReindexMigrations_Handler,
+		},
+		{
+			MethodName: "Health",
+			Handler:    _MigrationService_Health_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

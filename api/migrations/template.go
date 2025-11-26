@@ -1,9 +1,10 @@
 package migrations
 
-const GoFileTemplate = `package {{.PackageName}}
+const GoFileTemplate = `//go:build ignore
+package {{.PackageName}}
 
 import (
-	"bfm/api/migrations"
+	"github.com/toolsascode/bfm/api/migrations"
 	_ "embed"
 )
 
@@ -15,13 +16,15 @@ var downSQL string
 
 func init() {
 	migration := &migrations.MigrationScript{
-		Schema:     "", // Dynamic - provided in request
-		Version:    "{{.Version}}",
-		Name:       "{{.Name}}",
-		Connection: "{{.Connection}}",
-		Backend:    "{{.Backend}}",
-		UpSQL:      upSQL,
-		DownSQL:    downSQL,
+		Schema:       "", // Dynamic - provided in request
+		Version:      "{{.Version}}",
+		Name:         "{{.Name}}",
+		Connection:   "{{.Connection}}",
+		Backend:      "{{.Backend}}",
+		UpSQL:        upSQL,
+		DownSQL:      downSQL,
+		Dependencies: []string{ {{.Dependencies}} },
+		StructuredDependencies: []migrations.Dependency{},
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

@@ -10,7 +10,7 @@
 //	package main
 //
 //	import (
-//		"bfm/api/migrations"
+//		"github.com/toolsascode/bfm/api/migrations"
 //		_ "embed"
 //	)
 //
@@ -28,6 +28,15 @@
 //			Backend:    "postgresql",
 //			UpSQL:      upSQL,
 //			DownSQL:    downSQL,
+//			Dependencies: []string{ "bootstrap_solution" },
+//			StructuredDependencies: []migrations.Dependency{
+//			    {
+//			        Connection: "core",
+//			        Schema:     "core",
+//			        Target:     "bootstrap_solution",
+//			        TargetType: "name",
+//			    },
+//			},
 //		}
 //		migrations.GlobalRegistry.Register(migration)
 //	}
