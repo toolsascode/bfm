@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/lib/pq v1.10.9
 	github.com/segmentio/kafka-go v0.4.49
-	github.com/spf13/cobra v1.8.1
+	github.com/spf13/cobra v1.10.2
 	go.etcd.io/etcd/client/v3 v3.5.10
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.10
@@ -67,7 +67,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
