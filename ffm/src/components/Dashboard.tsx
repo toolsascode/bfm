@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../services/api";
+import { toastService } from "../services/toast";
 import type { MigrationListItem } from "../types/api";
 import { format } from "date-fns";
 import {
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<string>("unknown");
+  const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -48,6 +50,35 @@ export default function Dashboard() {
       // Error toast is handled by API interceptor, but we can add a specific message here if needed
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReindex = async () => {
+    if (reindexing) return;
+
+    setReindexing(true);
+    try {
+      const result = await apiClient.reindexMigrations();
+      const addedCount = result.added.length;
+      const removedCount = result.removed.length;
+
+      let message = `Reindexing completed. Total migrations: ${result.total}`;
+      if (addedCount > 0 || removedCount > 0) {
+        message += ` (Added: ${addedCount}, Removed: ${removedCount})`;
+      } else {
+        message += " (No changes)";
+      }
+
+      toastService.success(message);
+
+      // Reload migrations list to reflect changes
+      await loadData();
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to reindex migrations";
+      toastService.error(errorMsg);
+    } finally {
+      setReindexing(false);
     }
   };
 
@@ -202,14 +233,23 @@ export default function Dashboard() {
         <h1 className="text-3xl font-semibold text-gray-800">
           Migration Dashboard
         </h1>
-        <div
-          className={`px-4 py-2 rounded font-medium transition-all ${
-            healthStatus === "healthy"
-              ? "bg-green-100 text-green-800"
-              : "bg-red-100 text-red-800"
-          }`}
-        >
-          Status: {healthStatus === "healthy" ? "✓ Healthy" : "✗ Unhealthy"}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleReindex}
+            disabled={reindexing}
+            className="px-4 py-2 bg-bfm-blue text-white rounded text-sm transition-colors hover:bg-bfm-blue-dark disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {reindexing ? "Reindexing..." : "Reindex"}
+          </button>
+          <div
+            className={`px-4 py-2 rounded font-medium transition-all ${
+              healthStatus === "healthy"
+                ? "bg-green-100 text-green-800"
+                : "bg-red-100 text-red-800"
+            }`}
+          >
+            Status: {healthStatus === "healthy" ? "✓ Healthy" : "✗ Unhealthy"}
+          </div>
         </div>
       </div>
 
@@ -221,8 +261,16 @@ export default function Dashboard() {
           <div className="text-gray-500 text-sm uppercase tracking-wide">
             Health Score
           </div>
-          <div className="relative" style={{ height: "100px" }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div
+            className="relative"
+            style={{ height: "100px", minHeight: "100px" }}
+          >
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={0}
+              minHeight={100}
+            >
               <PieChart>
                 <Pie
                   data={gaugeData}
@@ -327,7 +375,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Status Distribution
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <PieChart>
               <Pie
                 data={statusData}
@@ -336,7 +389,7 @@ export default function Dashboard() {
                 labelLine={true}
                 label={({ name, value, percent }) => {
                   // Only show label if slice is large enough (>= 5%)
-                  if (percent >= 0.05) {
+                  if (percent !== undefined && percent >= 0.05) {
                     return `${name}\n${value} (${(percent * 100).toFixed(0)}%)`;
                   }
                   return "";
@@ -373,7 +426,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Migrations by Backend
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <BarChart data={backendData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
@@ -388,7 +446,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Migrations by Connection
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <BarChart data={connectionData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />

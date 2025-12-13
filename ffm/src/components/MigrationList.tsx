@@ -33,6 +33,7 @@ export default function MigrationList() {
   const [rollbackModalOpen, setRollbackModalOpen] = useState(false);
   const [forceRollback, setForceRollback] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     loadMigrations();
@@ -201,16 +202,36 @@ export default function MigrationList() {
     setCurrentPage(1);
   };
 
+  // Filter migrations based on search query
+  const filteredMigrations = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return migrations;
+    }
+    const query = searchQuery.toLowerCase();
+    return migrations.filter((migration) => {
+      return (
+        migration.migration_id.toLowerCase().includes(query) ||
+        migration.version.toLowerCase().includes(query) ||
+        migration.name.toLowerCase().includes(query) ||
+        migration.table.toLowerCase().includes(query) ||
+        migration.backend.toLowerCase().includes(query) ||
+        (migration.connection &&
+          migration.connection.toLowerCase().includes(query)) ||
+        (migration.schema && migration.schema.toLowerCase().includes(query))
+      );
+    });
+  }, [migrations, searchQuery]);
+
   // Calculate pagination
-  const totalPages = Math.ceil(migrations.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredMigrations.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedMigrations = migrations.slice(startIndex, endIndex);
+  const paginatedMigrations = filteredMigrations.slice(startIndex, endIndex);
 
-  // Reset to page 1 when filters change
+  // Reset to page 1 when filters or search query change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, searchQuery]);
 
   // Clear selection when filters change
   useEffect(() => {
@@ -233,7 +254,7 @@ export default function MigrationList() {
 
   // Handle select all on current page
   const handleSelectAll = () => {
-    if (selectedMigrations.size === paginatedMigrations.length) {
+    if (allPageSelected) {
       // Deselect all on current page
       setSelectedMigrations((prev) => {
         const newSet = new Set(prev);
@@ -718,9 +739,43 @@ export default function MigrationList() {
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-6 animate-slide-up">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 animate-slide-up">
         <h1 className="text-3xl font-semibold text-gray-800">Migrations</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Search migrations..."
+              value={searchQuery}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSearchQuery(e.target.value)
+              }
+              onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  setCurrentPage(1);
+                } else if (e.key === "Escape") {
+                  setSearchQuery("");
+                }
+              }}
+              className="flex-1 sm:w-64 px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-800 focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
+            />
+            <button
+              onClick={() => setCurrentPage(1)}
+              className="px-4 py-2 bg-bfm-blue text-white rounded text-sm transition-colors hover:bg-bfm-blue-dark font-medium"
+            >
+              Search
+            </button>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="px-3 py-2 bg-gray-500 text-white rounded text-sm transition-colors hover:bg-gray-600 font-medium"
+                title="Clear search"
+              >
+                Clear
+              </button>
+            )}
+          </div>
           <button
             onClick={handleReindex}
             disabled={reindexing}
@@ -729,8 +784,10 @@ export default function MigrationList() {
             {reindexing ? "Reindexing..." : "Reindex"}
           </button>
           <div className="text-base text-gray-500">
-            Showing {startIndex + 1}-{Math.min(endIndex, migrations.length)} of{" "}
-            {total}
+            Showing {startIndex + 1}-
+            {Math.min(endIndex, filteredMigrations.length)} of{" "}
+            {searchQuery ? filteredMigrations.length : total}
+            {searchQuery && ` (filtered from ${total} total)`}
           </div>
           <div className="flex items-center gap-2">
             <label htmlFor="items-per-page" className="text-sm text-gray-600">
@@ -1352,7 +1409,7 @@ export default function MigrationList() {
       </div>
 
       {/* Pagination Controls */}
-      {migrations.length > 0 && totalPages > 1 && (
+      {filteredMigrations.length > 0 && totalPages > 1 && (
         <div className="mt-6 flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-lg shadow-md">
           <div className="text-sm text-gray-600">
             Page {currentPage} of {totalPages}

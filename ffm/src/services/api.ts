@@ -128,7 +128,7 @@ class BFMApiClient {
           );
         } else if (error.response?.status === 404) {
           toastService.warning(errorMessage || "Resource not found.");
-        } else if (error.response?.status >= 500) {
+        } else if (error.response?.status && error.response.status >= 500) {
           // For 500 errors, show the actual error message if available
           const messageToShow =
             errorMessage || "Server error. Please try again later.";
