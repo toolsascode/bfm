@@ -7,6 +7,7 @@ import type {
   MigrationHistoryItem,
   MigrateUpRequest,
   MigrateResponse,
+  MigrationListItem,
 } from "../types/api";
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
@@ -190,6 +191,9 @@ export default function MigrationDetail() {
     up: boolean;
     down: boolean;
   }>({ up: false, down: false });
+  const [schemaExecutions, setSchemaExecutions] = useState<MigrationListItem[]>(
+    [],
+  );
 
   useEffect(() => {
     if (id) {
@@ -211,6 +215,10 @@ export default function MigrationDetail() {
       const data = await apiClient.getMigration(id);
       setMigration(data);
       setError(null);
+      // Load schema executions after migration is loaded
+      if (data) {
+        loadSchemaExecutions();
+      }
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to load migration";
@@ -244,6 +252,39 @@ export default function MigrationDetail() {
       setHistory(sortedHistory);
     } catch (err) {
       // Silently fail history updates
+    }
+  };
+
+  const loadSchemaExecutions = async () => {
+    if (!id || !migration) return;
+
+    // Check if this is a base migration (not schema-specific) and has dynamic schema
+    const parts = id.split("_");
+    const isBaseMigration = parts.length === 4; // Base format: {version}_{name}_{backend}_{connection}
+    const isDynamicSchema = !migration.schema || migration.schema.trim() === "";
+
+    if (!isBaseMigration || !isDynamicSchema) return; // Only load for base migrations with dynamic schemas
+
+    try {
+      // Fetch all migrations and filter for schema-specific ones matching this base
+      const allMigrations = await apiClient.listMigrations({});
+      const baseID = id;
+
+      // Find all schema-specific migrations that match this base
+      const executions = allMigrations.items.filter((item) => {
+        const itemParts = item.migration_id.split("_");
+        // Schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
+        if (itemParts.length >= 5) {
+          // Extract base ID by removing schema prefix
+          const itemBaseID = itemParts.slice(1).join("_");
+          return itemBaseID === baseID;
+        }
+        return false;
+      });
+
+      setSchemaExecutions(executions);
+    } catch (err) {
+      // Silently fail
     }
   };
 
@@ -373,6 +414,7 @@ export default function MigrationDetail() {
       loadMigration();
       loadStatus();
       loadHistory(); // Reload history to get the latest status and applied_at
+      loadSchemaExecutions();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to execute migration";
@@ -1028,6 +1070,95 @@ export default function MigrationDetail() {
             </div>
           )}
         </div>
+
+        {schemaExecutions.length > 0 && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Schema Executions ({schemaExecutions.length})
+            </h2>
+            <p className="text-gray-600 text-sm mb-4">
+              This migration has been executed on the following schemas:
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Schema
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Migration ID
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Status
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Applied At
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schemaExecutions.map((execution) => (
+                    <tr
+                      key={execution.migration_id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 border-b border-gray-200">
+                        <span className="text-gray-800 text-sm font-medium">
+                          {execution.schema || "-"}
+                        </span>
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <Link
+                          to={`/migrations/${execution.migration_id}`}
+                          className="text-bfm-blue no-underline hover:underline text-sm font-mono"
+                        >
+                          {execution.migration_id}
+                        </Link>
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span
+                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                            execution.status === "success"
+                              ? "bg-green-100 text-green-800"
+                              : execution.status === "failed"
+                                ? "bg-red-100 text-red-800"
+                                : execution.status === "rolled_back"
+                                  ? "bg-orange-100 text-orange-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {execution.status === "rolled_back"
+                            ? "Rolled Back"
+                            : execution.status || "pending"}
+                        </span>
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm text-gray-800">
+                        {execution.applied_at
+                          ? format(
+                              new Date(execution.applied_at),
+                              "yyyy-MM-dd HH:mm:ss",
+                            )
+                          : "-"}
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <Link
+                          to={`/migrations/${execution.migration_id}`}
+                          className="inline-block px-3 py-1 bg-bfm-blue text-white rounded text-sm no-underline transition-all duration-200 hover:bg-bfm-blue-dark hover:shadow-md"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {history.length > 0 && (
           <div className="bg-white p-6 rounded-lg shadow-md">

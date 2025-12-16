@@ -34,6 +34,7 @@ export default function MigrationList() {
   const [forceRollback, setForceRollback] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMigrations();
@@ -202,13 +203,104 @@ export default function MigrationList() {
     setCurrentPage(1);
   };
 
+  // Helper function to extract base ID from schema-specific ID
+  const getBaseMigrationID = (migrationID: string): string => {
+    const parts = migrationID.split("_");
+    // Schema-specific format: {schema}_{version}_{name}_{backend}_{connection} (5+ parts)
+    // Base format: {version}_{name}_{backend}_{connection} (4 parts)
+    if (parts.length >= 5) {
+      // Remove schema prefix (first part)
+      return parts.slice(1).join("_");
+    }
+    return migrationID;
+  };
+
+  // Helper function to check if migration ID is schema-specific
+  const isSchemaSpecific = (migrationID: string): boolean => {
+    const parts = migrationID.split("_");
+    return parts.length >= 5;
+  };
+
+  // Group migrations by base ID
+  const groupedMigrations = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        base: MigrationListItem | null;
+        schemaSpecific: MigrationListItem[];
+      }
+    >();
+
+    migrations.forEach((migration) => {
+      const baseID = getBaseMigrationID(migration.migration_id);
+      const isSpecific = isSchemaSpecific(migration.migration_id);
+
+      if (!groups.has(baseID)) {
+        groups.set(baseID, {
+          base: null,
+          schemaSpecific: [],
+        });
+      }
+
+      const group = groups.get(baseID)!;
+      if (isSpecific) {
+        group.schemaSpecific.push(migration);
+      } else {
+        group.base = migration;
+      }
+    });
+
+    return groups;
+  }, [migrations]);
+
+  // Flatten grouped migrations for display
+  const flattenedMigrations = useMemo(() => {
+    const result: (MigrationListItem & {
+      isGroupHeader?: boolean;
+      groupKey?: string;
+      schemaCount?: number;
+    })[] = [];
+
+    groupedMigrations.forEach((group, baseID) => {
+      // If there are schema-specific migrations, show grouped view
+      if (group.schemaSpecific.length > 0) {
+        // Use base migration if available, otherwise use first schema-specific as template
+        const baseMigration = group.base || group.schemaSpecific[0];
+        const isExpanded = expandedGroups.has(baseID);
+
+        // Add group header (base migration)
+        result.push({
+          ...baseMigration,
+          migration_id: baseID,
+          isGroupHeader: true,
+          groupKey: baseID,
+          schemaCount: group.schemaSpecific.length,
+        });
+
+        // Add schema-specific migrations if expanded
+        if (isExpanded) {
+          group.schemaSpecific.forEach((migration) => {
+            result.push(migration);
+          });
+        }
+      } else {
+        // No schema-specific migrations, just add the base migration
+        if (group.base) {
+          result.push(group.base);
+        }
+      }
+    });
+
+    return result;
+  }, [groupedMigrations, expandedGroups]);
+
   // Filter migrations based on search query
   const filteredMigrations = useMemo(() => {
     if (!searchQuery.trim()) {
-      return migrations;
+      return flattenedMigrations;
     }
     const query = searchQuery.toLowerCase();
-    return migrations.filter((migration) => {
+    return flattenedMigrations.filter((migration) => {
       return (
         migration.migration_id.toLowerCase().includes(query) ||
         migration.version.toLowerCase().includes(query) ||
@@ -220,7 +312,19 @@ export default function MigrationList() {
         (migration.schema && migration.schema.toLowerCase().includes(query))
       );
     });
-  }, [migrations, searchQuery]);
+  }, [flattenedMigrations, searchQuery]);
+
+  const toggleGroup = (groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupKey)) {
+        newSet.delete(groupKey);
+      } else {
+        newSet.add(groupKey);
+      }
+      return newSet;
+    });
+  };
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredMigrations.length / itemsPerPage);
@@ -1232,7 +1336,7 @@ export default function MigrationList() {
       )}
 
       <div className="bg-white rounded-lg shadow-md overflow-x-auto animate-scale-in transition-all hover:shadow-lg">
-        <table className="w-full border-collapse">
+        <table className="w-full overflow-hidden border-collapse">
           <thead>
             <tr>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0 w-12">
@@ -1317,12 +1421,62 @@ export default function MigrationList() {
                     />
                   </td>
                   <td className="p-4 border-b border-gray-200">
-                    <Link
-                      to={`/migrations/${migration.migration_id}`}
-                      className="text-bfm-blue no-underline hover:underline"
-                    >
-                      {migration.migration_id}
-                    </Link>
+                    {migration.isGroupHeader ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleGroup(migration.groupKey!)}
+                          className="text-bfm-blue hover:text-bfm-blue-dark transition-colors"
+                          title={
+                            expandedGroups.has(migration.groupKey!)
+                              ? "Collapse"
+                              : "Expand"
+                          }
+                        >
+                          <svg
+                            className={`w-4 h-4 transition-transform ${
+                              expandedGroups.has(migration.groupKey!)
+                                ? "rotate-90"
+                                : ""
+                            }`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        </button>
+                        <Link
+                          to={`/migrations/${migration.migration_id}`}
+                          className="text-bfm-blue no-underline hover:underline"
+                        >
+                          {migration.migration_id}
+                        </Link>
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          {migration.schemaCount} schema
+                          {migration.schemaCount !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="pl-6 flex items-center gap-2">
+                        <span className="text-gray-400">└─</span>
+                        <Link
+                          to={`/migrations/${migration.migration_id}`}
+                          className="text-bfm-blue no-underline hover:underline"
+                        >
+                          {migration.migration_id}
+                        </Link>
+                        {migration.schema && (
+                          <span className="text-xs text-gray-600 bg-blue-50 px-2 py-1 rounded">
+                            {migration.schema}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   {/* <td className="p-4 border-b border-gray-200">{migration.schema || '-'}</td>
                     <td className="p-4 border-b border-gray-200">{migration.name || '-'}</td> */}

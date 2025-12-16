@@ -427,15 +427,23 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 
 	// Process each migration
 	for _, migration := range sortedMigrations {
-		migrationID := e.getMigrationID(migration)
-
 		// Resolve schema name (use provided or from migration)
 		schema := schemaName
 		if schema == "" {
 			schema = migration.Schema
 		}
 
-		// Check if already applied (use base migration ID for checking)
+		// For dynamic schemas (empty Schema in migration), use schema-specific ID
+		var migrationID string
+		if migration.Schema == "" && schema != "" {
+			// Dynamic schema mode: track per schema
+			migrationID = e.getMigrationIDWithSchema(migration, schema)
+		} else {
+			// Fixed schema mode: use base migration ID
+			migrationID = e.getMigrationID(migration)
+		}
+
+		// Check if already applied
 		applied, err := e.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to check migration status for %s: %v", migrationID, err))
@@ -512,9 +520,13 @@ func (e *Executor) GetAllMigrations() []*backends.MigrationScript {
 
 // GetMigrationByID finds a migration by its ID
 // Migration ID format: {version}_{name}_{backend}_{connection}
+// Also supports schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
 // Also supports legacy formats for backward compatibility
 func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScript {
 	allMigrations := e.registry.GetAll()
+
+	// First, try to match against base IDs (exact match)
+	// This handles base IDs even if they have 5+ parts due to underscores in names
 	for _, migration := range allMigrations {
 		// Primary format: {version}_{name}_{backend}_{connection}
 		id := e.getMigrationID(migration)
@@ -531,6 +543,43 @@ func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScrip
 		if legacyIDWithConnection == migrationID {
 			return migration
 		}
+	}
+
+	// If no exact match found, try schema-specific matching
+	// Check if migrationID could be schema-specific (format: {schema}_{version}_{name}_{backend}_{connection})
+	parts := strings.Split(migrationID, "_")
+	if len(parts) >= 5 {
+		// Extract potential schema and base ID
+		potentialSchema := parts[0]
+		baseID := strings.Join(parts[1:], "_")
+
+		for _, migration := range allMigrations {
+			// Only match schema-specific IDs if the migration has a schema
+			// Migrations without a schema should not match schema-specific IDs
+			if migration.Schema != "" && migration.Schema == potentialSchema {
+				// Check if the base ID matches this migration
+				id := e.getMigrationID(migration)
+				if id == baseID {
+					// Verify the schema-specific ID matches
+					schemaSpecificID := e.getMigrationIDWithSchema(migration, potentialSchema)
+					if schemaSpecificID == migrationID {
+						return migration
+					}
+				}
+				// Also check legacy formats with schema
+				legacyIDWithConnection := fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+				if legacyIDWithConnection == baseID {
+					legacyIDWithSchema := fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+					if legacyIDWithSchema == migrationID {
+						return migration
+					}
+				}
+			}
+		}
+	}
+
+	// Try legacy format with schema matching (for migrations that have schema)
+	for _, migration := range allMigrations {
 		// Legacy format with schema: {schema}_{connection}_{version}_{name}
 		if migration.Schema != "" {
 			legacyIDWithSchema := fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
@@ -726,8 +775,43 @@ func (e *Executor) ReindexMigrations(ctx context.Context, sfmPath string) (*Rein
 
 	// Find migrations to remove (in database but not in filesystem)
 	for migrationID := range dbMigrationMap {
-		if _, exists := fileMigrations[migrationID]; !exists {
-			// Delete this migration from database
+		// First, check if the exact migration ID exists in filesystem (for base IDs)
+		if _, exists := fileMigrations[migrationID]; exists {
+			// Exact match found, keep this migration
+			continue
+		}
+
+		// If not found, check if this is a schema-specific ID (format: {schema}_{version}_{name}_{backend}_{connection})
+		// Extract base ID for comparison
+		parts := strings.Split(migrationID, "_")
+		var baseID string
+		var isSchemaSpecific bool
+		if len(parts) >= 5 {
+			// Schema-specific ID: extract base ID by removing schema prefix
+			baseID = strings.Join(parts[1:], "_")
+			isSchemaSpecific = true
+		} else {
+			// Base ID format - if not found in filesystem, it should be removed
+			baseID = migrationID
+			isSchemaSpecific = false
+		}
+
+		// For schema-specific IDs, check if the base migration exists in filesystem
+		// For base IDs, we already checked above and it doesn't exist, so remove it
+		if isSchemaSpecific {
+			// Schema-specific ID: only keep if base migration exists in filesystem
+			if _, exists := fileMigrations[baseID]; !exists {
+				// Base migration doesn't exist in filesystem, remove this schema-specific instance
+				if err := e.stateTracker.DeleteMigration(ctx, migrationID); err != nil {
+					// Log error but continue
+					fmt.Printf("Warning: Failed to delete migration %s: %v\n", migrationID, err)
+				} else {
+					result.Removed = append(result.Removed, migrationID)
+				}
+			}
+			// If baseID exists in filesystem, keep the schema-specific migration
+		} else {
+			// Base ID not found in filesystem, remove it
 			if err := e.stateTracker.DeleteMigration(ctx, migrationID); err != nil {
 				// Log error but continue
 				fmt.Printf("Warning: Failed to delete migration %s: %v\n", migrationID, err)

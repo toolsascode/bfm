@@ -228,7 +228,7 @@ export default function Dashboard() {
     .slice(0, 5);
 
   return (
-    <div className="w-full px-4 md:px-6 lg:px-8 animate-fade-in">
+    <div className="w-full overflow-y-hidden px-4 md:px-6 lg:px-8 animate-fade-in">
       <div className="flex justify-between items-center mb-8 animate-slide-up">
         <h1 className="text-3xl font-semibold text-gray-800">
           Migration Dashboard
@@ -262,12 +262,12 @@ export default function Dashboard() {
             Health Score
           </div>
           <div
-            className="relative"
-            style={{ height: "100px", minHeight: "100px" }}
+            className="relative w-full"
+            style={{ height: "100px", minHeight: "100px", width: "100%" }}
           >
             <ResponsiveContainer
               width="100%"
-              height="100%"
+              height={100}
               minWidth={0}
               minHeight={100}
             >

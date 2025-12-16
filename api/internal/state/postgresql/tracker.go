@@ -163,15 +163,6 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		baseMigrationID = strings.TrimSuffix(migration.MigrationID, "_rollback")
 	}
 
-	// Insert into migrations_history
-	insertHistorySQL := fmt.Sprintf(`
-		INSERT INTO %s (migration_id, schema, table_name, version, connection, backend,
-		                status, error_message, executed_by, execution_method, execution_context, applied_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		RETURNING id
-	`, historyTableName)
-
-	var historyID int
 	executedBy := migration.ExecutedBy
 	if executedBy == "" {
 		executedBy = "system"
@@ -181,15 +172,8 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		executionMethod = "api"
 	}
 
-	err := t.db.QueryRowContext(ctxVal, insertHistorySQL,
-		baseMigrationID, migration.Schema, migration.Table, migration.Version,
-		migration.Connection, migration.Backend, migration.Status, migration.ErrorMessage,
-		executedBy, executionMethod, migration.ExecutionContext, appliedAt, appliedAt).Scan(&historyID)
-	if err != nil {
-		return fmt.Errorf("failed to insert into migrations_history: %w", err)
-	}
-
-	// Update or insert into migrations_list (only for base migration_id, not rollbacks)
+	// Update or insert into migrations_list FIRST (required for foreign key constraint)
+	// We'll update last_history_id after inserting into history
 	if !isRollback {
 		// Extract name from migration_id
 		name := baseMigrationID
@@ -198,26 +182,57 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 			name = strings.Join(parts[3:], "_")
 		}
 
+		// Insert/upsert into migrations_list first (without history_id, will update later)
 		upsertListSQL := fmt.Sprintf(`
 			INSERT INTO %s (migration_id, "schema", table_name, version, name, connection, backend,
 			                last_status, last_applied_at, last_error_message, last_history_id, first_seen_at, last_updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, $11, $12)
 			ON CONFLICT (migration_id) DO UPDATE SET
 				"schema" = EXCLUDED."schema",
 				table_name = EXCLUDED.table_name,
 				last_status = EXCLUDED.last_status,
 				last_applied_at = EXCLUDED.last_applied_at,
 				last_error_message = EXCLUDED.last_error_message,
-				last_history_id = EXCLUDED.last_history_id,
 				last_updated_at = CURRENT_TIMESTAMP
 		`, listTableName)
 
-		_, err = t.db.ExecContext(ctxVal, upsertListSQL,
+		_, err := t.db.ExecContext(ctxVal, upsertListSQL,
 			baseMigrationID, migration.Schema, migration.Table, migration.Version, name,
 			migration.Connection, migration.Backend, migration.Status, appliedAt,
-			migration.ErrorMessage, historyID, appliedAt, time.Now())
+			migration.ErrorMessage, appliedAt, time.Now())
 		if err != nil {
 			return fmt.Errorf("failed to upsert into migrations_list: %w", err)
+		}
+	}
+
+	// Now insert into migrations_history (foreign key constraint is satisfied)
+	insertHistorySQL := fmt.Sprintf(`
+		INSERT INTO %s (migration_id, schema, table_name, version, connection, backend,
+		                status, error_message, executed_by, execution_method, execution_context, applied_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id
+	`, historyTableName)
+
+	var historyID int
+	err := t.db.QueryRowContext(ctxVal, insertHistorySQL,
+		baseMigrationID, migration.Schema, migration.Table, migration.Version,
+		migration.Connection, migration.Backend, migration.Status, migration.ErrorMessage,
+		executedBy, executionMethod, migration.ExecutionContext, appliedAt, appliedAt).Scan(&historyID)
+	if err != nil {
+		return fmt.Errorf("failed to insert into migrations_history: %w", err)
+	}
+
+	// Update migrations_list with the history_id (only for non-rollbacks)
+	if !isRollback {
+		updateHistoryIDSQL := fmt.Sprintf(`
+			UPDATE %s
+			SET last_history_id = $1, last_updated_at = CURRENT_TIMESTAMP
+			WHERE migration_id = $2
+		`, listTableName)
+
+		_, err = t.db.ExecContext(ctxVal, updateHistoryIDSQL, historyID, baseMigrationID)
+		if err != nil {
+			return fmt.Errorf("failed to update migrations_list with history_id: %w", err)
 		}
 	} else {
 		// For rollbacks, update the status in migrations_list to "rolled_back"
