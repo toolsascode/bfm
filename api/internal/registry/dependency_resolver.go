@@ -208,6 +208,12 @@ func NewDependencyResolver(reg Registry, tracker state.StateTracker) *Dependency
 	}
 }
 
+// ResolveDependencyTargets is a helper that exposes findDependencyTarget for callers
+// that need to expand execution sets with dependency migrations.
+func (r *DependencyResolver) ResolveDependencyTargets(dep backends.Dependency) ([]*backends.MigrationScript, error) {
+	return r.findDependencyTarget(dep)
+}
+
 // findDependencyTarget finds migration(s) matching a dependency specification
 func (r *DependencyResolver) findDependencyTarget(dep backends.Dependency) ([]*backends.MigrationScript, error) {
 	var candidates []*backends.MigrationScript
@@ -274,8 +280,8 @@ func (r *DependencyResolver) buildDependencyGraph(migrations []*backends.Migrati
 			// Add edges for each target migration that's in our set
 			for _, targetMigration := range targetMigrations {
 				targetID := getMigrationID(targetMigration)
-				// Only add edge if target is in our current migration set
-				if _, exists := graph.nodes[targetID]; exists {
+				// Only add edge if target is in our current migration set and not a self-loop
+				if _, exists := graph.nodes[targetID]; exists && migrationID != targetID {
 					graph.AddEdge(migrationID, targetID)
 				}
 			}
@@ -293,7 +299,8 @@ func (r *DependencyResolver) buildDependencyGraph(migrations []*backends.Migrati
 			// Add edges for each target migration that's in our set
 			for _, targetMigration := range targetMigrations {
 				targetID := getMigrationID(targetMigration)
-				if _, exists := graph.nodes[targetID]; exists {
+				// Only add edge if target is in our current migration set and not a self-loop
+				if _, exists := graph.nodes[targetID]; exists && migrationID != targetID {
 					graph.AddEdge(migrationID, targetID)
 				}
 			}

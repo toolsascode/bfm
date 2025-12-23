@@ -289,33 +289,102 @@ func (h *Handler) getMigration(c *gin.Context) {
 
 	// Get migration from registry
 	migration := h.executor.GetMigrationByID(migrationID)
-	if migration == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "migration not found"})
-		return
+
+	// Get schema and table from state tracker (migrations_list table)
+	// These are populated when the migration is executed or registered
+	var schemaValue, tableValue, versionValue, nameValue, connectionValue, backendValue string
+	var foundMigrationID string
+	migrationList, err := h.executor.GetMigrationList(c.Request.Context(), &state.MigrationFilters{})
+	if err == nil {
+		// First, try exact match
+		for _, item := range migrationList {
+			if item.MigrationID == migrationID {
+				schemaValue = item.Schema
+				tableValue = item.Table
+				versionValue = item.Version
+				nameValue = item.Name
+				connectionValue = item.Connection
+				backendValue = item.Backend
+				foundMigrationID = migrationID
+				break
+			}
+		}
+
+		// If no exact match found, check if migrationID is a base ID (4 parts: version_name_backend_connection)
+		// and look for schema-specific versions (format: {schema}_{baseID})
+		if foundMigrationID == "" {
+			parts := strings.Split(migrationID, "_")
+			// Base ID format: {version}_{name}_{backend}_{connection} (4 parts)
+			// Schema-specific format: {schema}_{version}_{name}_{backend}_{connection} (5+ parts)
+			if len(parts) == 4 {
+				// This is a base ID, look for schema-specific versions
+				for _, item := range migrationList {
+					itemParts := strings.Split(item.MigrationID, "_")
+					// Check if this is a schema-specific version of the base ID
+					if len(itemParts) >= 5 {
+						// Remove schema prefix and check if it matches the base ID
+						baseID := strings.Join(itemParts[1:], "_")
+						if baseID == migrationID {
+							schemaValue = item.Schema
+							tableValue = item.Table
+							versionValue = item.Version
+							nameValue = item.Name
+							connectionValue = item.Connection
+							backendValue = item.Backend
+							foundMigrationID = item.MigrationID
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Use foundMigrationID for status check if we found a schema-specific version, otherwise use original migrationID
+	statusCheckID := foundMigrationID
+	if statusCheckID == "" {
+		statusCheckID = migrationID
 	}
 
 	// Get status from state tracker
-	applied, err := h.executor.IsMigrationApplied(c.Request.Context(), migrationID)
+	applied, err := h.executor.IsMigrationApplied(c.Request.Context(), statusCheckID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get schema and table from state tracker (migrations_list table)
-	// These are populated when the migration is executed or registered
-	var schemaValue, tableValue string
-	migrationList, err := h.executor.GetMigrationList(c.Request.Context(), &state.MigrationFilters{})
-	if err == nil {
-		for _, item := range migrationList {
-			if item.MigrationID == migrationID {
-				schemaValue = item.Schema
-				tableValue = item.Table
-				break
+	// If migration not found in registry, check if it exists in database
+	if migration == nil {
+		// If we found it in the database, construct response from database data
+		if versionValue != "" {
+			// Use the found migration ID (which might be schema-specific) or the requested one
+			responseMigrationID := foundMigrationID
+			if responseMigrationID == "" {
+				responseMigrationID = migrationID
 			}
+			response := dto.MigrationDetailResponse{
+				MigrationID:            responseMigrationID,
+				Schema:                 schemaValue,
+				Table:                  tableValue,
+				Version:                versionValue,
+				Name:                   nameValue,
+				Connection:             connectionValue,
+				Backend:                backendValue,
+				Applied:                applied,
+				UpSQL:                  "",                         // Not available if not in registry
+				DownSQL:                "",                         // Not available if not in registry
+				Dependencies:           []string{},                 // Not available if not in registry
+				StructuredDependencies: []dto.DependencyResponse{}, // Not available if not in registry
+			}
+			c.JSON(http.StatusOK, response)
+			return
 		}
+		// Migration not found in registry or database
+		c.JSON(http.StatusNotFound, gin.H{"error": "migration not found"})
+		return
 	}
 
-	// Fallback to registry values if not found in state tracker
+	// Migration found in registry, use registry values with database fallbacks
 	if tableValue == "" && migration.Table != nil {
 		tableValue = *migration.Table
 	}
@@ -336,8 +405,14 @@ func (h *Handler) getMigration(c *gin.Context) {
 		})
 	}
 
+	// Use foundMigrationID if we found a schema-specific version, otherwise use the original migrationID
+	responseMigrationID := foundMigrationID
+	if responseMigrationID == "" {
+		responseMigrationID = migrationID
+	}
+
 	response := dto.MigrationDetailResponse{
-		MigrationID:            migrationID,
+		MigrationID:            responseMigrationID,
 		Schema:                 schemaValue,
 		Table:                  tableValue,
 		Version:                migration.Version,
@@ -464,11 +539,26 @@ func (h *Handler) getMigrationStatus(c *gin.Context) {
 func (h *Handler) getMigrationHistory(c *gin.Context) {
 	migrationID := c.Param("id")
 
-	// Get migration from registry to verify it exists
+	// Check if migration exists in registry or database
 	migration := h.executor.GetMigrationByID(migrationID)
 	if migration == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "migration not found"})
-		return
+		// Check if migration exists in database
+		migrationList, err := h.executor.GetMigrationList(c.Request.Context(), &state.MigrationFilters{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		foundInDB := false
+		for _, item := range migrationList {
+			if item.MigrationID == migrationID {
+				foundInDB = true
+				break
+			}
+		}
+		if !foundInDB {
+			c.JSON(http.StatusNotFound, gin.H{"error": "migration not found"})
+			return
+		}
 	}
 
 	// Get all migration history

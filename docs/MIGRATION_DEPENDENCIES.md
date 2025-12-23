@@ -81,6 +81,8 @@ The system automatically resolves dependencies using topological sorting (Kahn's
    - Required tables exist
    - Dependency migrations are applied
 
+When migrations are executed via the API, BfM will also automatically **include pending dependency migrations** referenced by structured dependencies in the execution plan, even if they belong to different connections/schemas. Already-applied dependencies are never re-executed; only migrations that are still pending are added and ordered ahead of their dependents.
+
 ## Validation
 
 Before executing a migration, the system validates:

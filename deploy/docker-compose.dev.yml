@@ -28,6 +28,11 @@ services:
       - POSTGRES_PASSWORD=${BFM_STATE_DB_PASSWORD:-postgres}
       - POSTGRES_DB=migration_state
       - POSTGRES_MULTIPLE_DATABASES=dashcloud
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
     volumes:
       - bfm-postgres-data-dev:/var/lib/postgresql/data
     networks:

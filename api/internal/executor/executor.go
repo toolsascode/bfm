@@ -349,6 +349,91 @@ func (e *Executor) resolveDependencies(migrations []*backends.MigrationScript) (
 	return e.topologicalSort(migrations)
 }
 
+// expandWithPendingDependencies takes an initial set of migrations and expands it by
+// including any pending dependency migrations referenced via structured dependencies.
+// It uses the state tracker to ensure already-applied dependencies are not re-executed.
+func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations []*backends.MigrationScript) ([]*backends.MigrationScript, error) {
+	if len(migrations) == 0 {
+		return migrations, nil
+	}
+
+	// Build quick lookup of already selected migrations by ID so we don't duplicate.
+	selected := make(map[string]*backends.MigrationScript)
+	for _, m := range migrations {
+		selected[e.getMigrationID(m)] = m
+	}
+
+	resolver := registry.NewDependencyResolver(e.registry, e.stateTracker)
+
+	// Collect additional migrations to include.
+	var toInclude []*backends.MigrationScript
+
+	for _, migration := range migrations {
+		if len(migration.StructuredDependencies) > 0 {
+			logger.Debug("Migration %s_%s has %d structured dependency(ies), expanding...", migration.Version, migration.Name, len(migration.StructuredDependencies))
+		}
+		for _, dep := range migration.StructuredDependencies {
+			logger.Debug("Resolving dependency: connection=%s, schema=%s, target=%s, type=%s", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
+			// Resolve targets for this dependency (may be cross-connection).
+			targetMigrations, err := resolver.ResolveDependencyTargets(dep)
+			if err != nil {
+				// Surface clear error so callers can see which dependency is invalid.
+				logger.Errorf("Failed to resolve dependency for %s_%s: connection=%s, schema=%s, target=%s, type=%s: %v", migration.Version, migration.Name, dep.Connection, dep.Schema, dep.Target, dep.TargetType, err)
+				return nil, fmt.Errorf("failed to resolve dependency for %s_%s: %w", migration.Version, migration.Name, err)
+			}
+
+			logger.Debug("Found %d target migration(s) for dependency: connection=%s, schema=%s, target=%s", len(targetMigrations), dep.Connection, dep.Schema, dep.Target)
+
+			if len(targetMigrations) == 0 {
+				logger.Warnf("No target migrations found for dependency: connection=%s, schema=%s, target=%s, type=%s", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
+				continue
+			}
+
+			for _, target := range targetMigrations {
+				targetID := e.getMigrationID(target)
+				logger.Debug("Checking dependency migration %s (connection=%s, schema=%s, version=%s, name=%s)", targetID, target.Connection, target.Schema, target.Version, target.Name)
+
+				// If it's already in the initial set, nothing to do.
+				if _, exists := selected[targetID]; exists {
+					logger.Debug("Dependency migration %s already in execution set, skipping", targetID)
+					continue
+				}
+
+				// Only include if the dependency migration is not yet applied.
+				applied, err := e.stateTracker.IsMigrationApplied(ctx, targetID)
+				if err != nil {
+					logger.Errorf("Error checking if migration %s is applied: %v", targetID, err)
+					return nil, fmt.Errorf("failed to check dependency migration status for %s: %w", targetID, err)
+				}
+				logger.Debug("Migration %s applied status: %v", targetID, applied)
+				if applied {
+					logger.Debug("Dependency migration %s already applied, skipping", targetID)
+					continue
+				}
+
+				logger.Infof("Auto-including pending dependency migration: %s (connection=%s, schema=%s) for %s_%s", targetID, target.Connection, target.Schema, migration.Version, migration.Name)
+				selected[targetID] = target
+				toInclude = append(toInclude, target)
+			}
+		}
+	}
+
+	// If nothing extra was found, return original slice.
+	if len(toInclude) == 0 {
+		logger.Debug("No pending dependency migrations to auto-include (all dependencies already applied or not found)")
+		return migrations, nil
+	}
+
+	logger.Infof("Expanded migration set: %d initial + %d auto-included dependencies = %d total", len(migrations), len(toInclude), len(migrations)+len(toInclude))
+
+	// Merge initial migrations + newly included ones.
+	expanded := make([]*backends.MigrationScript, 0, len(migrations)+len(toInclude))
+	expanded = append(expanded, migrations...)
+	expanded = append(expanded, toInclude...)
+
+	return expanded, nil
+}
+
 // executeSync executes migrations synchronously
 func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
@@ -366,39 +451,29 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		}, nil
 	}
 
-	// Get backend for the connection (needed for validation)
+	// Log initial migrations found
+	logger.Debug("Found %d migration(s) matching target (backend=%s, connection=%s, schema=%s)", len(migrations), target.Backend, target.Connection, target.Schema)
+	for _, m := range migrations {
+		logger.Debug("  - %s_%s (connection=%s, schema=%s)", m.Version, m.Name, m.Connection, m.Schema)
+	}
+
+	// If any of the selected migrations declares structured dependencies, expand the set
+	// with any pending dependency migrations (including cross-connection) so that
+	// dependencies are executed automatically ahead of dependents.
+	migrations, err = e.expandWithPendingDependencies(ctx, migrations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand migrations with dependencies: %w", err)
+	}
+
+	// Get backend for the target connection (needed for validation)
 	connectionConfig, err := e.getConnectionConfig(connectionName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection config: %w", err)
 	}
 
-	backend, ok := e.backends[connectionConfig.Backend]
+	targetBackend, ok := e.backends[connectionConfig.Backend]
 	if !ok {
 		return nil, fmt.Errorf("backend %s not registered", connectionConfig.Backend)
-	}
-
-	// Ensure backend is connected
-	if err := backend.Connect(connectionConfig); err != nil {
-		return nil, fmt.Errorf("failed to connect to backend: %w", err)
-	}
-	defer func() { _ = backend.Close() }()
-
-	// Validate dependencies before execution (for PostgreSQL backend)
-	if connectionConfig.Backend == "postgresql" {
-		pgBackend, ok := backend.(*postgresql.Backend)
-		if ok {
-			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
-			for _, migration := range migrations {
-				validationErrors := validator.ValidateDependencies(ctx, migration, schemaName)
-				if len(validationErrors) > 0 {
-					var errorMsgs []string
-					for _, err := range validationErrors {
-						errorMsgs = append(errorMsgs, err.Error())
-					}
-					return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
-				}
-			}
-		}
 	}
 
 	// Sort migrations topologically based on dependencies
@@ -412,6 +487,43 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		})
 		sortedMigrations = migrations
 		// Add error to result but continue execution
+	}
+
+	// Ensure target backend is connected (for validation)
+	if err := targetBackend.Connect(connectionConfig); err != nil {
+		return nil, fmt.Errorf("failed to connect to backend: %w", err)
+	}
+	defer func() { _ = targetBackend.Close() }()
+
+	// Validate dependencies after sorting (for PostgreSQL backend)
+	// Pass the sorted execution set so validator knows which migrations will be executed
+	// Only validate migrations that belong to the target connection
+	if connectionConfig.Backend == "postgresql" {
+		pgBackend, ok := targetBackend.(*postgresql.Backend)
+		if ok {
+			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
+			for _, migration := range sortedMigrations {
+				// Only validate migrations for the target connection
+				if migration.Connection == connectionName {
+					validationErrors := validator.ValidateDependenciesWithExecutionSet(ctx, migration, schemaName, sortedMigrations)
+					if len(validationErrors) > 0 {
+						var errorMsgs []string
+						for _, err := range validationErrors {
+							errorMsgs = append(errorMsgs, err.Error())
+						}
+						return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
+					}
+				}
+			}
+		}
+	}
+
+	// Log final sorted migration execution order
+	if len(sortedMigrations) > 0 {
+		logger.Infof("Final migration execution set (%d total, sorted by dependencies):", len(sortedMigrations))
+		for i, m := range sortedMigrations {
+			logger.Infof("  %d. %s_%s (connection=%s, schema=%s)", i+1, m.Version, m.Name, m.Connection, m.Schema)
+		}
 	}
 
 	result := &ExecuteResult{
@@ -465,12 +577,13 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
 		// Record migration start
+		// Use migration.Connection (not connectionName) since this migration may be from a different connection
 		record := &state.MigrationRecord{
 			MigrationID:      migrationID,
 			Schema:           schema,
 			Table:            "",
 			Version:          migration.Version,
-			Connection:       connectionName,
+			Connection:       migration.Connection,
 			Backend:          migration.Backend,
 			Status:           "pending",
 			AppliedAt:        time.Now().Format(time.RFC3339),
@@ -478,6 +591,40 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			ExecutedBy:       executedBy,
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
+		}
+
+		// Get backend for this migration's connection (may differ from target connection for cross-connection dependencies)
+		migrationConnectionConfig, err := e.getConnectionConfig(migration.Connection)
+		if err != nil {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to get connection config for %s: %v", migration.Connection, err)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
+		}
+
+		migrationBackend, ok := e.backends[migrationConnectionConfig.Backend]
+		if !ok {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("backend %s not registered for connection %s", migrationConnectionConfig.Backend, migration.Connection)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: backend %s not registered", migrationID, migrationConnectionConfig.Backend))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
+		}
+
+		// Connect to the migration's backend (may be different from target backend)
+		if err := migrationBackend.Connect(migrationConnectionConfig); err != nil {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to connect to backend for %s: %v", migration.Connection, err)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to connect: %v", migrationID, err))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
 		}
 
 		// Convert executor.MigrationScript to backends.MigrationScript
@@ -492,8 +639,9 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			DownSQL:    migration.DownSQL,
 		}
 
-		// Execute the migration
-		err = backend.ExecuteMigration(ctx, backendMigration)
+		// Execute the migration using its own backend
+		err = migrationBackend.ExecuteMigration(ctx, backendMigration)
+		_ = migrationBackend.Close() // Close after execution
 		if err != nil {
 			record.Status = "failed"
 			record.ErrorMessage = err.Error()

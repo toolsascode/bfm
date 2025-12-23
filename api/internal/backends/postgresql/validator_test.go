@@ -74,7 +74,8 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	_ = reg.Register(depMigration)
 
 	// Mark it as applied
-	tracker.appliedMigrations["core_20240101120000_base_migration"] = true
+	// Migration ID format: {version}_{name}_{backend}_{connection}
+	tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = true
 
 	validator := NewDependencyValidator(backend, tracker, reg)
 
@@ -94,7 +95,7 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	})
 
 	t.Run("validate simple dependency - not applied", func(t *testing.T) {
-		tracker.appliedMigrations["core_20240101120000_base_migration"] = false
+		tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = false
 
 		migration := &backends.MigrationScript{
 			Version:      "20240101120002",
@@ -110,7 +111,7 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 		}
 
 		// Reset
-		tracker.appliedMigrations["core_20240101120000_base_migration"] = true
+		tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = true
 	})
 
 	t.Run("validate structured dependency - applied", func(t *testing.T) {

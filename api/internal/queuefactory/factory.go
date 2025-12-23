@@ -2,10 +2,11 @@ package queuefactory
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/toolsascode/bfm/api/internal/queue"
 	"github.com/toolsascode/bfm/api/internal/queue/kafka"
 	"github.com/toolsascode/bfm/api/internal/queue/pulsar"
-	"strings"
 )
 
 // QueueConfig holds configuration for creating a queue
