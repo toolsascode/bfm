@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -160,12 +161,34 @@ func main() {
 	// Initialize HTTP server
 	router := gin.New()
 
-	// Custom logger middleware that skips health check endpoints
+	// Determine log format from environment variable (default to JSON)
+	logFormat := strings.ToLower(os.Getenv("BFM_LOG_FORMAT"))
+	useJSON := logFormat != "plaintext" && logFormat != "plain" && logFormat != "text"
+
+	// Custom logger middleware that skips health check endpoints and supports JSON/plaintext
 	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		// Skip logging for health check endpoints
 		if param.Path == "/health" || param.Path == "/api/v1/health" {
 			return ""
 		}
+
+		if useJSON {
+			// JSON format
+			logEntry := map[string]interface{}{
+				"timestamp": param.TimeStamp.Format("2006-01-02T15:04:05.000Z07:00"),
+				"status":    param.StatusCode,
+				"latency":   param.Latency.String(),
+				"client_ip": param.ClientIP,
+				"method":    param.Method,
+				"path":      param.Path,
+				"error":     param.ErrorMessage,
+			}
+			if jsonBytes, err := json.Marshal(logEntry); err == nil {
+				return string(jsonBytes) + "\n"
+			}
+		}
+
+		// Plaintext format (fallback or when explicitly set)
 		return fmt.Sprintf("[GIN] %s | %3d | %13v | %15s | %-7s %s\n",
 			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
 			param.StatusCode,
