@@ -56,6 +56,21 @@ func (m *mockStateTrackerForValidator) Initialize(ctx interface{}) error {
 	return nil
 }
 
+func (m *mockStateTrackerForValidator) ReindexMigrations(ctx interface{}, registry interface{}) error {
+	return nil
+}
+
+func (m *mockStateTrackerForValidator) GetMigrationDetail(ctx interface{}, migrationID string) (*state.MigrationDetail, error) {
+	return nil, nil
+}
+
+func (m *mockStateTrackerForValidator) GetMigrationExecutions(ctx interface{}, migrationID string) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (m *mockStateTrackerForValidator) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+
 func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	backend := &Backend{} // We'll need to use a real backend or mock differently
 	// For now, we'll test the logic without actual database calls

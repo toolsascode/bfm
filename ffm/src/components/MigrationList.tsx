@@ -34,7 +34,6 @@ export default function MigrationList() {
   const [forceRollback, setForceRollback] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadMigrations();
@@ -203,13 +202,20 @@ export default function MigrationList() {
     setCurrentPage(1);
   };
 
+  // Helper function to check if a string is a version number (timestamp format: YYYYMMDDHHMMSS)
+  const isVersionNumber = (str: string): boolean => {
+    // Check if it's a 14-digit number (timestamp format)
+    return /^\d{14}$/.test(str);
+  };
+
   // Helper function to extract base ID from schema-specific ID
   const getBaseMigrationID = (migrationID: string): string => {
     const parts = migrationID.split("_");
-    // Schema-specific format: {schema}_{version}_{name}_{backend}_{connection} (5+ parts)
-    // Base format: {version}_{name}_{backend}_{connection} (4 parts)
-    if (parts.length >= 5) {
-      // Remove schema prefix (first part)
+    // Schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
+    // Base format: {version}_{name}_{backend}_{connection}
+    // Base migrations start with a version number (timestamp), schema-specific start with schema name
+    if (parts.length > 0 && !isVersionNumber(parts[0])) {
+      // First part is not a version number, so it's a schema prefix - remove it
       return parts.slice(1).join("_");
     }
     return migrationID;
@@ -218,81 +224,41 @@ export default function MigrationList() {
   // Helper function to check if migration ID is schema-specific
   const isSchemaSpecific = (migrationID: string): boolean => {
     const parts = migrationID.split("_");
-    return parts.length >= 5;
+    // If first part is not a version number (timestamp), it's schema-specific
+    return parts.length > 0 && !isVersionNumber(parts[0]);
   };
 
-  // Group migrations by base ID
-  const groupedMigrations = useMemo(() => {
-    const groups = new Map<
-      string,
-      {
-        base: MigrationListItem | null;
-        schemaSpecific: MigrationListItem[];
-      }
-    >();
-
-    migrations.forEach((migration) => {
-      const baseID = getBaseMigrationID(migration.migration_id);
-      const isSpecific = isSchemaSpecific(migration.migration_id);
-
-      if (!groups.has(baseID)) {
-        groups.set(baseID, {
-          base: null,
-          schemaSpecific: [],
-        });
-      }
-
-      const group = groups.get(baseID)!;
-      if (isSpecific) {
-        group.schemaSpecific.push(migration);
-      } else {
-        group.base = migration;
-      }
+  // Filter out schema-specific migrations - only show base migrations identified by BfM
+  const baseMigrations = useMemo(() => {
+    return migrations.filter((migration) => {
+      // Only include base migrations (not schema-specific)
+      return !isSchemaSpecific(migration.migration_id);
     });
-
-    return groups;
   }, [migrations]);
 
-  // Flatten grouped migrations for display
-  const flattenedMigrations = useMemo(() => {
-    const result: (MigrationListItem & {
-      isGroupHeader?: boolean;
-      groupKey?: string;
-      schemaCount?: number;
-    })[] = [];
+  // Calculate schema count for each base migration
+  const migrationsWithSchemaCount = useMemo(() => {
+    // Create a map to count schema-specific migrations for each base
+    const schemaCountMap = new Map<string, number>();
 
-    groupedMigrations.forEach((group, baseID) => {
-      // If there are schema-specific migrations, show grouped view
-      if (group.schemaSpecific.length > 0) {
-        // Use base migration if available, otherwise use first schema-specific as template
-        const baseMigration = group.base || group.schemaSpecific[0];
-        const isExpanded = expandedGroups.has(baseID);
-
-        // Add group header (base migration)
-        result.push({
-          ...baseMigration,
-          migration_id: baseID,
-          isGroupHeader: true,
-          groupKey: baseID,
-          schemaCount: group.schemaSpecific.length,
-        });
-
-        // Add schema-specific migrations if expanded
-        if (isExpanded) {
-          group.schemaSpecific.forEach((migration) => {
-            result.push(migration);
-          });
-        }
-      } else {
-        // No schema-specific migrations, just add the base migration
-        if (group.base) {
-          result.push(group.base);
-        }
+    migrations.forEach((migration) => {
+      if (isSchemaSpecific(migration.migration_id)) {
+        const baseID = getBaseMigrationID(migration.migration_id);
+        schemaCountMap.set(baseID, (schemaCountMap.get(baseID) || 0) + 1);
       }
     });
 
-    return result;
-  }, [groupedMigrations, expandedGroups]);
+    // Add schema count to base migrations
+    return baseMigrations.map((migration) => ({
+      ...migration,
+      schemaCount: schemaCountMap.get(migration.migration_id) || 0,
+    }));
+  }, [baseMigrations, migrations]);
+
+  // Flatten migrations for display (no grouping needed, just base migrations)
+  const flattenedMigrations = useMemo(() => {
+    return migrationsWithSchemaCount;
+  }, [migrationsWithSchemaCount]);
 
   // Filter migrations based on search query
   const filteredMigrations = useMemo(() => {
@@ -313,18 +279,6 @@ export default function MigrationList() {
       );
     });
   }, [flattenedMigrations, searchQuery]);
-
-  const toggleGroup = (groupKey: string) => {
-    setExpandedGroups((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(groupKey)) {
-        newSet.delete(groupKey);
-      } else {
-        newSet.add(groupKey);
-      }
-      return newSet;
-    });
-  };
 
   // Calculate pagination
   const totalPages = Math.ceil(filteredMigrations.length / itemsPerPage);
@@ -501,8 +455,11 @@ export default function MigrationList() {
       // Rollback each selected migration
       for (const migration of selectedMigrationObjects) {
         try {
+          // Use migration schema if available
+          const schemas = migration.schema ? [migration.schema] : [];
           const response = await apiClient.rollbackMigration(
             migration.migration_id,
+            schemas,
           );
 
           if (response.success) {
@@ -1357,22 +1314,22 @@ export default function MigrationList() {
                 />
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
-                Migration ID
-              </th>
-              {/* <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
-                Schema
-              </th> */}
-              {/* <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
-                Name
-              </th> */}
-              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Version
+              </th>
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
+                Name
+              </th>
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
+                Connection
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Backend
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
-                Connection
+                Schema
+              </th>
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
+                Total Schemas
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Status
@@ -1391,7 +1348,7 @@ export default function MigrationList() {
           <tbody>
             {paginatedMigrations.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center text-gray-500 py-8">
+                <td colSpan={11} className="text-center text-gray-500 py-8">
                   No migrations found
                 </td>
               </tr>
@@ -1421,78 +1378,34 @@ export default function MigrationList() {
                     />
                   </td>
                   <td className="p-4 border-b border-gray-200">
-                    {migration.isGroupHeader ? (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleGroup(migration.groupKey!)}
-                          className="text-bfm-blue hover:text-bfm-blue-dark transition-colors"
-                          title={
-                            expandedGroups.has(migration.groupKey!)
-                              ? "Collapse"
-                              : "Expand"
-                          }
-                        >
-                          <svg
-                            className={`w-4 h-4 transition-transform ${
-                              expandedGroups.has(migration.groupKey!)
-                                ? "rotate-90"
-                                : ""
-                            }`}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        </button>
-                        <Link
-                          to={`/migrations/${migration.migration_id}`}
-                          className="text-bfm-blue no-underline hover:underline"
-                        >
-                          {migration.migration_id}
-                        </Link>
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {migration.schemaCount} schema
-                          {migration.schemaCount !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="pl-6 flex items-center gap-2">
-                        <span className="text-gray-400">└─</span>
-                        <Link
-                          to={`/migrations/${migration.migration_id}`}
-                          className="text-bfm-blue no-underline hover:underline"
-                        >
-                          {migration.migration_id}
-                        </Link>
-                        {migration.schema && (
-                          <span className="text-xs text-gray-600 bg-blue-50 px-2 py-1 rounded">
-                            {migration.schema}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  {/* <td className="p-4 border-b border-gray-200">{migration.schema || '-'}</td>
-                    <td className="p-4 border-b border-gray-200">{migration.name || '-'}</td> */}
-                  <td className="p-4 border-b border-gray-200">
                     {migration.version}
                   </td>
                   <td className="p-4 border-b border-gray-200">
-                    {migration.backend}
+                    {migration.name || "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
                     {migration.connection || "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
+                    {migration.backend}
+                  </td>
+                  <td className="p-4 border-b border-gray-200">
+                    <span className="text-gray-500 italic">
+                      {migration.schemaCount > 0
+                        ? "Multiple"
+                        : migration.schema || "-"}
+                    </span>
+                  </td>
+                  <td className="p-4 border-b border-gray-200">
+                    <span className="text-gray-800 font-medium">
+                      {migration.schemaCount || 0}
+                    </span>
+                  </td>
+                  <td className="p-4 border-b border-gray-200">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        migration.status === "success"
+                        migration.status === "success" ||
+                        migration.status === "applied"
                           ? "bg-green-100 text-green-800"
                           : migration.status === "failed"
                             ? "bg-red-100 text-red-800"
@@ -1526,34 +1439,12 @@ export default function MigrationList() {
                       : "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
-                    <div className="flex items-center gap-2">
-                      <Link
-                        to={`/migrations/${migration.migration_id}`}
-                        className="inline-block px-3 py-1 bg-bfm-blue text-white rounded text-sm no-underline transition-all duration-200 hover:bg-bfm-blue-dark hover:shadow-md"
-                      >
-                        View
-                      </Link>
-                      <div className="relative group">
-                        <svg
-                          className="w-4 h-4 text-gray-400 cursor-help"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none z-10 whitespace-normal">
-                          Execute from the Migration Details page
-                          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                        </div>
-                      </div>
-                    </div>
+                    <Link
+                      to={`/migrations/${migration.migration_id}`}
+                      className="inline-block px-3 py-1 bg-bfm-blue text-white rounded text-sm no-underline transition-all duration-200 hover:bg-bfm-blue-dark hover:shadow-md"
+                    >
+                      View
+                    </Link>
                   </td>
                 </tr>
               ))

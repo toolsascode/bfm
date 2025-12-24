@@ -55,6 +55,9 @@ services:
       - "7070:7070"  # HTTP API
       - "9090:9090"  # gRPC API
     environment:
+      - BFM_LOG_FORMAT=json
+      - BFM_LOG_LEVEL=debug
+      - BFM_APP_MODE=debug
       # Server Configuration
       - BFM_HTTP_PORT=7070
       - BFM_GRPC_PORT=9090

@@ -8,6 +8,7 @@ import type {
   MigrationDetailResponse,
   MigrationStatusResponse,
   MigrationHistoryResponse,
+  MigrationExecutionsResponse,
   RollbackResponse,
   HealthResponse,
   MigrationListFilters,
@@ -207,6 +208,24 @@ class BFMApiClient {
     return response.data;
   }
 
+  async getMigrationExecutions(
+    migrationId: string,
+  ): Promise<MigrationExecutionsResponse> {
+    const response = await this.client.get<MigrationExecutionsResponse>(
+      `/v1/migrations/${migrationId}/executions`,
+    );
+    return response.data;
+  }
+
+  async getRecentExecutions(
+    limit: number = 10,
+  ): Promise<MigrationExecutionsResponse> {
+    const response = await this.client.get<MigrationExecutionsResponse>(
+      `/v1/migrations/executions/recent?limit=${limit}`,
+    );
+    return response.data;
+  }
+
   async migrate(request: MigrateRequest): Promise<MigrateResponse> {
     const response = await this.client.post<MigrateResponse>(
       "/v1/migrate",
@@ -231,9 +250,13 @@ class BFMApiClient {
     return response.data;
   }
 
-  async rollbackMigration(migrationId: string): Promise<RollbackResponse> {
+  async rollbackMigration(
+    migrationId: string,
+    schemas?: string[],
+  ): Promise<RollbackResponse> {
     const response = await this.client.post<RollbackResponse>(
       `/v1/migrations/${migrationId}/rollback`,
+      schemas ? { schemas } : {},
     );
     return response.data;
   }

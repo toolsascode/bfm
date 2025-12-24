@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS core.solution_runs;
+DROP TABLE IF EXISTS solution_runs;

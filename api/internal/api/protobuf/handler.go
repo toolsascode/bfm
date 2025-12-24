@@ -530,8 +530,8 @@ func (s *Server) RollbackMigration(ctx context.Context, req *RollbackMigrationRe
 		return nil, status.Errorf(codes.FailedPrecondition, "migration is not applied: %s", req.MigrationId)
 	}
 
-	// Execute rollback
-	result, err := s.executor.Rollback(ctx, req.MigrationId)
+	// Execute rollback with schemas
+	result, err := s.executor.Rollback(ctx, req.MigrationId, req.Schemas)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to rollback migration: %v", err)
 	}

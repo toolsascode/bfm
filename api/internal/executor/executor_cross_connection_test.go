@@ -39,8 +39,18 @@ func (f *fakeStateTracker) UpdateMigrationInfo(_ interface{}, _ string, _ string
 func (f *fakeStateTracker) GetLastMigrationVersion(_ interface{}, _ string, _ string) (string, error) {
 	return "", nil
 }
-func (f *fakeStateTracker) DeleteMigration(_ interface{}, _ string) error { return nil }
-func (f *fakeStateTracker) Close() error                                  { return nil }
+func (f *fakeStateTracker) DeleteMigration(_ interface{}, _ string) error        { return nil }
+func (f *fakeStateTracker) ReindexMigrations(_ interface{}, _ interface{}) error { return nil }
+func (f *fakeStateTracker) GetMigrationDetail(_ interface{}, _ string) (*state.MigrationDetail, error) {
+	return nil, nil
+}
+func (f *fakeStateTracker) GetMigrationExecutions(_ interface{}, _ string) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (f *fakeStateTracker) GetRecentExecutions(_ interface{}, _ int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (f *fakeStateTracker) Close() error { return nil }
 
 // fakeRegistry provides a minimal Registry for the dependency resolver.
 type fakeRegistry struct {

@@ -1,6 +1,6 @@
-CREATE SCHEMA IF NOT EXISTS core;
+-- CREATE SCHEMA IF NOT EXISTS core;
 
-CREATE TABLE IF NOT EXISTS core.solution_runs (
+CREATE TABLE IF NOT EXISTS solution_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     environment_id UUID NOT NULL,
     feature_flag TEXT NOT NULL,
@@ -10,4 +10,4 @@ CREATE TABLE IF NOT EXISTS core.solution_runs (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_solution_runs_environment_feature
-    ON core.solution_runs (environment_id, feature_flag);
+    ON solution_runs (environment_id, feature_flag);

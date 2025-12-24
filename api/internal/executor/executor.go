@@ -759,6 +759,21 @@ func (e *Executor) GetMigrationList(ctx context.Context, filters *state.Migratio
 	return e.stateTracker.GetMigrationList(ctx, filters)
 }
 
+// GetMigrationDetail retrieves detailed information about a single migration from migrations_list
+func (e *Executor) GetMigrationDetail(ctx context.Context, migrationID string) (*state.MigrationDetail, error) {
+	return e.stateTracker.GetMigrationDetail(ctx, migrationID)
+}
+
+// GetMigrationExecutions retrieves all execution records for a migration, ordered by created_at DESC
+func (e *Executor) GetMigrationExecutions(ctx context.Context, migrationID string) ([]*state.MigrationExecution, error) {
+	return e.stateTracker.GetMigrationExecutions(ctx, migrationID)
+}
+
+// GetRecentExecutions retrieves recent execution records across all migrations, ordered by created_at DESC
+func (e *Executor) GetRecentExecutions(ctx context.Context, limit int) ([]*state.MigrationExecution, error) {
+	return e.stateTracker.GetRecentExecutions(ctx, limit)
+}
+
 // RegisterScannedMigration registers a scanned migration in migrations_list
 func (e *Executor) RegisterScannedMigration(ctx context.Context, migrationID, schema, table, version, name, connection, backend string) error {
 	return e.stateTracker.RegisterScannedMigration(ctx, migrationID, schema, table, version, name, connection, backend)
@@ -1160,25 +1175,22 @@ func (e *Executor) getMigrationIDWithSchema(migration *backends.MigrationScript,
 }
 
 // Rollback rolls back a migration
-func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackResult, error) {
+func (e *Executor) Rollback(ctx context.Context, migrationID string, schemas []string) (*RollbackResult, error) {
 	// Get migration from registry
 	migration := e.GetMigrationByID(migrationID)
 	if migration == nil {
 		return nil, fmt.Errorf("migration not found: %s", migrationID)
 	}
 
-	// Check if migration is applied
-	applied, err := e.IsMigrationApplied(ctx, migrationID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check migration status: %w", err)
-	}
-
-	if !applied {
-		return &RollbackResult{
-			Success: false,
-			Message: "migration is not applied",
-			Errors:  []string{"migration is not applied"},
-		}, nil
+	// Use provided schemas, or fall back to migration.Schema if empty
+	// If both are empty, use empty string to process without schema
+	schemasToUse := schemas
+	if len(schemasToUse) == 0 {
+		if migration.Schema != "" {
+			schemasToUse = []string{migration.Schema}
+		} else {
+			schemasToUse = []string{""}
+		}
 	}
 
 	// Get connection config
@@ -1208,80 +1220,134 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackR
 		}, nil
 	}
 
-	// Create a rollback migration script
-	rollbackMigration := &backends.MigrationScript{
-		Schema:     migration.Schema,
-		Version:    migration.Version,
-		Name:       migration.Name + "_rollback",
-		Connection: migration.Connection,
-		Backend:    migration.Backend,
-		UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
-		DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
+	result := &RollbackResult{
+		Applied: []string{},
+		Errors:  []string{},
 	}
 
-	// Execute rollback
-	err = backend.ExecuteMigration(ctx, rollbackMigration)
-	if err != nil {
+	// Execute rollback for each schema
+	for _, schema := range schemasToUse {
+		// Check if migration is applied for this schema by checking executions table
+		// This is more accurate than checking migrations_list since executions table tracks per-schema
+		baseMigrationID := e.getMigrationID(migration)
+		executions, err := e.stateTracker.GetMigrationExecutions(ctx, baseMigrationID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to check migration status: %v", schema, err))
+			continue
+		}
+
+		// Find execution record matching this schema, version, connection, and backend
+		var foundExecution *state.MigrationExecution
+		for _, exec := range executions {
+			// Check if schema matches (handle comma-separated schemas)
+			schemaMatches := false
+			if exec.Schema == schema {
+				schemaMatches = true
+			} else if exec.Schema != "" {
+				// Handle comma-separated schemas
+				schemas := strings.Split(exec.Schema, ",")
+				for _, s := range schemas {
+					if strings.TrimSpace(s) == schema {
+						schemaMatches = true
+						break
+					}
+				}
+			}
+			if schemaMatches && exec.Version == migration.Version &&
+				exec.Connection == migration.Connection && exec.Backend == migration.Backend {
+				foundExecution = exec
+				break
+			}
+		}
+
+		schemaMigrationID := e.getMigrationIDWithSchema(migration, schema)
+		if foundExecution == nil || !foundExecution.Applied {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s (not applied)", schemaMigrationID))
+			continue
+		}
+
+		// Create a rollback migration script with the specific schema
+		rollbackMigration := &backends.MigrationScript{
+			Schema:     schema,
+			Version:    migration.Version,
+			Name:       migration.Name + "_rollback",
+			Connection: migration.Connection,
+			Backend:    migration.Backend,
+			UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
+			DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
+		}
+
+		// Execute rollback
+		err = backend.ExecuteMigration(ctx, rollbackMigration)
+		if err != nil {
+			// Extract execution context
+			executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
+
+			// Record failed rollback
+			record := &state.MigrationRecord{
+				MigrationID:      schemaMigrationID + "_rollback",
+				Schema:           schema,
+				Table:            "",
+				Version:          migration.Version,
+				Connection:       migration.Connection,
+				Backend:          migration.Backend,
+				Status:           "failed",
+				AppliedAt:        time.Now().Format(time.RFC3339),
+				ErrorMessage:     err.Error(),
+				ExecutedBy:       executedBy,
+				ExecutionMethod:  executionMethod,
+				ExecutionContext: executionContext,
+			}
+			_ = e.stateTracker.RecordMigration(ctx, record)
+
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: %v", schema, err))
+			continue
+		}
+
 		// Extract execution context
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
-		// Record failed rollback
+		// Record successful rollback
 		record := &state.MigrationRecord{
-			MigrationID:      migrationID + "_rollback",
-			Schema:           migration.Schema,
+			MigrationID:      schemaMigrationID + "_rollback",
+			Schema:           schema,
 			Table:            "",
 			Version:          migration.Version,
 			Connection:       migration.Connection,
 			Backend:          migration.Backend,
-			Status:           "failed",
+			Status:           "rolled_back",
 			AppliedAt:        time.Now().Format(time.RFC3339),
-			ErrorMessage:     err.Error(),
+			ErrorMessage:     "",
 			ExecutedBy:       executedBy,
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
 		}
-		_ = e.stateTracker.RecordMigration(ctx, record)
-
-		return &RollbackResult{
-			Success: false,
-			Message: "rollback failed",
-			Errors:  []string{err.Error()},
-		}, nil
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to record migration: %v", schema, err))
+		} else {
+			result.Applied = append(result.Applied, schemaMigrationID)
+		}
 	}
 
-	// Extract execution context
-	executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
-
-	// Remove migration from state (mark as not applied)
-	// We'll delete the record or mark it as rolled back
-	// For now, we'll create a rollback record
-	record := &state.MigrationRecord{
-		MigrationID:      migrationID + "_rollback",
-		Schema:           migration.Schema,
-		Table:            "",
-		Version:          migration.Version,
-		Connection:       migration.Connection,
-		Backend:          migration.Backend,
-		Status:           "rolled_back",
-		AppliedAt:        time.Now().Format(time.RFC3339),
-		ErrorMessage:     "",
-		ExecutedBy:       executedBy,
-		ExecutionMethod:  executionMethod,
-		ExecutionContext: executionContext,
+	// Success is true only if there are no errors AND at least one migration was rolled back
+	result.Success = len(result.Errors) == 0 && len(result.Applied) > 0
+	if len(result.Applied) > 0 {
+		result.Message = fmt.Sprintf("rollback completed successfully for %d schema(s)", len(result.Applied))
+	} else if len(result.Errors) > 0 {
+		result.Message = "rollback failed"
+	} else {
+		result.Message = "no migrations to rollback"
 	}
-	_ = e.stateTracker.RecordMigration(ctx, record)
 
-	return &RollbackResult{
-		Success: true,
-		Message: "rollback completed successfully",
-		Errors:  []string{},
-	}, nil
+	return result, nil
 }
 
 // RollbackResult represents the result of a rollback operation
 type RollbackResult struct {
 	Success bool
 	Message string
+	Applied []string
+	Skipped []string
 	Errors  []string
 }
 

@@ -109,9 +109,30 @@ export interface MigrationHistoryResponse {
   history: MigrationHistoryItem[];
 }
 
+export interface MigrationExecution {
+  id: number;
+  migration_id: string;
+  schema: string;
+  version: string;
+  connection: string;
+  backend: string;
+  status: string;
+  applied: boolean;
+  applied_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MigrationExecutionsResponse {
+  migration_id: string;
+  executions: MigrationExecution[];
+}
+
 export interface RollbackResponse {
   success: boolean;
   message: string;
+  applied?: string[];
+  skipped?: string[];
   errors?: string[];
 }
 

@@ -54,6 +54,21 @@ func (m *mockStateTracker) Initialize(ctx interface{}) error {
 	return nil
 }
 
+func (m *mockStateTracker) ReindexMigrations(ctx interface{}, registry interface{}) error {
+	return nil
+}
+
+func (m *mockStateTracker) GetMigrationDetail(ctx interface{}, migrationID string) (*state.MigrationDetail, error) {
+	return nil, nil
+}
+
+func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (m *mockStateTracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+
 func TestDependencyGraph_AddNode(t *testing.T) {
 	graph := NewDependencyGraph()
 	migration := &backends.MigrationScript{

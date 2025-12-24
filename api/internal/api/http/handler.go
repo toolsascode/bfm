@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 		api.GET("/migrations/:id", h.authenticate, h.getMigration)
 		api.GET("/migrations/:id/status", h.authenticate, h.getMigrationStatus)
 		api.GET("/migrations/:id/history", h.authenticate, h.getMigrationHistory)
+		api.GET("/migrations/:id/executions", h.authenticate, h.getMigrationExecutions)
+		api.GET("/migrations/executions/recent", h.authenticate, h.getRecentExecutions)
 		api.POST("/migrations/:id/rollback", h.authenticate, h.rollbackMigration)
 		api.POST("/migrations/reindex", h.authenticate, h.reindexMigrations)
 		api.GET("/health", h.Health)
@@ -290,53 +293,32 @@ func (h *Handler) getMigration(c *gin.Context) {
 	// Get migration from registry
 	migration := h.executor.GetMigrationByID(migrationID)
 
-	// Get schema and table from state tracker (migrations_list table)
-	// These are populated when the migration is executed or registered
+	// Get migration details from database (migrations_list table)
+	// This is the source of truth for dependencies and metadata
+	dbDetail, err := h.executor.GetMigrationDetail(c.Request.Context(), migrationID)
 	var schemaValue, tableValue, versionValue, nameValue, connectionValue, backendValue string
 	var foundMigrationID string
-	migrationList, err := h.executor.GetMigrationList(c.Request.Context(), &state.MigrationFilters{})
-	if err == nil {
-		// First, try exact match
-		for _, item := range migrationList {
-			if item.MigrationID == migrationID {
-				schemaValue = item.Schema
-				tableValue = item.Table
-				versionValue = item.Version
-				nameValue = item.Name
-				connectionValue = item.Connection
-				backendValue = item.Backend
-				foundMigrationID = migrationID
-				break
-			}
-		}
+	var dbDependencies []string
+	var dbStructuredDeps []dto.DependencyResponse
 
-		// If no exact match found, check if migrationID is a base ID (4 parts: version_name_backend_connection)
-		// and look for schema-specific versions (format: {schema}_{baseID})
-		if foundMigrationID == "" {
-			parts := strings.Split(migrationID, "_")
-			// Base ID format: {version}_{name}_{backend}_{connection} (4 parts)
-			// Schema-specific format: {schema}_{version}_{name}_{backend}_{connection} (5+ parts)
-			if len(parts) == 4 {
-				// This is a base ID, look for schema-specific versions
-				for _, item := range migrationList {
-					itemParts := strings.Split(item.MigrationID, "_")
-					// Check if this is a schema-specific version of the base ID
-					if len(itemParts) >= 5 {
-						// Remove schema prefix and check if it matches the base ID
-						baseID := strings.Join(itemParts[1:], "_")
-						if baseID == migrationID {
-							schemaValue = item.Schema
-							tableValue = item.Table
-							versionValue = item.Version
-							nameValue = item.Name
-							connectionValue = item.Connection
-							backendValue = item.Backend
-							foundMigrationID = item.MigrationID
-							break
-						}
-					}
-				}
-			}
+	if err == nil && dbDetail != nil {
+		schemaValue = dbDetail.Schema
+		versionValue = dbDetail.Version
+		nameValue = dbDetail.Name
+		connectionValue = dbDetail.Connection
+		backendValue = dbDetail.Backend
+		foundMigrationID = dbDetail.MigrationID
+		dbDependencies = dbDetail.Dependencies
+		// Convert structured dependencies from database
+		for _, dep := range dbDetail.StructuredDependencies {
+			dbStructuredDeps = append(dbStructuredDeps, dto.DependencyResponse{
+				Connection:     dep.Connection,
+				Schema:         dep.Schema,
+				Target:         dep.Target,
+				TargetType:     dep.TargetType,
+				RequiresTable:  dep.RequiresTable,
+				RequiresSchema: dep.RequiresSchema,
+			})
 		}
 	}
 
@@ -371,10 +353,10 @@ func (h *Handler) getMigration(c *gin.Context) {
 				Connection:             connectionValue,
 				Backend:                backendValue,
 				Applied:                applied,
-				UpSQL:                  "",                         // Not available if not in registry
-				DownSQL:                "",                         // Not available if not in registry
-				Dependencies:           []string{},                 // Not available if not in registry
-				StructuredDependencies: []dto.DependencyResponse{}, // Not available if not in registry
+				UpSQL:                  "", // Not available if not in registry
+				DownSQL:                "", // Not available if not in registry
+				Dependencies:           dbDependencies,
+				StructuredDependencies: dbStructuredDeps,
 			}
 			c.JSON(http.StatusOK, response)
 			return
@@ -384,25 +366,46 @@ func (h *Handler) getMigration(c *gin.Context) {
 		return
 	}
 
-	// Migration found in registry, use registry values with database fallbacks
+	// Migration found in registry, use database values for dependencies (source of truth)
+	// but use registry values for UpSQL/DownSQL (only available in registry)
 	if tableValue == "" && migration.Table != nil {
 		tableValue = *migration.Table
 	}
 	if schemaValue == "" {
 		schemaValue = migration.Schema
 	}
+	if versionValue == "" {
+		versionValue = migration.Version
+	}
+	if nameValue == "" {
+		nameValue = migration.Name
+	}
+	if connectionValue == "" {
+		connectionValue = migration.Connection
+	}
+	if backendValue == "" {
+		backendValue = migration.Backend
+	}
 
-	// Convert structured dependencies to response format
-	structuredDeps := make([]dto.DependencyResponse, 0, len(migration.StructuredDependencies))
-	for _, dep := range migration.StructuredDependencies {
-		structuredDeps = append(structuredDeps, dto.DependencyResponse{
-			Connection:     dep.Connection,
-			Schema:         dep.Schema,
-			Target:         dep.Target,
-			TargetType:     dep.TargetType,
-			RequiresTable:  dep.RequiresTable,
-			RequiresSchema: dep.RequiresSchema,
-		})
+	// Use dependencies from database (migrations_list) as source of truth
+	// Fall back to registry if database doesn't have them
+	dependencies := dbDependencies
+	if len(dependencies) == 0 {
+		dependencies = migration.Dependencies
+	}
+	structuredDeps := dbStructuredDeps
+	if len(structuredDeps) == 0 {
+		// Convert structured dependencies from registry if database doesn't have them
+		for _, dep := range migration.StructuredDependencies {
+			structuredDeps = append(structuredDeps, dto.DependencyResponse{
+				Connection:     dep.Connection,
+				Schema:         dep.Schema,
+				Target:         dep.Target,
+				TargetType:     dep.TargetType,
+				RequiresTable:  dep.RequiresTable,
+				RequiresSchema: dep.RequiresSchema,
+			})
+		}
 	}
 
 	// Use foundMigrationID if we found a schema-specific version, otherwise use the original migrationID
@@ -415,14 +418,14 @@ func (h *Handler) getMigration(c *gin.Context) {
 		MigrationID:            responseMigrationID,
 		Schema:                 schemaValue,
 		Table:                  tableValue,
-		Version:                migration.Version,
-		Name:                   migration.Name,
-		Connection:             migration.Connection,
-		Backend:                migration.Backend,
+		Version:                versionValue,
+		Name:                   nameValue,
+		Connection:             connectionValue,
+		Backend:                backendValue,
 		Applied:                applied,
 		UpSQL:                  migration.UpSQL,
 		DownSQL:                migration.DownSQL,
-		Dependencies:           migration.Dependencies,
+		Dependencies:           dependencies,
 		StructuredDependencies: structuredDeps,
 	}
 
@@ -606,9 +609,89 @@ func (h *Handler) getMigrationHistory(c *gin.Context) {
 	})
 }
 
+// getMigrationExecutions gets all execution records for a specific migration
+func (h *Handler) getMigrationExecutions(c *gin.Context) {
+	migrationID := c.Param("id")
+
+	// Get executions from state tracker
+	executions, err := h.executor.GetMigrationExecutions(c.Request.Context(), migrationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert to DTO format
+	executionDTOs := make([]dto.MigrationExecutionResponse, 0, len(executions))
+	for _, exec := range executions {
+		executionDTOs = append(executionDTOs, dto.MigrationExecutionResponse{
+			ID:          exec.ID,
+			MigrationID: exec.MigrationID,
+			Schema:      exec.Schema,
+			Version:     exec.Version,
+			Connection:  exec.Connection,
+			Backend:     exec.Backend,
+			Status:      exec.Status,
+			Applied:     exec.Applied,
+			AppliedAt:   exec.AppliedAt,
+			CreatedAt:   exec.CreatedAt,
+			UpdatedAt:   exec.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"migration_id": migrationID,
+		"executions":   executionDTOs,
+	})
+}
+
+// getRecentExecutions gets recent execution records across all migrations
+func (h *Handler) getRecentExecutions(c *gin.Context) {
+	limit := 10 // Default limit
+	if limitParam := c.Query("limit"); limitParam != "" {
+		if parsedLimit, err := strconv.Atoi(limitParam); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get recent executions from state tracker
+	executions, err := h.executor.GetRecentExecutions(c.Request.Context(), limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert to DTO format
+	executionDTOs := make([]dto.MigrationExecutionResponse, 0, len(executions))
+	for _, exec := range executions {
+		executionDTOs = append(executionDTOs, dto.MigrationExecutionResponse{
+			ID:          exec.ID,
+			MigrationID: exec.MigrationID,
+			Schema:      exec.Schema,
+			Version:     exec.Version,
+			Connection:  exec.Connection,
+			Backend:     exec.Backend,
+			Status:      exec.Status,
+			Applied:     exec.Applied,
+			AppliedAt:   exec.AppliedAt,
+			CreatedAt:   exec.CreatedAt,
+			UpdatedAt:   exec.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"executions": executionDTOs,
+	})
+}
+
 // rollbackMigration rolls back a specific migration
 func (h *Handler) rollbackMigration(c *gin.Context) {
 	migrationID := c.Param("id")
+
+	var req dto.RollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// If no body provided, use empty schemas (backward compatibility)
+		req = dto.RollbackRequest{Schemas: []string{}}
+	}
 
 	// Get migration from registry
 	migration := h.executor.GetMigrationByID(migrationID)
@@ -617,31 +700,34 @@ func (h *Handler) rollbackMigration(c *gin.Context) {
 		return
 	}
 
-	// Check if migration is applied
-	applied, err := h.executor.IsMigrationApplied(c.Request.Context(), migrationID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if !applied {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "migration is not applied"})
-		return
-	}
-
 	// Set execution context
 	ctx := h.setExecutionContext(c)
 
-	// Execute rollback
-	result, err := h.executor.Rollback(ctx, migrationID)
+	// Execute rollback with schemas
+	result, err := h.executor.Rollback(ctx, migrationID, req.Schemas)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// If no migrations were rolled back, return 400 Bad Request
+	if !result.Success && result.Message == "no migrations to rollback" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   result.Message,
+			"success": result.Success,
+			"message": result.Message,
+			"applied": result.Applied,
+			"skipped": result.Skipped,
+			"errors":  result.Errors,
+		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": result.Success,
 		"message": result.Message,
+		"applied": result.Applied,
+		"skipped": result.Skipped,
 		"errors":  result.Errors,
 	})
 }
