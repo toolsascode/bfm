@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,7 @@ type mockStateTracker struct {
 	getMigrationHistoryError      error
 	registerScannedMigrationError error
 	updateMigrationInfoError      error
+	getMigrationExecutionsError   error
 }
 
 func newMockStateTracker() *mockStateTracker {
@@ -263,6 +265,75 @@ func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, sch
 
 func (m *mockStateTracker) Initialize(ctx interface{}) error {
 	return m.healthCheckError
+}
+
+func (m *mockStateTracker) ReindexMigrations(ctx interface{}, registry interface{}) error {
+	return nil
+}
+
+func (m *mockStateTracker) GetMigrationDetail(ctx interface{}, migrationID string) (*state.MigrationDetail, error) {
+	// Find migration in listItems
+	for _, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			return &state.MigrationDetail{
+				MigrationID:            item.MigrationID,
+				Schema:                 item.Schema,
+				Version:                item.Version,
+				Name:                   item.Name,
+				Connection:             item.Connection,
+				Backend:                item.Backend,
+				UpSQL:                  "",
+				DownSQL:                "",
+				Dependencies:           []string{},
+				StructuredDependencies: []backends.Dependency{},
+				Status:                 item.LastStatus,
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([]*state.MigrationExecution, error) {
+	if m.getMigrationExecutionsError != nil {
+		return nil, m.getMigrationExecutionsError
+	}
+	// Check if this migration is applied
+	applied := m.appliedMigrations[migrationID]
+	if !applied {
+		return []*state.MigrationExecution{}, nil
+	}
+
+	// Parse migration ID to extract details: {version}_{name}_{backend}_{connection}
+	parts := strings.Split(migrationID, "_")
+	if len(parts) < 4 {
+		return []*state.MigrationExecution{}, nil
+	}
+
+	// Extract version, backend, and connection
+	version := parts[0]
+	backend := parts[len(parts)-2]
+	connection := parts[len(parts)-1]
+
+	// Return an execution record with applied=true
+	// Use empty schema since tests don't specify schemas
+	return []*state.MigrationExecution{
+		{
+			ID:          1,
+			MigrationID: migrationID,
+			Schema:      "", // Empty schema for tests
+			Version:     version,
+			Connection:  connection,
+			Backend:     backend,
+			Status:      "applied",
+			Applied:     true,
+			AppliedAt:   time.Now().Format(time.RFC3339),
+			CreatedAt:   time.Now().Format(time.RFC3339),
+			UpdatedAt:   time.Now().Format(time.RFC3339),
+		},
+	}, nil
+}
+func (m *mockStateTracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return []*state.MigrationExecution{}, nil
 }
 
 // mockBackend is a mock implementation of backends.Backend
@@ -1044,7 +1115,7 @@ func TestExecutor_Rollback_MigrationNotFound(t *testing.T) {
 	tracker := newMockStateTracker()
 	exec := NewExecutor(reg, tracker)
 
-	_, err := exec.Rollback(context.Background(), "nonexistent")
+	_, err := exec.Rollback(context.Background(), "nonexistent", []string{})
 	if err == nil {
 		t.Error("Rollback() expected error for missing migration")
 	}
@@ -1068,10 +1139,21 @@ func TestExecutor_Rollback_NotApplied(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	// Migration is not applied
 
-	result, err := exec.Rollback(context.Background(), migrationID)
+	result, err := exec.Rollback(context.Background(), migrationID, []string{})
 	if err != nil {
 		t.Errorf("Rollback() error = %v", err)
 	}
@@ -1081,15 +1163,15 @@ func TestExecutor_Rollback_NotApplied(t *testing.T) {
 	if result.Success {
 		t.Error("Rollback() should not succeed for non-applied migration")
 	}
-	if result.Message != "migration is not applied" {
-		t.Errorf("Expected message about migration not applied, got %v", result.Message)
+	if result.Message != "no migrations to rollback" {
+		t.Errorf("Expected message about no migrations to rollback, got %v", result.Message)
 	}
 }
 
 func TestExecutor_Rollback_CheckStatusError(t *testing.T) {
 	reg := newMockRegistry()
 	tracker := newMockStateTracker()
-	tracker.isAppliedError = errors.New("check failed")
+	tracker.getMigrationExecutionsError = errors.New("check failed")
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
@@ -1102,14 +1184,31 @@ func TestExecutor_Rollback_CheckStatusError(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 
-	_, err := exec.Rollback(context.Background(), migrationID)
-	if err == nil {
+	result, err := exec.Rollback(context.Background(), migrationID, []string{})
+	if err != nil {
+		t.Errorf("Rollback() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("Rollback() returned nil result")
+	}
+	if len(result.Errors) == 0 {
 		t.Error("Rollback() expected error when status check fails")
 	}
-	if err.Error() != "failed to check migration status: check failed" {
-		t.Errorf("Expected error about status check failure, got %v", err)
+	if !strings.Contains(result.Errors[0], "check failed") {
+		t.Errorf("Expected error about status check failure, got %v", result.Errors)
 	}
 }
 
@@ -1142,7 +1241,7 @@ func TestExecutor_Rollback_NoDownSQL(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.Rollback(context.Background(), migrationID)
+	result, err := exec.Rollback(context.Background(), migrationID, []string{})
 	if err != nil {
 		t.Errorf("Rollback() error = %v", err)
 	}
@@ -1184,9 +1283,10 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 	exec.RegisterBackend("postgresql", backend)
 
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
+	// Mark migration as applied - this will make GetMigrationExecutions return an execution record
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.Rollback(context.Background(), migrationID)
+	result, err := exec.Rollback(context.Background(), migrationID, []string{})
 	if err != nil {
 		t.Errorf("Rollback() error = %v", err)
 	}
@@ -1196,7 +1296,7 @@ func TestExecutor_Rollback_Successful(t *testing.T) {
 	if !result.Success {
 		t.Error("Rollback() should succeed for applied migration with down SQL")
 	}
-	if result.Message != "rollback completed successfully" {
+	if !strings.Contains(result.Message, "rollback completed successfully") {
 		t.Errorf("Expected success message, got %v", result.Message)
 	}
 }
@@ -1229,9 +1329,10 @@ func TestExecutor_Rollback_ExecutionError(t *testing.T) {
 	exec.RegisterBackend("postgresql", backend)
 
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
+	// Mark migration as applied - this will make GetMigrationExecutions return an execution record
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.Rollback(context.Background(), migrationID)
+	result, err := exec.Rollback(context.Background(), migrationID, []string{})
 	if err != nil {
 		t.Errorf("Rollback() error = %v", err)
 	}

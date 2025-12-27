@@ -349,6 +349,91 @@ func (e *Executor) resolveDependencies(migrations []*backends.MigrationScript) (
 	return e.topologicalSort(migrations)
 }
 
+// expandWithPendingDependencies takes an initial set of migrations and expands it by
+// including any pending dependency migrations referenced via structured dependencies.
+// It uses the state tracker to ensure already-applied dependencies are not re-executed.
+func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations []*backends.MigrationScript) ([]*backends.MigrationScript, error) {
+	if len(migrations) == 0 {
+		return migrations, nil
+	}
+
+	// Build quick lookup of already selected migrations by ID so we don't duplicate.
+	selected := make(map[string]*backends.MigrationScript)
+	for _, m := range migrations {
+		selected[e.getMigrationID(m)] = m
+	}
+
+	resolver := registry.NewDependencyResolver(e.registry, e.stateTracker)
+
+	// Collect additional migrations to include.
+	var toInclude []*backends.MigrationScript
+
+	for _, migration := range migrations {
+		if len(migration.StructuredDependencies) > 0 {
+			logger.Debug("Migration %s_%s has %d structured dependency(ies), expanding...", migration.Version, migration.Name, len(migration.StructuredDependencies))
+		}
+		for _, dep := range migration.StructuredDependencies {
+			logger.Debug("Resolving dependency: connection=%s, schema=%s, target=%s, type=%s", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
+			// Resolve targets for this dependency (may be cross-connection).
+			targetMigrations, err := resolver.ResolveDependencyTargets(dep)
+			if err != nil {
+				// Surface clear error so callers can see which dependency is invalid.
+				logger.Errorf("Failed to resolve dependency for %s_%s: connection=%s, schema=%s, target=%s, type=%s: %v", migration.Version, migration.Name, dep.Connection, dep.Schema, dep.Target, dep.TargetType, err)
+				return nil, fmt.Errorf("failed to resolve dependency for %s_%s: %w", migration.Version, migration.Name, err)
+			}
+
+			logger.Debug("Found %d target migration(s) for dependency: connection=%s, schema=%s, target=%s", len(targetMigrations), dep.Connection, dep.Schema, dep.Target)
+
+			if len(targetMigrations) == 0 {
+				logger.Warnf("No target migrations found for dependency: connection=%s, schema=%s, target=%s, type=%s", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
+				continue
+			}
+
+			for _, target := range targetMigrations {
+				targetID := e.getMigrationID(target)
+				logger.Debug("Checking dependency migration %s (connection=%s, schema=%s, version=%s, name=%s)", targetID, target.Connection, target.Schema, target.Version, target.Name)
+
+				// If it's already in the initial set, nothing to do.
+				if _, exists := selected[targetID]; exists {
+					logger.Debug("Dependency migration %s already in execution set, skipping", targetID)
+					continue
+				}
+
+				// Only include if the dependency migration is not yet applied.
+				applied, err := e.stateTracker.IsMigrationApplied(ctx, targetID)
+				if err != nil {
+					logger.Errorf("Error checking if migration %s is applied: %v", targetID, err)
+					return nil, fmt.Errorf("failed to check dependency migration status for %s: %w", targetID, err)
+				}
+				logger.Debug("Migration %s applied status: %v", targetID, applied)
+				if applied {
+					logger.Debug("Dependency migration %s already applied, skipping", targetID)
+					continue
+				}
+
+				logger.Infof("Auto-including pending dependency migration: %s (connection=%s, schema=%s) for %s_%s", targetID, target.Connection, target.Schema, migration.Version, migration.Name)
+				selected[targetID] = target
+				toInclude = append(toInclude, target)
+			}
+		}
+	}
+
+	// If nothing extra was found, return original slice.
+	if len(toInclude) == 0 {
+		logger.Debug("No pending dependency migrations to auto-include (all dependencies already applied or not found)")
+		return migrations, nil
+	}
+
+	logger.Infof("Expanded migration set: %d initial + %d auto-included dependencies = %d total", len(migrations), len(toInclude), len(migrations)+len(toInclude))
+
+	// Merge initial migrations + newly included ones.
+	expanded := make([]*backends.MigrationScript, 0, len(migrations)+len(toInclude))
+	expanded = append(expanded, migrations...)
+	expanded = append(expanded, toInclude...)
+
+	return expanded, nil
+}
+
 // executeSync executes migrations synchronously
 func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
@@ -366,39 +451,29 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		}, nil
 	}
 
-	// Get backend for the connection (needed for validation)
+	// Log initial migrations found
+	logger.Debug("Found %d migration(s) matching target (backend=%s, connection=%s, schema=%s)", len(migrations), target.Backend, target.Connection, target.Schema)
+	for _, m := range migrations {
+		logger.Debug("  - %s_%s (connection=%s, schema=%s)", m.Version, m.Name, m.Connection, m.Schema)
+	}
+
+	// If any of the selected migrations declares structured dependencies, expand the set
+	// with any pending dependency migrations (including cross-connection) so that
+	// dependencies are executed automatically ahead of dependents.
+	migrations, err = e.expandWithPendingDependencies(ctx, migrations)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand migrations with dependencies: %w", err)
+	}
+
+	// Get backend for the target connection (needed for validation)
 	connectionConfig, err := e.getConnectionConfig(connectionName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection config: %w", err)
 	}
 
-	backend, ok := e.backends[connectionConfig.Backend]
+	targetBackend, ok := e.backends[connectionConfig.Backend]
 	if !ok {
 		return nil, fmt.Errorf("backend %s not registered", connectionConfig.Backend)
-	}
-
-	// Ensure backend is connected
-	if err := backend.Connect(connectionConfig); err != nil {
-		return nil, fmt.Errorf("failed to connect to backend: %w", err)
-	}
-	defer func() { _ = backend.Close() }()
-
-	// Validate dependencies before execution (for PostgreSQL backend)
-	if connectionConfig.Backend == "postgresql" {
-		pgBackend, ok := backend.(*postgresql.Backend)
-		if ok {
-			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
-			for _, migration := range migrations {
-				validationErrors := validator.ValidateDependencies(ctx, migration, schemaName)
-				if len(validationErrors) > 0 {
-					var errorMsgs []string
-					for _, err := range validationErrors {
-						errorMsgs = append(errorMsgs, err.Error())
-					}
-					return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
-				}
-			}
-		}
 	}
 
 	// Sort migrations topologically based on dependencies
@@ -414,6 +489,43 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		// Add error to result but continue execution
 	}
 
+	// Ensure target backend is connected (for validation)
+	if err := targetBackend.Connect(connectionConfig); err != nil {
+		return nil, fmt.Errorf("failed to connect to backend: %w", err)
+	}
+	defer func() { _ = targetBackend.Close() }()
+
+	// Validate dependencies after sorting (for PostgreSQL backend)
+	// Pass the sorted execution set so validator knows which migrations will be executed
+	// Only validate migrations that belong to the target connection
+	if connectionConfig.Backend == "postgresql" {
+		pgBackend, ok := targetBackend.(*postgresql.Backend)
+		if ok {
+			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
+			for _, migration := range sortedMigrations {
+				// Only validate migrations for the target connection
+				if migration.Connection == connectionName {
+					validationErrors := validator.ValidateDependenciesWithExecutionSet(ctx, migration, schemaName, sortedMigrations)
+					if len(validationErrors) > 0 {
+						var errorMsgs []string
+						for _, err := range validationErrors {
+							errorMsgs = append(errorMsgs, err.Error())
+						}
+						return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
+					}
+				}
+			}
+		}
+	}
+
+	// Log final sorted migration execution order
+	if len(sortedMigrations) > 0 {
+		logger.Infof("Final migration execution set (%d total, sorted by dependencies):", len(sortedMigrations))
+		for i, m := range sortedMigrations {
+			logger.Infof("  %d. %s_%s (connection=%s, schema=%s)", i+1, m.Version, m.Name, m.Connection, m.Schema)
+		}
+	}
+
 	result := &ExecuteResult{
 		Applied: []string{},
 		Skipped: []string{},
@@ -427,15 +539,23 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 
 	// Process each migration
 	for _, migration := range sortedMigrations {
-		migrationID := e.getMigrationID(migration)
-
 		// Resolve schema name (use provided or from migration)
 		schema := schemaName
 		if schema == "" {
 			schema = migration.Schema
 		}
 
-		// Check if already applied (use base migration ID for checking)
+		// For dynamic schemas (empty Schema in migration), use schema-specific ID
+		var migrationID string
+		if migration.Schema == "" && schema != "" {
+			// Dynamic schema mode: track per schema
+			migrationID = e.getMigrationIDWithSchema(migration, schema)
+		} else {
+			// Fixed schema mode: use base migration ID
+			migrationID = e.getMigrationID(migration)
+		}
+
+		// Check if already applied
 		applied, err := e.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to check migration status for %s: %v", migrationID, err))
@@ -457,12 +577,13 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
 		// Record migration start
+		// Use migration.Connection (not connectionName) since this migration may be from a different connection
 		record := &state.MigrationRecord{
 			MigrationID:      migrationID,
 			Schema:           schema,
 			Table:            "",
 			Version:          migration.Version,
-			Connection:       connectionName,
+			Connection:       migration.Connection,
 			Backend:          migration.Backend,
 			Status:           "pending",
 			AppliedAt:        time.Now().Format(time.RFC3339),
@@ -470,6 +591,40 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			ExecutedBy:       executedBy,
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
+		}
+
+		// Get backend for this migration's connection (may differ from target connection for cross-connection dependencies)
+		migrationConnectionConfig, err := e.getConnectionConfig(migration.Connection)
+		if err != nil {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to get connection config for %s: %v", migration.Connection, err)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
+		}
+
+		migrationBackend, ok := e.backends[migrationConnectionConfig.Backend]
+		if !ok {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("backend %s not registered for connection %s", migrationConnectionConfig.Backend, migration.Connection)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: backend %s not registered", migrationID, migrationConnectionConfig.Backend))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
+		}
+
+		// Connect to the migration's backend (may be different from target backend)
+		if err := migrationBackend.Connect(migrationConnectionConfig); err != nil {
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to connect to backend for %s: %v", migration.Connection, err)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to connect: %v", migrationID, err))
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			}
+			continue
 		}
 
 		// Convert executor.MigrationScript to backends.MigrationScript
@@ -484,8 +639,9 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			DownSQL:    migration.DownSQL,
 		}
 
-		// Execute the migration
-		err = backend.ExecuteMigration(ctx, backendMigration)
+		// Execute the migration using its own backend
+		err = migrationBackend.ExecuteMigration(ctx, backendMigration)
+		_ = migrationBackend.Close() // Close after execution
 		if err != nil {
 			record.Status = "failed"
 			record.ErrorMessage = err.Error()
@@ -512,9 +668,13 @@ func (e *Executor) GetAllMigrations() []*backends.MigrationScript {
 
 // GetMigrationByID finds a migration by its ID
 // Migration ID format: {version}_{name}_{backend}_{connection}
+// Also supports schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
 // Also supports legacy formats for backward compatibility
 func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScript {
 	allMigrations := e.registry.GetAll()
+
+	// First, try to match against base IDs (exact match)
+	// This handles base IDs even if they have 5+ parts due to underscores in names
 	for _, migration := range allMigrations {
 		// Primary format: {version}_{name}_{backend}_{connection}
 		id := e.getMigrationID(migration)
@@ -531,6 +691,43 @@ func (e *Executor) GetMigrationByID(migrationID string) *backends.MigrationScrip
 		if legacyIDWithConnection == migrationID {
 			return migration
 		}
+	}
+
+	// If no exact match found, try schema-specific matching
+	// Check if migrationID could be schema-specific (format: {schema}_{version}_{name}_{backend}_{connection})
+	parts := strings.Split(migrationID, "_")
+	if len(parts) >= 5 {
+		// Extract potential schema and base ID
+		potentialSchema := parts[0]
+		baseID := strings.Join(parts[1:], "_")
+
+		for _, migration := range allMigrations {
+			// Only match schema-specific IDs if the migration has a schema
+			// Migrations without a schema should not match schema-specific IDs
+			if migration.Schema != "" && migration.Schema == potentialSchema {
+				// Check if the base ID matches this migration
+				id := e.getMigrationID(migration)
+				if id == baseID {
+					// Verify the schema-specific ID matches
+					schemaSpecificID := e.getMigrationIDWithSchema(migration, potentialSchema)
+					if schemaSpecificID == migrationID {
+						return migration
+					}
+				}
+				// Also check legacy formats with schema
+				legacyIDWithConnection := fmt.Sprintf("%s_%s_%s", migration.Connection, migration.Version, migration.Name)
+				if legacyIDWithConnection == baseID {
+					legacyIDWithSchema := fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
+					if legacyIDWithSchema == migrationID {
+						return migration
+					}
+				}
+			}
+		}
+	}
+
+	// Try legacy format with schema matching (for migrations that have schema)
+	for _, migration := range allMigrations {
 		// Legacy format with schema: {schema}_{connection}_{version}_{name}
 		if migration.Schema != "" {
 			legacyIDWithSchema := fmt.Sprintf("%s_%s_%s_%s", migration.Schema, migration.Connection, migration.Version, migration.Name)
@@ -560,6 +757,21 @@ func (e *Executor) GetMigrationHistory(ctx context.Context, filters *state.Migra
 // GetMigrationList retrieves the list of migrations with their last status
 func (e *Executor) GetMigrationList(ctx context.Context, filters *state.MigrationFilters) ([]*state.MigrationListItem, error) {
 	return e.stateTracker.GetMigrationList(ctx, filters)
+}
+
+// GetMigrationDetail retrieves detailed information about a single migration from migrations_list
+func (e *Executor) GetMigrationDetail(ctx context.Context, migrationID string) (*state.MigrationDetail, error) {
+	return e.stateTracker.GetMigrationDetail(ctx, migrationID)
+}
+
+// GetMigrationExecutions retrieves all execution records for a migration, ordered by created_at DESC
+func (e *Executor) GetMigrationExecutions(ctx context.Context, migrationID string) ([]*state.MigrationExecution, error) {
+	return e.stateTracker.GetMigrationExecutions(ctx, migrationID)
+}
+
+// GetRecentExecutions retrieves recent execution records across all migrations, ordered by created_at DESC
+func (e *Executor) GetRecentExecutions(ctx context.Context, limit int) ([]*state.MigrationExecution, error) {
+	return e.stateTracker.GetRecentExecutions(ctx, limit)
 }
 
 // RegisterScannedMigration registers a scanned migration in migrations_list
@@ -726,8 +938,43 @@ func (e *Executor) ReindexMigrations(ctx context.Context, sfmPath string) (*Rein
 
 	// Find migrations to remove (in database but not in filesystem)
 	for migrationID := range dbMigrationMap {
-		if _, exists := fileMigrations[migrationID]; !exists {
-			// Delete this migration from database
+		// First, check if the exact migration ID exists in filesystem (for base IDs)
+		if _, exists := fileMigrations[migrationID]; exists {
+			// Exact match found, keep this migration
+			continue
+		}
+
+		// If not found, check if this is a schema-specific ID (format: {schema}_{version}_{name}_{backend}_{connection})
+		// Extract base ID for comparison
+		parts := strings.Split(migrationID, "_")
+		var baseID string
+		var isSchemaSpecific bool
+		if len(parts) >= 5 {
+			// Schema-specific ID: extract base ID by removing schema prefix
+			baseID = strings.Join(parts[1:], "_")
+			isSchemaSpecific = true
+		} else {
+			// Base ID format - if not found in filesystem, it should be removed
+			baseID = migrationID
+			isSchemaSpecific = false
+		}
+
+		// For schema-specific IDs, check if the base migration exists in filesystem
+		// For base IDs, we already checked above and it doesn't exist, so remove it
+		if isSchemaSpecific {
+			// Schema-specific ID: only keep if base migration exists in filesystem
+			if _, exists := fileMigrations[baseID]; !exists {
+				// Base migration doesn't exist in filesystem, remove this schema-specific instance
+				if err := e.stateTracker.DeleteMigration(ctx, migrationID); err != nil {
+					// Log error but continue
+					fmt.Printf("Warning: Failed to delete migration %s: %v\n", migrationID, err)
+				} else {
+					result.Removed = append(result.Removed, migrationID)
+				}
+			}
+			// If baseID exists in filesystem, keep the schema-specific migration
+		} else {
+			// Base ID not found in filesystem, remove it
 			if err := e.stateTracker.DeleteMigration(ctx, migrationID); err != nil {
 				// Log error but continue
 				fmt.Printf("Warning: Failed to delete migration %s: %v\n", migrationID, err)
@@ -928,25 +1175,22 @@ func (e *Executor) getMigrationIDWithSchema(migration *backends.MigrationScript,
 }
 
 // Rollback rolls back a migration
-func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackResult, error) {
+func (e *Executor) Rollback(ctx context.Context, migrationID string, schemas []string) (*RollbackResult, error) {
 	// Get migration from registry
 	migration := e.GetMigrationByID(migrationID)
 	if migration == nil {
 		return nil, fmt.Errorf("migration not found: %s", migrationID)
 	}
 
-	// Check if migration is applied
-	applied, err := e.IsMigrationApplied(ctx, migrationID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check migration status: %w", err)
-	}
-
-	if !applied {
-		return &RollbackResult{
-			Success: false,
-			Message: "migration is not applied",
-			Errors:  []string{"migration is not applied"},
-		}, nil
+	// Use provided schemas, or fall back to migration.Schema if empty
+	// If both are empty, use empty string to process without schema
+	schemasToUse := schemas
+	if len(schemasToUse) == 0 {
+		if migration.Schema != "" {
+			schemasToUse = []string{migration.Schema}
+		} else {
+			schemasToUse = []string{""}
+		}
 	}
 
 	// Get connection config
@@ -976,80 +1220,134 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) (*RollbackR
 		}, nil
 	}
 
-	// Create a rollback migration script
-	rollbackMigration := &backends.MigrationScript{
-		Schema:     migration.Schema,
-		Version:    migration.Version,
-		Name:       migration.Name + "_rollback",
-		Connection: migration.Connection,
-		Backend:    migration.Backend,
-		UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
-		DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
+	result := &RollbackResult{
+		Applied: []string{},
+		Errors:  []string{},
 	}
 
-	// Execute rollback
-	err = backend.ExecuteMigration(ctx, rollbackMigration)
-	if err != nil {
+	// Execute rollback for each schema
+	for _, schema := range schemasToUse {
+		// Check if migration is applied for this schema by checking executions table
+		// This is more accurate than checking migrations_list since executions table tracks per-schema
+		baseMigrationID := e.getMigrationID(migration)
+		executions, err := e.stateTracker.GetMigrationExecutions(ctx, baseMigrationID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to check migration status: %v", schema, err))
+			continue
+		}
+
+		// Find execution record matching this schema, version, connection, and backend
+		var foundExecution *state.MigrationExecution
+		for _, exec := range executions {
+			// Check if schema matches (handle comma-separated schemas)
+			schemaMatches := false
+			if exec.Schema == schema {
+				schemaMatches = true
+			} else if exec.Schema != "" {
+				// Handle comma-separated schemas
+				schemas := strings.Split(exec.Schema, ",")
+				for _, s := range schemas {
+					if strings.TrimSpace(s) == schema {
+						schemaMatches = true
+						break
+					}
+				}
+			}
+			if schemaMatches && exec.Version == migration.Version &&
+				exec.Connection == migration.Connection && exec.Backend == migration.Backend {
+				foundExecution = exec
+				break
+			}
+		}
+
+		schemaMigrationID := e.getMigrationIDWithSchema(migration, schema)
+		if foundExecution == nil || !foundExecution.Applied {
+			result.Skipped = append(result.Skipped, fmt.Sprintf("%s (not applied)", schemaMigrationID))
+			continue
+		}
+
+		// Create a rollback migration script with the specific schema
+		rollbackMigration := &backends.MigrationScript{
+			Schema:     schema,
+			Version:    migration.Version,
+			Name:       migration.Name + "_rollback",
+			Connection: migration.Connection,
+			Backend:    migration.Backend,
+			UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for rollback
+			DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL for rollback
+		}
+
+		// Execute rollback
+		err = backend.ExecuteMigration(ctx, rollbackMigration)
+		if err != nil {
+			// Extract execution context
+			executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
+
+			// Record failed rollback
+			record := &state.MigrationRecord{
+				MigrationID:      schemaMigrationID + "_rollback",
+				Schema:           schema,
+				Table:            "",
+				Version:          migration.Version,
+				Connection:       migration.Connection,
+				Backend:          migration.Backend,
+				Status:           "failed",
+				AppliedAt:        time.Now().Format(time.RFC3339),
+				ErrorMessage:     err.Error(),
+				ExecutedBy:       executedBy,
+				ExecutionMethod:  executionMethod,
+				ExecutionContext: executionContext,
+			}
+			_ = e.stateTracker.RecordMigration(ctx, record)
+
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: %v", schema, err))
+			continue
+		}
+
 		// Extract execution context
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
-		// Record failed rollback
+		// Record successful rollback
 		record := &state.MigrationRecord{
-			MigrationID:      migrationID + "_rollback",
-			Schema:           migration.Schema,
+			MigrationID:      schemaMigrationID + "_rollback",
+			Schema:           schema,
 			Table:            "",
 			Version:          migration.Version,
 			Connection:       migration.Connection,
 			Backend:          migration.Backend,
-			Status:           "failed",
+			Status:           "rolled_back",
 			AppliedAt:        time.Now().Format(time.RFC3339),
-			ErrorMessage:     err.Error(),
+			ErrorMessage:     "",
 			ExecutedBy:       executedBy,
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
 		}
-		_ = e.stateTracker.RecordMigration(ctx, record)
-
-		return &RollbackResult{
-			Success: false,
-			Message: "rollback failed",
-			Errors:  []string{err.Error()},
-		}, nil
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to record migration: %v", schema, err))
+		} else {
+			result.Applied = append(result.Applied, schemaMigrationID)
+		}
 	}
 
-	// Extract execution context
-	executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
-
-	// Remove migration from state (mark as not applied)
-	// We'll delete the record or mark it as rolled back
-	// For now, we'll create a rollback record
-	record := &state.MigrationRecord{
-		MigrationID:      migrationID + "_rollback",
-		Schema:           migration.Schema,
-		Table:            "",
-		Version:          migration.Version,
-		Connection:       migration.Connection,
-		Backend:          migration.Backend,
-		Status:           "rolled_back",
-		AppliedAt:        time.Now().Format(time.RFC3339),
-		ErrorMessage:     "",
-		ExecutedBy:       executedBy,
-		ExecutionMethod:  executionMethod,
-		ExecutionContext: executionContext,
+	// Success is true only if there are no errors AND at least one migration was rolled back
+	result.Success = len(result.Errors) == 0 && len(result.Applied) > 0
+	if len(result.Applied) > 0 {
+		result.Message = fmt.Sprintf("rollback completed successfully for %d schema(s)", len(result.Applied))
+	} else if len(result.Errors) > 0 {
+		result.Message = "rollback failed"
+	} else {
+		result.Message = "no migrations to rollback"
 	}
-	_ = e.stateTracker.RecordMigration(ctx, record)
 
-	return &RollbackResult{
-		Success: true,
-		Message: "rollback completed successfully",
-		Errors:  []string{},
-	}, nil
+	return result, nil
 }
 
 // RollbackResult represents the result of a rollback operation
 type RollbackResult struct {
 	Success bool
 	Message string
+	Applied []string
+	Skipped []string
 	Errors  []string
 }
 

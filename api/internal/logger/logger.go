@@ -2,12 +2,58 @@ package logger
 
 import (
 	"fmt"
-	"log"
 	"os"
-	"time"
+	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
-// LogLevel represents the logging level
+var (
+	log *logrus.Logger
+)
+
+func init() {
+	log = logrus.New()
+	log.SetOutput(os.Stdout)
+
+	// Set log level from environment
+	levelStr := os.Getenv("BFM_LOG_LEVEL")
+	switch strings.ToUpper(levelStr) {
+	case "DEBUG":
+		log.SetLevel(logrus.DebugLevel)
+	case "INFO":
+		log.SetLevel(logrus.InfoLevel)
+	case "WARN", "WARNING":
+		log.SetLevel(logrus.WarnLevel)
+	case "ERROR":
+		log.SetLevel(logrus.ErrorLevel)
+	case "FATAL":
+		log.SetLevel(logrus.FatalLevel)
+	default:
+		log.SetLevel(logrus.InfoLevel)
+	}
+
+	// Set log format from environment (default to JSON)
+	formatStr := os.Getenv("BFM_LOG_FORMAT")
+	switch strings.ToLower(formatStr) {
+	case "plaintext", "plain", "text":
+		log.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	case "json":
+		log.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
+		})
+	default:
+		// Default to JSON if not specified
+		log.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
+		})
+	}
+}
+
+// LogLevel represents the logging level (kept for backward compatibility)
 type LogLevel int
 
 const (
@@ -18,84 +64,87 @@ const (
 	FATAL
 )
 
-var (
-	currentLevel LogLevel = INFO
-	logger       *log.Logger
+// LogFormat represents the logging format (kept for backward compatibility)
+type LogFormat int
+
+const (
+	FormatJSON LogFormat = iota
+	FormatPlaintext
 )
-
-func init() {
-	logger = log.New(os.Stdout, "", 0)
-
-	// Set log level from environment
-	levelStr := os.Getenv("BFM_LOG_LEVEL")
-	switch levelStr {
-	case "DEBUG", "debug":
-		currentLevel = DEBUG
-	case "INFO", "info":
-		currentLevel = INFO
-	case "WARN", "warn", "WARNING", "warning":
-		currentLevel = WARN
-	case "ERROR", "error":
-		currentLevel = ERROR
-	case "FATAL", "fatal":
-		currentLevel = FATAL
-	default:
-		currentLevel = INFO
-	}
-}
 
 // SetLevel sets the logging level
 func SetLevel(level LogLevel) {
-	currentLevel = level
-}
-
-// shouldLog checks if a message at the given level should be logged
-func shouldLog(level LogLevel) bool {
-	return level >= currentLevel
-}
-
-// formatMessage formats a log message with timestamp and level
-func formatMessage(level string, format string, args ...interface{}) string {
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	message := format
-	if len(args) > 0 {
-		message = fmt.Sprintf(format, args...)
+	switch level {
+	case DEBUG:
+		log.SetLevel(logrus.DebugLevel)
+	case INFO:
+		log.SetLevel(logrus.InfoLevel)
+	case WARN:
+		log.SetLevel(logrus.WarnLevel)
+	case ERROR:
+		log.SetLevel(logrus.ErrorLevel)
+	case FATAL:
+		log.SetLevel(logrus.FatalLevel)
 	}
-	return fmt.Sprintf("[%s] [%s] %s", timestamp, level, message)
+}
+
+// SetFormat sets the logging format
+func SetFormat(format LogFormat) {
+	switch format {
+	case FormatJSON:
+		log.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: "2006-01-02T15:04:05.000Z07:00",
+		})
+	case FormatPlaintext:
+		log.SetFormatter(&logrus.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
+	}
 }
 
 // Debug logs a debug message
 func Debug(format string, args ...interface{}) {
-	if shouldLog(DEBUG) {
-		logger.Println(formatMessage("DEBUG", format, args...))
+	if len(args) > 0 {
+		log.Debug(fmt.Sprintf(format, args...))
+	} else {
+		log.Debug(format)
 	}
 }
 
 // Info logs an info message
 func Info(format string, args ...interface{}) {
-	if shouldLog(INFO) {
-		logger.Println(formatMessage("INFO", format, args...))
+	if len(args) > 0 {
+		log.Info(fmt.Sprintf(format, args...))
+	} else {
+		log.Info(format)
 	}
 }
 
 // Warn logs a warning message
 func Warn(format string, args ...interface{}) {
-	if shouldLog(WARN) {
-		logger.Println(formatMessage("WARN", format, args...))
+	if len(args) > 0 {
+		log.Warn(fmt.Sprintf(format, args...))
+	} else {
+		log.Warn(format)
 	}
 }
 
 // Error logs an error message
 func Error(format string, args ...interface{}) {
-	if shouldLog(ERROR) {
-		logger.Println(formatMessage("ERROR", format, args...))
+	if len(args) > 0 {
+		log.Error(fmt.Sprintf(format, args...))
+	} else {
+		log.Error(format)
 	}
 }
 
 // Fatal logs a fatal message and exits
 func Fatal(format string, args ...interface{}) {
-	if shouldLog(FATAL) {
-		logger.Fatalln(formatMessage("FATAL", format, args...))
+	if len(args) > 0 {
+		log.Fatal(fmt.Sprintf(format, args...))
+	} else {
+		log.Fatal(format)
 	}
 }
 

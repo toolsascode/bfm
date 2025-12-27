@@ -7,11 +7,12 @@
 package protobuf
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -1257,6 +1258,7 @@ func (x *MigrationHistoryItem) GetExecutionContext() string {
 type RollbackMigrationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to rollback
+	Schemas       []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                            // Optional: Array for dynamic schemas
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1296,6 +1298,13 @@ func (x *RollbackMigrationRequest) GetMigrationId() string {
 		return x.MigrationId
 	}
 	return ""
+}
+
+func (x *RollbackMigrationRequest) GetSchemas() []string {
+	if x != nil {
+		return x.Schemas
+	}
+	return nil
 }
 
 // RollbackResponse represents the result of a rollback operation
@@ -1686,9 +1695,10 @@ const file_migration_proto_rawDesc = "" +
 	" \x01(\tR\n" +
 	"executedBy\x12)\n" +
 	"\x10execution_method\x18\v \x01(\tR\x0fexecutionMethod\x12+\n" +
-	"\x11execution_context\x18\f \x01(\tR\x10executionContext\"=\n" +
+	"\x11execution_context\x18\f \x01(\tR\x10executionContext\"W\n" +
 	"\x18RollbackMigrationRequest\x12!\n" +
-	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"^\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x18\n" +
+	"\aschemas\x18\x02 \x03(\tR\aschemas\"^\n" +
 	"\x10RollbackResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +

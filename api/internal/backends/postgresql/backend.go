@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/toolsascode/bfm/api/internal/backends"
 
@@ -46,6 +49,9 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to open PostgreSQL connection: %w", err)
 	}
+
+	// Configure connection pool settings
+	configureConnectionPool(b.db)
 
 	// Test connection
 	if err := b.db.Ping(); err != nil {
@@ -164,4 +170,38 @@ func (b *Backend) HealthCheck(ctx context.Context) error {
 // quoteIdentifier quotes a PostgreSQL identifier
 func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// configureConnectionPool configures the database connection pool with reasonable defaults
+// that can be overridden via environment variables
+func configureConnectionPool(db *sql.DB) {
+	// Max open connections per pool (default: 5)
+	// This limits how many connections each sql.DB instance can open
+	maxOpenConns := getEnvInt("BFM_DB_MAX_OPEN_CONNS", 5)
+	db.SetMaxOpenConns(maxOpenConns)
+
+	// Max idle connections per pool (default: 2)
+	// This keeps some connections ready for reuse
+	maxIdleConns := getEnvInt("BFM_DB_MAX_IDLE_CONNS", 2)
+	db.SetMaxIdleConns(maxIdleConns)
+
+	// Connection max lifetime (default: 5 minutes)
+	// This prevents using stale connections
+	connMaxLifetime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute
+	db.SetConnMaxLifetime(connMaxLifetime)
+
+	// Connection max idle time (default: 1 minute)
+	// This closes idle connections after this duration
+	connMaxIdleTime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_MINUTES", 1)) * time.Minute
+	db.SetConnMaxIdleTime(connMaxIdleTime)
+}
+
+// getEnvInt gets an integer environment variable or returns the default value
+func getEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
 }

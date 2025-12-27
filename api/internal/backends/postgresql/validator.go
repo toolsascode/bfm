@@ -28,11 +28,25 @@ func NewDependencyValidator(backend *Backend, tracker state.StateTracker, reg re
 
 // ValidateDependencies validates all dependencies for a migration
 func (v *DependencyValidator) ValidateDependencies(ctx context.Context, migration *backends.MigrationScript, schemaName string) []error {
+	return v.ValidateDependenciesWithExecutionSet(ctx, migration, schemaName, nil)
+}
+
+// ValidateDependenciesWithExecutionSet validates all dependencies for a migration,
+// considering migrations in the execution set as satisfied dependencies
+func (v *DependencyValidator) ValidateDependenciesWithExecutionSet(ctx context.Context, migration *backends.MigrationScript, schemaName string, executionSet []*backends.MigrationScript) []error {
 	var errors []error
+
+	// Build a map of migration IDs in the execution set for quick lookup
+	executionSetMap := make(map[string]bool)
+	for _, m := range executionSet {
+		// Generate migration ID using the same format as executor
+		migrationID := fmt.Sprintf("%s_%s_%s_%s", m.Version, m.Name, m.Backend, m.Connection)
+		executionSetMap[migrationID] = true
+	}
 
 	// Validate structured dependencies
 	for _, dep := range migration.StructuredDependencies {
-		if err := v.validateDependency(ctx, dep, schemaName); err != nil {
+		if err := v.validateDependencyWithExecutionSet(ctx, dep, schemaName, executionSetMap); err != nil {
 			errors = append(errors, fmt.Errorf("dependency validation failed for %s: %w", v.dependencyString(dep), err))
 		}
 	}
@@ -40,7 +54,7 @@ func (v *DependencyValidator) ValidateDependencies(ctx context.Context, migratio
 	// Validate simple string dependencies (backward compatibility)
 	// For simple dependencies, we only check if the migration exists and is applied
 	for _, depName := range migration.Dependencies {
-		if err := v.validateSimpleDependency(ctx, depName, schemaName); err != nil {
+		if err := v.validateSimpleDependencyWithExecutionSet(ctx, depName, schemaName, executionSetMap); err != nil {
 			errors = append(errors, fmt.Errorf("dependency validation failed for '%s': %w", depName, err))
 		}
 	}
@@ -48,8 +62,9 @@ func (v *DependencyValidator) ValidateDependencies(ctx context.Context, migratio
 	return errors
 }
 
-// validateDependency validates a single structured dependency
-func (v *DependencyValidator) validateDependency(ctx context.Context, dep backends.Dependency, currentSchema string) error {
+// validateDependencyWithExecutionSet validates a single structured dependency,
+// considering migrations in the execution set as satisfied dependencies
+func (v *DependencyValidator) validateDependencyWithExecutionSet(ctx context.Context, dep backends.Dependency, currentSchema string, executionSetMap map[string]bool) error {
 	// Validate required schema exists
 	if dep.RequiresSchema != "" {
 		exists, err := v.backend.SchemaExists(ctx, dep.RequiresSchema)
@@ -62,45 +77,78 @@ func (v *DependencyValidator) validateDependency(ctx context.Context, dep backen
 	}
 
 	// Validate required table exists
+	// Note: If the table is created by a dependency migration in the execution set,
+	// it won't exist yet, so we skip this check if the dependency is in the execution set
 	if dep.RequiresTable != "" {
-		schemaToCheck := dep.RequiresSchema
-		if schemaToCheck == "" {
-			// Use current schema or default to public
-			schemaToCheck = currentSchema
-			if schemaToCheck == "" {
-				schemaToCheck = "public"
+		// First check if the dependency migration is in the execution set
+		targetMigrations, err := v.findMigrationByTarget(dep)
+		if err == nil {
+			// Check if any target migration is in the execution set
+			dependencyInExecutionSet := false
+			for _, targetMigration := range targetMigrations {
+				migrationID := fmt.Sprintf("%s_%s_%s_%s", targetMigration.Version, targetMigration.Name, targetMigration.Backend, targetMigration.Connection)
+				if executionSetMap != nil && executionSetMap[migrationID] {
+					dependencyInExecutionSet = true
+					break
+				}
 			}
-		}
-		exists, err := v.backend.TableExists(ctx, schemaToCheck, dep.RequiresTable)
-		if err != nil {
-			return fmt.Errorf("failed to check table existence: %w", err)
-		}
-		if !exists {
-			return fmt.Errorf("required table '%s.%s' does not exist", schemaToCheck, dep.RequiresTable)
+
+			// If dependency is in execution set, skip table existence check (it will be created)
+			if !dependencyInExecutionSet {
+				schemaToCheck := dep.RequiresSchema
+				if schemaToCheck == "" {
+					// If RequiresSchema is not specified, use the dependency's Schema if available
+					// This handles cross-schema dependencies where the table is in the dependency's schema
+					if dep.Schema != "" {
+						schemaToCheck = dep.Schema
+					} else {
+						// Fall back to current schema or default to public
+						schemaToCheck = currentSchema
+						if schemaToCheck == "" {
+							schemaToCheck = "public"
+						}
+					}
+				}
+				exists, err := v.backend.TableExists(ctx, schemaToCheck, dep.RequiresTable)
+				if err != nil {
+					return fmt.Errorf("failed to check table existence: %w", err)
+				}
+				if !exists {
+					return fmt.Errorf("required table '%s.%s' does not exist", schemaToCheck, dep.RequiresTable)
+				}
+			}
 		}
 	}
 
-	// Validate dependency migration is applied
-	if err := v.validateMigrationApplied(ctx, dep); err != nil {
+	// Validate dependency migration is applied or in execution set
+	if err := v.validateMigrationAppliedWithExecutionSet(ctx, dep, executionSetMap); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// validateSimpleDependency validates a simple string dependency
-func (v *DependencyValidator) validateSimpleDependency(ctx context.Context, depName string, currentSchema string) error {
+// validateSimpleDependencyWithExecutionSet validates a simple string dependency,
+// considering migrations in the execution set as satisfied dependencies
+func (v *DependencyValidator) validateSimpleDependencyWithExecutionSet(ctx context.Context, depName string, currentSchema string, executionSetMap map[string]bool) error {
 	// Find migrations with this name
 	targetMigrations := v.registry.GetMigrationByName(depName)
 	if len(targetMigrations) == 0 {
 		return fmt.Errorf("dependency migration '%s' not found", depName)
 	}
 
-	// Check if at least one of the target migrations is applied
-	// We check all found migrations and see if any are applied
+	// Check if at least one of the target migrations is applied or in execution set
+	// We check all found migrations and see if any are applied or in execution set
 	for _, targetMigration := range targetMigrations {
-		// Generate migration ID for the target
-		migrationID := v.getMigrationID(targetMigration, currentSchema)
+		// Generate migration ID using executor format: {version}_{name}_{backend}_{connection}
+		migrationID := fmt.Sprintf("%s_%s_%s_%s", targetMigration.Version, targetMigration.Name, targetMigration.Backend, targetMigration.Connection)
+
+		// Check if in execution set
+		if executionSetMap != nil && executionSetMap[migrationID] {
+			return nil // Dependency is in execution set, will be executed
+		}
+
+		// Check if already applied
 		applied, err := v.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			return fmt.Errorf("failed to check migration status: %w", err)
@@ -113,23 +161,26 @@ func (v *DependencyValidator) validateSimpleDependency(ctx context.Context, depN
 	return fmt.Errorf("dependency migration '%s' is not applied", depName)
 }
 
-// validateMigrationApplied checks if a dependency migration is applied
-func (v *DependencyValidator) validateMigrationApplied(ctx context.Context, dep backends.Dependency) error {
+// validateMigrationAppliedWithExecutionSet checks if a dependency migration is applied or in the execution set
+func (v *DependencyValidator) validateMigrationAppliedWithExecutionSet(ctx context.Context, dep backends.Dependency, executionSetMap map[string]bool) error {
 	// Find the target migration
 	targetMigrations, err := v.findMigrationByTarget(dep)
 	if err != nil {
 		return fmt.Errorf("dependency target not found: %w", err)
 	}
 
-	// Check if at least one target migration is applied
+	// Check if at least one target migration is applied or in execution set
 	for _, targetMigration := range targetMigrations {
-		// Determine schema to use for migration ID
-		schemaToUse := dep.Schema
-		if schemaToUse == "" {
-			schemaToUse = targetMigration.Schema
+		// Generate migration ID using the same format as executor: {version}_{name}_{backend}_{connection}
+		migrationID := fmt.Sprintf("%s_%s_%s_%s", targetMigration.Version, targetMigration.Name, targetMigration.Backend, targetMigration.Connection)
+
+		// Check if in execution set
+		if executionSetMap != nil && executionSetMap[migrationID] {
+			return nil // Dependency is in execution set, will be executed
 		}
 
-		migrationID := v.getMigrationID(targetMigration, schemaToUse)
+		// Check if already applied
+		// Use the same ID format as executor for state tracker
 		applied, err := v.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			return fmt.Errorf("failed to check migration status: %w", err)
@@ -180,17 +231,6 @@ func (v *DependencyValidator) findMigrationByTarget(dep backends.Dependency) ([]
 	}
 
 	return candidates, nil
-}
-
-// getMigrationID generates a migration ID (helper method)
-func (v *DependencyValidator) getMigrationID(migration *backends.MigrationScript, schema string) string {
-	// Migration ID format: {version}_{name} (base format)
-	baseID := fmt.Sprintf("%s_%s", migration.Version, migration.Name)
-	if schema != "" {
-		// For schema-specific checks, prefix with schema
-		return fmt.Sprintf("%s_%s", schema, baseID)
-	}
-	return baseID
 }
 
 // dependencyString returns a string representation of a dependency for error messages

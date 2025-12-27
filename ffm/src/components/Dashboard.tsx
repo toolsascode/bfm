@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../services/api";
-import type { MigrationListItem } from "../types/api";
+import { toastService } from "../services/toast";
+import type { MigrationListItem, MigrationExecution } from "../types/api";
 import { format } from "date-fns";
 import {
   BarChart,
@@ -19,9 +20,13 @@ import {
 
 export default function Dashboard() {
   const [migrations, setMigrations] = useState<MigrationListItem[]>([]);
+  const [recentExecutions, setRecentExecutions] = useState<
+    MigrationExecution[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<string>("unknown");
+  const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -32,14 +37,16 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [migrationsData, health] = await Promise.all([
+      const [migrationsData, health, executionsData] = await Promise.all([
         apiClient.listMigrations(),
         apiClient
           .healthCheck()
           .catch(() => ({ status: "unknown", checks: {} })),
+        apiClient.getRecentExecutions(10).catch(() => ({ executions: [] })),
       ]);
       setMigrations(migrationsData.items);
       setHealthStatus(health.status);
+      setRecentExecutions(executionsData.executions);
       setError(null);
     } catch (err) {
       const errorMsg =
@@ -48,6 +55,35 @@ export default function Dashboard() {
       // Error toast is handled by API interceptor, but we can add a specific message here if needed
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReindex = async () => {
+    if (reindexing) return;
+
+    setReindexing(true);
+    try {
+      const result = await apiClient.reindexMigrations();
+      const addedCount = result.added.length;
+      const removedCount = result.removed.length;
+
+      let message = `Reindexing completed. Total migrations: ${result.total}`;
+      if (addedCount > 0 || removedCount > 0) {
+        message += ` (Added: ${addedCount}, Removed: ${removedCount})`;
+      } else {
+        message += " (No changes)";
+      }
+
+      toastService.success(message);
+
+      // Reload migrations list to reflect changes
+      await loadData();
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to reindex migrations";
+      toastService.error(errorMsg);
+    } finally {
+      setReindexing(false);
     }
   };
 
@@ -85,7 +121,9 @@ export default function Dashboard() {
 
   // Calculate statistics based on status field
   const total = migrations.length;
-  const applied = migrations.filter((m) => m.status === "success").length;
+  const applied = migrations.filter(
+    (m) => m.status === "success" || m.status === "applied",
+  ).length;
   const pending = migrations.filter((m) => m.status === "pending").length;
   const failed = migrations.filter((m) => m.status === "failed").length;
   const rolledBack = migrations.filter(
@@ -134,8 +172,9 @@ export default function Dashboard() {
     { name: "Remaining", value: 100 - healthScore, fill: "#e5e7eb" },
   ];
 
-  // Calculate needle angle (0-180 degrees, where 180° is left, 0° is right)
+  // Calculate needle angle for gauge (0-180 degrees)
   // Health score 0% = 180° (left), 100% = 0° (right)
+  // For SVG: 0° points right, 90° points up, 180° points left
   const needleAngle = 180 - (healthScore / 100) * 180;
 
   // Group by backend
@@ -176,17 +215,6 @@ export default function Dashboard() {
     value,
   }));
 
-  // Recent executions - show migrations that have been executed (not pending)
-  // Sort by applied_at if available, otherwise by migration_id
-  const recentMigrations = migrations
-    .filter((m) => m.status !== "pending" && m.applied_at)
-    .sort((a, b) => {
-      const dateA = new Date(a.applied_at || 0).getTime();
-      const dateB = new Date(b.applied_at || 0).getTime();
-      return dateB - dateA; // Most recent first
-    })
-    .slice(0, 10);
-
   // Recently added files - show migrations sorted by version (newest first)
   // The version field contains a timestamp (YYYYMMDDHHmmss), so higher version = more recent
   const recentlyAddedFiles = [...migrations]
@@ -197,19 +225,28 @@ export default function Dashboard() {
     .slice(0, 5);
 
   return (
-    <div className="w-full px-4 md:px-6 lg:px-8 animate-fade-in">
+    <div className="w-full overflow-y-hidden px-4 md:px-6 lg:px-8 animate-fade-in">
       <div className="flex justify-between items-center mb-8 animate-slide-up">
         <h1 className="text-3xl font-semibold text-gray-800">
           Migration Dashboard
         </h1>
-        <div
-          className={`px-4 py-2 rounded font-medium transition-all ${
-            healthStatus === "healthy"
-              ? "bg-green-100 text-green-800"
-              : "bg-red-100 text-red-800"
-          }`}
-        >
-          Status: {healthStatus === "healthy" ? "✓ Healthy" : "✗ Unhealthy"}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleReindex}
+            disabled={reindexing}
+            className="px-4 py-2 bg-bfm-blue text-white rounded text-sm transition-colors hover:bg-bfm-blue-dark disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {reindexing ? "Reindexing..." : "Reindex"}
+          </button>
+          <div
+            className={`px-4 py-2 rounded font-medium transition-all ${
+              healthStatus === "healthy"
+                ? "bg-green-100 text-green-800"
+                : "bg-red-100 text-red-800"
+            }`}
+          >
+            Status: {healthStatus === "healthy" ? "✓ Healthy" : "✗ Unhealthy"}
+          </div>
         </div>
       </div>
 
@@ -221,8 +258,21 @@ export default function Dashboard() {
           <div className="text-gray-500 text-sm uppercase tracking-wide">
             Health Score
           </div>
-          <div className="relative" style={{ height: "100px" }}>
-            <ResponsiveContainer width="100%" height="100%">
+          <div
+            className="relative w-full"
+            style={{
+              height: "100px",
+              minHeight: "100px",
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            <ResponsiveContainer
+              width="100%"
+              height={100}
+              minWidth={0}
+              minHeight={100}
+            >
               <PieChart>
                 <Pie
                   data={gaugeData}
@@ -230,10 +280,11 @@ export default function Dashboard() {
                   cy="90%"
                   startAngle={180}
                   endAngle={0}
-                  innerRadius={50}
-                  outerRadius={70}
+                  innerRadius={35}
+                  outerRadius={55}
                   paddingAngle={0}
                   dataKey="value"
+                  isAnimationActive={true}
                 >
                   {gaugeData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -241,30 +292,33 @@ export default function Dashboard() {
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            {/* Needle overlay using absolute positioning */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <svg
-                width="100%"
-                height="100%"
-                viewBox="0 0 200 100"
-                style={{ position: "absolute", top: 0, left: 0 }}
-              >
-                {/* Needle */}
-                <g transform="translate(100, 90)">
-                  <line
-                    x1="0"
-                    y1="0"
-                    x2={Math.cos(((180 - needleAngle) * Math.PI) / 180) * 50}
-                    y2={-Math.sin(((180 - needleAngle) * Math.PI) / 180) * 50}
-                    stroke="#1f2937"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                  />
-                  <circle cx="0" cy="0" r="4" fill="#1f2937" />
-                </g>
-              </svg>
-            </div>
-            <div className="absolute inset-0 flex items-end justify-center pb-1">
+            {/* Needle overlay - positioned to match Pie chart center */}
+            <svg
+              className="absolute top-0 left-0 pointer-events-none"
+              width="100%"
+              height="100%"
+              viewBox="0 0 200 100"
+              preserveAspectRatio="xMidYMid meet"
+              style={{ overflow: "visible" }}
+            >
+              {/* Needle pivot point at (100, 90) - center horizontally, 90% down vertically */}
+              <g transform="translate(100, 90)">
+                {/* Needle line */}
+                <line
+                  x1="0"
+                  y1="0"
+                  x2={Math.cos((needleAngle * Math.PI) / 180) * 45}
+                  y2={-Math.sin((needleAngle * Math.PI) / 180) * 45}
+                  stroke="#1f2937"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
+                {/* Needle center circle */}
+                <circle cx="0" cy="0" r="3.5" fill="#1f2937" />
+              </g>
+            </svg>
+            {/* Health score text overlay */}
+            <div className="absolute bottom-2  top-0 left-0 right-0 flex justify-center pointer-events-none">
               <div className={`text-2xl font-bold ${healthScoreColor}`}>
                 {healthScore}%
               </div>
@@ -327,7 +381,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Status Distribution
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <PieChart>
               <Pie
                 data={statusData}
@@ -336,7 +395,7 @@ export default function Dashboard() {
                 labelLine={true}
                 label={({ name, value, percent }) => {
                   // Only show label if slice is large enough (>= 5%)
-                  if (percent >= 0.05) {
+                  if (percent !== undefined && percent >= 0.05) {
                     return `${name}\n${value} (${(percent * 100).toFixed(0)}%)`;
                   }
                   return "";
@@ -373,7 +432,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Migrations by Backend
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <BarChart data={backendData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
@@ -388,7 +452,12 @@ export default function Dashboard() {
           <h3 className="mb-4 text-gray-800 text-lg font-semibold">
             Migrations by Connection
           </h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer
+            width="100%"
+            height={300}
+            minWidth={0}
+            minHeight={300}
+          >
             <BarChart data={connectionData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
@@ -454,7 +523,8 @@ export default function Dashboard() {
                   <td className="p-3 border-b border-gray-200">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        migration.status === "success"
+                        migration.status === "success" ||
+                        migration.status === "applied"
                           ? "bg-green-100 text-green-800"
                           : migration.status === "failed"
                             ? "bg-red-100 text-red-800"
@@ -488,12 +558,12 @@ export default function Dashboard() {
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Migration ID
               </th>
-              {/* <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Schema
               </th>
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Table
-              </th> */}
+                Connection
+              </th>
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
                 Backend
               </th>
@@ -501,54 +571,58 @@ export default function Dashboard() {
                 Status
               </th>
               <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Applied At
+                Created At
               </th>
             </tr>
           </thead>
           <tbody>
-            {recentMigrations.length === 0 ? (
+            {recentExecutions.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center text-gray-500 py-8">
-                  No migrations applied yet
+                  No executions found
                 </td>
               </tr>
             ) : (
-              recentMigrations.map((migration) => (
-                <tr key={migration.migration_id} className="hover:bg-gray-50">
+              recentExecutions.map((execution) => (
+                <tr key={execution.id} className="hover:bg-gray-50">
                   <td className="p-3 border-b border-gray-200">
                     <Link
-                      to={`/migrations/${migration.migration_id}`}
+                      to={`/migrations/${execution.migration_id}`}
                       className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline"
                     >
-                      {migration.migration_id}
+                      {execution.migration_id}
                     </Link>
                   </td>
-                  {/* <td className="p-3 border-b border-gray-200">{migration.schema}</td>
-                  <td className="p-3 border-b border-gray-200">{migration.table}</td> */}
                   <td className="p-3 border-b border-gray-200">
-                    {migration.backend}
+                    {execution.schema || "-"}
+                  </td>
+                  <td className="p-3 border-b border-gray-200">
+                    {execution.connection}
+                  </td>
+                  <td className="p-3 border-b border-gray-200">
+                    {execution.backend}
                   </td>
                   <td className="p-3 border-b border-gray-200">
                     <span
                       className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        migration.status === "success"
+                        execution.status === "applied"
                           ? "bg-green-100 text-green-800"
-                          : migration.status === "failed"
+                          : execution.status === "failed"
                             ? "bg-red-100 text-red-800"
-                            : migration.status === "rolled_back"
+                            : execution.status === "rolled_back"
                               ? "bg-orange-100 text-orange-800"
                               : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
-                      {migration.status === "rolled_back"
+                      {execution.status === "rolled_back"
                         ? "Rolled Back"
-                        : migration.status}
+                        : execution.status || "pending"}
                     </span>
                   </td>
                   <td className="p-3 border-b border-gray-200">
-                    {migration.applied_at
+                    {execution.created_at
                       ? format(
-                          new Date(migration.applied_at),
+                          new Date(execution.created_at),
                           "yyyy-MM-dd HH:mm:ss",
                         )
                       : "-"}

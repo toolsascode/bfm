@@ -7,6 +7,8 @@ import type {
   MigrationHistoryItem,
   MigrateUpRequest,
   MigrateResponse,
+  MigrationListItem,
+  MigrationExecution,
 } from "../types/api";
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
@@ -190,15 +192,28 @@ export default function MigrationDetail() {
     up: boolean;
     down: boolean;
   }>({ up: false, down: false });
+  const [schemaExecutions, setSchemaExecutions] = useState<MigrationListItem[]>(
+    [],
+  );
+  const [schemaExecutionsExpanded, setSchemaExecutionsExpanded] =
+    useState(true);
+  const [schemaExecutionsPage, setSchemaExecutionsPage] = useState(1);
+  const [schemaExecutionsPerPage, setSchemaExecutionsPerPage] = useState(10);
+  const [executions, setExecutions] = useState<MigrationExecution[]>([]);
+  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPerPage, setHistoryPerPage] = useState(10);
 
   useEffect(() => {
     if (id) {
       loadMigration();
       loadStatus();
       loadHistory();
+      loadExecutions();
       const interval = setInterval(() => {
         loadStatus();
         loadHistory();
+        loadExecutions();
       }, 5000); // Refresh status every 5 seconds
       return () => clearInterval(interval);
     }
@@ -211,6 +226,10 @@ export default function MigrationDetail() {
       const data = await apiClient.getMigration(id);
       setMigration(data);
       setError(null);
+      // Load schema executions after migration is loaded
+      if (data) {
+        loadSchemaExecutions();
+      }
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to load migration";
@@ -244,6 +263,74 @@ export default function MigrationDetail() {
       setHistory(sortedHistory);
     } catch (err) {
       // Silently fail history updates
+    }
+  };
+
+  const loadExecutions = async () => {
+    if (!id) return;
+    try {
+      setExecutionsLoading(true);
+      const data = await apiClient.getMigrationExecutions(id);
+      setExecutions(data.executions);
+    } catch (err) {
+      // Silently fail executions updates
+    } finally {
+      setExecutionsLoading(false);
+    }
+  };
+
+  // Helper function to check if a string is a version number (timestamp format: YYYYMMDDHHMMSS)
+  const isVersionNumber = (str: string): boolean => {
+    // Check if it's a 14-digit number (timestamp format)
+    return /^\d{14}$/.test(str);
+  };
+
+  // Helper function to extract base ID from schema-specific ID
+  const getBaseMigrationID = (migrationID: string): string => {
+    const parts = migrationID.split("_");
+    // Schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
+    // Base format: {version}_{name}_{backend}_{connection}
+    // Base migrations start with a version number (timestamp), schema-specific start with schema name
+    if (parts.length > 0 && !isVersionNumber(parts[0])) {
+      // First part is not a version number, so it's a schema prefix - remove it
+      return parts.slice(1).join("_");
+    }
+    return migrationID;
+  };
+
+  // Helper function to check if migration ID is schema-specific
+  const isSchemaSpecific = (migrationID: string): boolean => {
+    const parts = migrationID.split("_");
+    // If first part is not a version number (timestamp), it's schema-specific
+    return parts.length > 0 && !isVersionNumber(parts[0]);
+  };
+
+  const loadSchemaExecutions = async () => {
+    if (!id || !migration) return;
+
+    try {
+      // Fetch all migrations and filter for schema-specific executions
+      const allMigrations = await apiClient.listMigrations({});
+
+      // Determine the base migration ID
+      // If this is a schema-specific migration, extract the base ID
+      // If this is a base migration, use the ID directly
+      const baseID = getBaseMigrationID(id);
+
+      // Find all schema-specific migrations that match this base
+      const executions = allMigrations.items.filter((item) => {
+        // Only include schema-specific migrations
+        if (!isSchemaSpecific(item.migration_id)) {
+          return false;
+        }
+        // Extract base ID by removing schema prefix
+        const itemBaseID = getBaseMigrationID(item.migration_id);
+        return itemBaseID === baseID;
+      });
+
+      setSchemaExecutions(executions);
+    } catch (err) {
+      // Silently fail
     }
   };
 
@@ -373,6 +460,8 @@ export default function MigrationDetail() {
       loadMigration();
       loadStatus();
       loadHistory(); // Reload history to get the latest status and applied_at
+      loadExecutions();
+      loadSchemaExecutions();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to execute migration";
@@ -449,13 +538,18 @@ export default function MigrationDetail() {
       onConfirm: async () => {
         setShowConfirmModal(false);
         try {
-          const result = await apiClient.rollbackMigration(id);
+          // Use migration schema if available
+          const schemas = migration?.schema ? [migration.schema] : [];
+          const result = await apiClient.rollbackMigration(id, schemas);
           if (result.success) {
-            toastService.success("Migration rolled back successfully");
+            toastService.success(
+              result.message || "Migration rolled back successfully",
+            );
             // Reload all data to reflect the rollback
             loadMigration();
             loadStatus();
             loadHistory();
+            loadExecutions();
           } else {
             toastService.error(`Rollback failed: ${result.message}`);
           }
@@ -890,7 +984,7 @@ export default function MigrationDetail() {
                 <div className="text-base font-medium">
                   <span
                     className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                      actualStatus === "success"
+                      actualStatus === "success" || actualStatus === "applied"
                         ? "bg-green-100 text-green-800"
                         : actualStatus === "failed"
                           ? "bg-red-100 text-red-800"
@@ -1029,6 +1123,482 @@ export default function MigrationDetail() {
           )}
         </div>
 
+        {/* Executions Table */}
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+            Executions ({executions.length})
+          </h2>
+          {executionsLoading ? (
+            <div className="text-center py-8 text-gray-500">
+              Loading executions...
+            </div>
+          ) : executions.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              No executions found for this migration.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      ID
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Schema
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Version
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Connection
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Backend
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Status
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Applied
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Created At
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {executions.map((execution) => (
+                    <tr
+                      key={execution.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 border-b border-gray-200 text-sm font-mono">
+                        {execution.id}
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm">
+                        {execution.schema || "-"}
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm font-mono">
+                        {execution.version}
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm">
+                        {execution.connection}
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm">
+                        {execution.backend}
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                            execution.status === "applied"
+                              ? "bg-green-100 text-green-800"
+                              : execution.status === "failed"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {execution.status}
+                        </span>
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm">
+                        {execution.applied ? (
+                          <span className="text-green-600 font-medium">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">No</span>
+                        )}
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm">
+                        {execution.created_at
+                          ? format(
+                              new Date(execution.created_at),
+                              "yyyy-MM-dd HH:mm:ss",
+                            )
+                          : "-"}
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <div className="flex gap-2">
+                          {execution.applied && (
+                            <button
+                              onClick={() => {
+                                setConfirmModalConfig({
+                                  title: "Rollback Execution",
+                                  message: `Are you sure you want to rollback execution #${execution.id}? This will rollback the migration for schema: ${execution.schema || "default"}, version: ${execution.version}, connection: ${execution.connection}`,
+                                  confirmText: "Rollback",
+                                  cancelText: "Cancel",
+                                  confirmButtonClass:
+                                    "bg-red-600 text-white hover:bg-red-700",
+                                  onConfirm: async () => {
+                                    setShowConfirmModal(false);
+                                    try {
+                                      const schemas = execution.schema
+                                        ? [execution.schema]
+                                        : [];
+                                      const result =
+                                        await apiClient.rollbackMigration(
+                                          execution.migration_id,
+                                          schemas,
+                                        );
+                                      if (result.success) {
+                                        toastService.success(
+                                          result.message ||
+                                            "Rollback completed successfully",
+                                        );
+                                      } else {
+                                        toastService.warning(
+                                          result.message ||
+                                            "Rollback completed with errors",
+                                        );
+                                      }
+                                      loadExecutions();
+                                      loadStatus();
+                                      loadHistory();
+                                    } catch (err) {
+                                      toastService.error(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "Failed to rollback",
+                                      );
+                                    }
+                                  },
+                                });
+                                setShowConfirmModal(true);
+                              }}
+                              className="px-3 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200 transition-colors"
+                            >
+                              Rollback
+                            </button>
+                          )}
+                          {!execution.applied && (
+                            <button
+                              onClick={() => {
+                                setConfirmModalConfig({
+                                  title: "Re-execute Migration",
+                                  message: `Are you sure you want to re-execute execution #${execution.id}? This will execute the migration for schema: ${execution.schema || "default"}, version: ${execution.version}, connection: ${execution.connection}`,
+                                  confirmText: "Execute",
+                                  cancelText: "Cancel",
+                                  confirmButtonClass:
+                                    "bg-bfm-green-dark text-white hover:bg-bfm-green",
+                                  onConfirm: async () => {
+                                    setShowConfirmModal(false);
+                                    if (!migration) return;
+                                    const schemaToUse =
+                                      execution.schema ||
+                                      migration.schema ||
+                                      "";
+                                    try {
+                                      const migrateRequest: MigrateUpRequest = {
+                                        connection: execution.connection,
+                                        target: {
+                                          backend: execution.backend,
+                                          connection: execution.connection,
+                                          version: execution.version,
+                                        },
+                                        schemas: schemaToUse
+                                          ? [schemaToUse]
+                                          : [],
+                                      };
+                                      const response =
+                                        await apiClient.migrateUp(
+                                          migrateRequest,
+                                        );
+                                      if (response.success) {
+                                        toastService.success(
+                                          "Migration executed successfully",
+                                        );
+                                      } else {
+                                        toastService.warning(
+                                          "Migration completed with errors",
+                                        );
+                                      }
+                                      loadExecutions();
+                                      loadStatus();
+                                      loadHistory();
+                                    } catch (err) {
+                                      toastService.error(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "Failed to execute",
+                                      );
+                                    }
+                                  },
+                                });
+                                setShowConfirmModal(true);
+                              }}
+                              className="px-3 py-1 text-xs bg-bfm-green-dark text-white rounded hover:bg-bfm-green transition-colors"
+                            >
+                              Re-execute
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {schemaExecutions.length > 0 && (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-gray-800 text-xl font-semibold">
+                Schema Executions ({schemaExecutions.length})
+              </h2>
+              <button
+                onClick={() =>
+                  setSchemaExecutionsExpanded(!schemaExecutionsExpanded)
+                }
+                className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
+              >
+                <svg
+                  className={`w-5 h-5 transition-transform ${
+                    schemaExecutionsExpanded ? "rotate-90" : ""
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+                {schemaExecutionsExpanded ? "Collapse" : "Expand"}
+              </button>
+            </div>
+            {schemaExecutionsExpanded && (
+              <>
+                <p className="text-gray-600 text-sm mb-4">
+                  This migration has been executed on the following schemas:
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Migration ID
+                        </th>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Schema
+                        </th>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Status
+                        </th>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Applied
+                        </th>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Applied At
+                        </th>
+                        <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const startIndex =
+                          (schemaExecutionsPage - 1) * schemaExecutionsPerPage;
+                        const endIndex = startIndex + schemaExecutionsPerPage;
+                        const paginatedExecutions = schemaExecutions.slice(
+                          startIndex,
+                          endIndex,
+                        );
+
+                        return (
+                          <>
+                            {paginatedExecutions.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={6}
+                                  className="text-center text-gray-500 py-8"
+                                >
+                                  No schema executions found
+                                </td>
+                              </tr>
+                            ) : (
+                              paginatedExecutions.map((execution) => (
+                                <tr
+                                  key={execution.migration_id}
+                                  className="hover:bg-gray-50 transition-colors"
+                                >
+                                  <td className="p-3 border-b border-gray-200">
+                                    <Link
+                                      to={`/migrations/${execution.migration_id}`}
+                                      className="text-bfm-blue no-underline hover:underline text-sm font-mono"
+                                    >
+                                      {execution.migration_id}
+                                    </Link>
+                                  </td>
+                                  <td className="p-3 border-b border-gray-200">
+                                    <span className="text-gray-800 text-sm font-medium">
+                                      {execution.schema || "-"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 border-b border-gray-200">
+                                    <span
+                                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                                        execution.status === "success" ||
+                                        execution.status === "applied"
+                                          ? "bg-green-100 text-green-800"
+                                          : execution.status === "failed"
+                                            ? "bg-red-100 text-red-800"
+                                            : execution.status === "rolled_back"
+                                              ? "bg-orange-100 text-orange-800"
+                                              : "bg-yellow-100 text-yellow-800"
+                                      }`}
+                                    >
+                                      {execution.status === "rolled_back"
+                                        ? "Rolled Back"
+                                        : execution.status || "pending"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 border-b border-gray-200">
+                                    <span
+                                      className={
+                                        execution.applied
+                                          ? "text-bfm-green-dark font-medium"
+                                          : "text-gray-500"
+                                      }
+                                    >
+                                      {execution.applied ? "Yes" : "No"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 border-b border-gray-200 text-sm text-gray-800">
+                                    {execution.applied_at
+                                      ? format(
+                                          new Date(execution.applied_at),
+                                          "yyyy-MM-dd HH:mm:ss",
+                                        )
+                                      : "-"}
+                                  </td>
+                                  <td className="p-3 border-b border-gray-200">
+                                    <Link
+                                      to={`/migrations/${execution.migration_id}`}
+                                      className="inline-block px-3 py-1 bg-bfm-blue text-white rounded text-sm no-underline transition-all duration-200 hover:bg-bfm-blue-dark hover:shadow-md"
+                                    >
+                                      View
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </>
+                        );
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+                {schemaExecutions.length > schemaExecutionsPerPage && (
+                  <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="text-sm text-gray-600">
+                      Showing{" "}
+                      {Math.min(
+                        (schemaExecutionsPage - 1) * schemaExecutionsPerPage +
+                          1,
+                        schemaExecutions.length,
+                      )}
+                      -
+                      {Math.min(
+                        schemaExecutionsPage * schemaExecutionsPerPage,
+                        schemaExecutions.length,
+                      )}{" "}
+                      of {schemaExecutions.length}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="schema-executions-per-page"
+                        className="text-sm text-gray-600"
+                      >
+                        Per page:
+                      </label>
+                      <select
+                        id="schema-executions-per-page"
+                        value={schemaExecutionsPerPage}
+                        onChange={(e) => {
+                          setSchemaExecutionsPerPage(Number(e.target.value));
+                          setSchemaExecutionsPage(1);
+                        }}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm bg-white text-gray-800 focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
+                      >
+                        <option value={10}>10</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSchemaExecutionsPage(1)}
+                        disabled={schemaExecutionsPage === 1}
+                        className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        First
+                      </button>
+                      <button
+                        onClick={() =>
+                          setSchemaExecutionsPage(schemaExecutionsPage - 1)
+                        }
+                        disabled={schemaExecutionsPage === 1}
+                        className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      <div className="text-sm text-gray-600">
+                        Page {schemaExecutionsPage} of{" "}
+                        {Math.ceil(
+                          schemaExecutions.length / schemaExecutionsPerPage,
+                        )}
+                      </div>
+                      <button
+                        onClick={() =>
+                          setSchemaExecutionsPage(schemaExecutionsPage + 1)
+                        }
+                        disabled={
+                          schemaExecutionsPage >=
+                          Math.ceil(
+                            schemaExecutions.length / schemaExecutionsPerPage,
+                          )
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                      <button
+                        onClick={() =>
+                          setSchemaExecutionsPage(
+                            Math.ceil(
+                              schemaExecutions.length / schemaExecutionsPerPage,
+                            ),
+                          )
+                        }
+                        disabled={
+                          schemaExecutionsPage >=
+                          Math.ceil(
+                            schemaExecutions.length / schemaExecutionsPerPage,
+                          )
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Last
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {history.length > 0 && (
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-gray-800 mb-4 text-xl font-semibold">
@@ -1059,84 +1629,173 @@ export default function MigrationDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {history.map((record, index) => (
-                    <tr
-                      key={`${record.migration_id}-${record.applied_at}-${index}`}
-                      className="hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="p-3 border-b border-gray-200">
-                        <div className="flex flex-col">
-                          <span className="text-gray-800 text-sm font-mono">
-                            {record.migration_id}
-                          </span>
-                          {record.migration_id.includes("_rollback") && (
-                            <span className="text-xs text-orange-600 italic mt-1">
-                              Rollback
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3 border-b border-gray-200">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                            record.status === "success"
-                              ? "bg-green-100 text-green-800"
-                              : record.status === "failed"
-                                ? "bg-red-100 text-red-800"
-                                : record.status === "rolled_back"
-                                  ? "bg-orange-100 text-orange-800"
-                                  : "bg-yellow-100 text-yellow-800"
-                          }`}
-                        >
-                          {record.status === "rolled_back"
-                            ? "Rolled Back"
-                            : record.status}
-                        </span>
-                      </td>
-                      <td className="p-3 border-b border-gray-200 text-sm text-gray-800">
-                        {format(
-                          new Date(record.applied_at),
-                          "yyyy-MM-dd HH:mm:ss",
-                        )}
-                      </td>
-                      <td className="p-3 border-b border-gray-200 text-sm text-gray-700">
-                        {record.executed_by || (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="p-3 border-b border-gray-200">
-                        {record.execution_method ? (
-                          <span
-                            className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                              record.execution_method === "manual"
-                                ? "bg-blue-100 text-blue-800"
-                                : record.execution_method === "api"
-                                  ? "bg-purple-100 text-purple-800"
-                                  : record.execution_method === "cli"
-                                    ? "bg-gray-100 text-gray-800"
-                                    : "bg-yellow-100 text-yellow-800"
-                            }`}
+                  {(() => {
+                    const startIndex = (historyPage - 1) * historyPerPage;
+                    const endIndex = startIndex + historyPerPage;
+                    const paginatedHistory = history.slice(
+                      startIndex,
+                      endIndex,
+                    );
+
+                    return (
+                      <>
+                        {paginatedHistory.map((record, index) => (
+                          <tr
+                            key={`${record.migration_id}-${record.applied_at}-${index}`}
+                            className="hover:bg-gray-50 transition-colors"
                           >
-                            {record.execution_method}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="p-3 border-b border-gray-200">
-                        {record.error_message ? (
-                          <div className="text-red-600 bg-red-50 p-2 rounded font-mono text-xs whitespace-pre-wrap max-w-md">
-                            {record.error_message}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            <td className="p-3 border-b border-gray-200">
+                              <div className="flex flex-col">
+                                <span className="text-gray-800 text-sm font-mono">
+                                  {record.migration_id}
+                                </span>
+                                {record.migration_id.includes("_rollback") && (
+                                  <span className="text-xs text-orange-600 italic mt-1">
+                                    Rollback
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-3 border-b border-gray-200">
+                              <span
+                                className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                                  record.status === "success" ||
+                                  record.status === "applied"
+                                    ? "bg-green-100 text-green-800"
+                                    : record.status === "failed"
+                                      ? "bg-red-100 text-red-800"
+                                      : record.status === "rolled_back"
+                                        ? "bg-orange-100 text-orange-800"
+                                        : "bg-yellow-100 text-yellow-800"
+                                }`}
+                              >
+                                {record.status === "rolled_back"
+                                  ? "Rolled Back"
+                                  : record.status}
+                              </span>
+                            </td>
+                            <td className="p-3 border-b border-gray-200 text-sm text-gray-800">
+                              {format(
+                                new Date(record.applied_at),
+                                "yyyy-MM-dd HH:mm:ss",
+                              )}
+                            </td>
+                            <td className="p-3 border-b border-gray-200 text-sm text-gray-700">
+                              {record.executed_by || (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 border-b border-gray-200">
+                              {record.execution_method ? (
+                                <span
+                                  className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                                    record.execution_method === "manual"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : record.execution_method === "api"
+                                        ? "bg-purple-100 text-purple-800"
+                                        : record.execution_method === "cli"
+                                          ? "bg-gray-100 text-gray-800"
+                                          : "bg-yellow-100 text-yellow-800"
+                                  }`}
+                                >
+                                  {record.execution_method}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="p-3 border-b border-gray-200">
+                              {record.error_message ? (
+                                <div className="text-red-600 bg-red-50 p-2 rounded font-mono text-xs whitespace-pre-wrap max-w-md">
+                                  {record.error_message}
+                                </div>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
+            {history.length > historyPerPage && (
+              <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-sm text-gray-600">
+                  Showing{" "}
+                  {Math.min(
+                    (historyPage - 1) * historyPerPage + 1,
+                    history.length,
+                  )}
+                  -{Math.min(historyPage * historyPerPage, history.length)} of{" "}
+                  {history.length}
+                </div>
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="history-per-page"
+                    className="text-sm text-gray-600"
+                  >
+                    Per page:
+                  </label>
+                  <select
+                    id="history-per-page"
+                    value={historyPerPage}
+                    onChange={(e) => {
+                      setHistoryPerPage(Number(e.target.value));
+                      setHistoryPage(1);
+                    }}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm bg-white text-gray-800 focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setHistoryPage(1)}
+                    disabled={historyPage === 1}
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    First
+                  </button>
+                  <button
+                    onClick={() => setHistoryPage(historyPage - 1)}
+                    disabled={historyPage === 1}
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Previous
+                  </button>
+                  <div className="text-sm text-gray-600">
+                    Page {historyPage} of{" "}
+                    {Math.ceil(history.length / historyPerPage)}
+                  </div>
+                  <button
+                    onClick={() => setHistoryPage(historyPage + 1)}
+                    disabled={
+                      historyPage >= Math.ceil(history.length / historyPerPage)
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                  <button
+                    onClick={() =>
+                      setHistoryPage(Math.ceil(history.length / historyPerPage))
+                    }
+                    disabled={
+                      historyPage >= Math.ceil(history.length / historyPerPage)
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Last
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

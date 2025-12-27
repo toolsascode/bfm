@@ -1,5 +1,7 @@
 package state
 
+import "github.com/toolsascode/bfm/api/internal/backends"
+
 // MigrationRecord represents a migration execution record in state tracking (moved here to avoid import cycle)
 type MigrationRecord struct {
 	ID               string
@@ -60,6 +62,49 @@ type StateTracker interface {
 
 	// Initialize sets up the state tracking tables
 	Initialize(ctx interface{}) error
+
+	// ReindexMigrations reloads the BfM migration list and updates the database state
+	// This should be called asynchronously in the background
+	ReindexMigrations(ctx interface{}, registry interface{}) error
+
+	// GetMigrationDetail retrieves detailed information about a single migration from migrations_list
+	GetMigrationDetail(ctx interface{}, migrationID string) (*MigrationDetail, error)
+
+	// GetMigrationExecutions retrieves all execution records for a migration, ordered by created_at DESC
+	GetMigrationExecutions(ctx interface{}, migrationID string) ([]*MigrationExecution, error)
+
+	// GetRecentExecutions retrieves recent execution records across all migrations, ordered by created_at DESC
+	GetRecentExecutions(ctx interface{}, limit int) ([]*MigrationExecution, error)
+}
+
+// MigrationDetail represents detailed information about a migration from migrations_list
+type MigrationDetail struct {
+	MigrationID            string
+	Schema                 string
+	Version                string
+	Name                   string
+	Connection             string
+	Backend                string
+	UpSQL                  string
+	DownSQL                string
+	Dependencies           []string
+	StructuredDependencies []backends.Dependency
+	Status                 string
+}
+
+// MigrationExecution represents an execution record in migrations_executions
+type MigrationExecution struct {
+	ID          int
+	MigrationID string
+	Schema      string
+	Version     string
+	Connection  string
+	Backend     string
+	Status      string
+	Applied     bool
+	AppliedAt   string
+	CreatedAt   string
+	UpdatedAt   string
 }
 
 // MigrationFilters specifies filters for querying migrations

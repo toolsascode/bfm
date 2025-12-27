@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install dependencies (will be overridden by volume mount, but useful for initial setup)
 COPY package*.json .npmrc* ./
-RUN npm ci
+RUN npm install
 
 # Copy source code (will be mounted as volume in docker-compose)
 # This copy is for initial setup, actual development uses volume mount

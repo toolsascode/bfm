@@ -3,14 +3,29 @@ set -e
 
 echo "[ffm] Starting FFM frontend..."
 
-# Check if node_modules exists and contains tailwindcss
-if [ ! -d "/app/node_modules" ] || [ ! -f "/app/node_modules/tailwindcss/package.json" ]; then
-  echo "[ffm] Tailwind CSS not found, installing/updating dependencies..."
-  if [ -f "/app/package-lock.json" ]; then
-    npm ci
-  else
-    npm install
+# Check if node_modules exists and contains required packages
+# Also check if react version matches between package.json and installed version
+REINSTALL_NEEDED=false
+if [ ! -d "/app/node_modules" ] || \
+   [ ! -f "/app/node_modules/tailwindcss/package.json" ] || \
+   [ ! -f "/app/node_modules/react-is/package.json" ]; then
+  REINSTALL_NEEDED=true
+fi
+
+# Check React version mismatch
+if [ -f "/app/node_modules/react/package.json" ] && [ -f "/app/package.json" ]; then
+  INSTALLED_REACT=$(grep -o '"version": "[^"]*"' /app/node_modules/react/package.json | cut -d'"' -f4)
+  EXPECTED_REACT=$(grep -o '"react": "[^"]*"' /app/package.json | cut -d'"' -f4 | sed 's/\^//' | sed 's/~//')
+  if [ "$INSTALLED_REACT" != "$EXPECTED_REACT" ]; then
+    echo "[ffm] React version mismatch detected (installed: $INSTALLED_REACT, expected: $EXPECTED_REACT)"
+    REINSTALL_NEEDED=true
   fi
+fi
+
+if [ "$REINSTALL_NEEDED" = "true" ]; then
+  echo "[ffm] Installing/updating dependencies..."
+  # Use npm install in development to allow lock file updates
+  npm install
   if [ $? -ne 0 ]; then
     echo "[ffm] Failed to install dependencies. Exiting."
     exit 1

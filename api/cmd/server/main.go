@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/toolsascode/bfm/api/internal/logger"
 	"github.com/toolsascode/bfm/api/internal/queuefactory"
 	"github.com/toolsascode/bfm/api/internal/registry"
+	"github.com/toolsascode/bfm/api/internal/state"
 	statepg "github.com/toolsascode/bfm/api/internal/state/postgresql"
 
 	"github.com/gin-gonic/gin"
@@ -114,7 +116,7 @@ func main() {
 	if migrationCount == 0 {
 		logger.Warnf("No migrations loaded from %s - ensure migration files exist in the expected directory structure", sfmPath)
 	} else {
-		logger.Infof("✅ Successfully loaded %d migration(s) from %s", migrationCount, sfmPath)
+		logger.Infof("Successfully loaded %d migration(s) from %s", migrationCount, sfmPath)
 
 		// Log migration breakdown by backend/connection for better visibility
 		allMigrations := registry.GlobalRegistry.GetAll()
@@ -137,15 +139,56 @@ func main() {
 	loader.StartWatching()
 	defer loader.StopWatching()
 
+	// Start background reindexer
+	reindexInterval := 5 * time.Minute
+	if intervalStr := os.Getenv("BFM_REINDEX_INTERVAL_MINUTES"); intervalStr != "" {
+		if intervalMinutes, err := time.ParseDuration(intervalStr + "m"); err == nil {
+			reindexInterval = intervalMinutes
+		}
+	}
+	reindexer := state.NewReindexer(stateTracker, registry.GlobalRegistry, reindexInterval)
+	reindexer.Start()
+	defer reindexer.Stop()
+	logger.Infof("Background reindexer started with interval: %v", reindexInterval)
+
+	// Set Gin mode - use BFM_APP_MODE env var if set, otherwise default to release mode
+	if ginMode := os.Getenv("BFM_APP_MODE"); ginMode != "" {
+		gin.SetMode(ginMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	// Initialize HTTP server
 	router := gin.New()
 
-	// Custom logger middleware that skips health check endpoints
+	// Determine log format from environment variable (default to JSON)
+	logFormat := strings.ToLower(os.Getenv("BFM_LOG_FORMAT"))
+	useJSON := logFormat != "plaintext" && logFormat != "plain" && logFormat != "text"
+
+	// Custom logger middleware that skips health check endpoints and supports JSON/plaintext
 	router.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 		// Skip logging for health check endpoints
 		if param.Path == "/health" || param.Path == "/api/v1/health" {
 			return ""
 		}
+
+		if useJSON {
+			// JSON format
+			logEntry := map[string]interface{}{
+				"timestamp": param.TimeStamp.Format("2006-01-02T15:04:05.000Z07:00"),
+				"status":    param.StatusCode,
+				"latency":   param.Latency.String(),
+				"client_ip": param.ClientIP,
+				"method":    param.Method,
+				"path":      param.Path,
+				"error":     param.ErrorMessage,
+			}
+			if jsonBytes, err := json.Marshal(logEntry); err == nil {
+				return string(jsonBytes) + "\n"
+			}
+		}
+
+		// Plaintext format (fallback or when explicitly set)
 		return fmt.Sprintf("[GIN] %s | %3d | %13v | %15s | %-7s %s\n",
 			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
 			param.StatusCode,

@@ -111,7 +111,7 @@ standalone-down: ## Stop standalone production container
 
 standalone-build: ## Build standalone production container
 	@echo "$(GREEN)Building standalone production container...$(NC)"
-	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) build
+	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) build --no-cache
 
 standalone-logs: ## Show logs from standalone container
 	docker compose -p bfm-standalone -f $(COMPOSE_STANDALONE_FILE) logs -f

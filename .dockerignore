@@ -1,0 +1,13 @@
+# Exclude node_modules from Docker builds
+ffm/node_modules
+ffm/dist
+ffm/.git
+ffm/.DS_Store
+ffm/*.log
+
+# Exclude other build artifacts
+api/tmp
+*.log
+.DS_Store
+.git
+.gitignore

@@ -418,61 +418,100 @@ func extractStructuredDependenciesFromGoFile(goFilePath string) []backends.Depen
 
 	// Look for StructuredDependencies field
 	// Pattern: StructuredDependencies: []migrations.Dependency{ ... } or []backends.Dependency{ ... }
-	// This is a simplified parser - for full parsing, we'd need a proper Go parser
-	// For now, we'll look for the pattern and extract basic information
-	depsRegex := regexp.MustCompile(`StructuredDependencies:\s*\[\](?:migrations|backends)\.Dependency\s*\{([^}]*)\}`)
-	matches := depsRegex.FindStringSubmatch(content)
-	if len(matches) < 2 {
+	// Find the opening brace after StructuredDependencies, then match balanced braces
+	depsRegex := regexp.MustCompile(`StructuredDependencies:\s*\[\](?:migrations|backends)\.Dependency\s*\{`)
+	idx := depsRegex.FindStringIndex(content)
+	if idx == nil {
 		return nil
 	}
 
-	depsStr := strings.TrimSpace(matches[1])
+	// Find the matching closing brace by counting braces
+	start := idx[1] // Position after opening brace
+	braceCount := 1
+	end := start
+	for end < len(content) && braceCount > 0 {
+		switch content[end] {
+		case '{':
+			braceCount++
+		case '}':
+			braceCount--
+		}
+		end++
+	}
+
+	if braceCount != 0 {
+		// Unbalanced braces, return empty
+		return []backends.Dependency{}
+	}
+
+	// Extract the content between braces (excluding the closing brace)
+	depsStr := strings.TrimSpace(content[start : end-1])
 	if depsStr == "" {
 		return []backends.Dependency{}
 	}
 
 	// Parse individual dependency structs
-	// Pattern: { Connection: "core", Schema: "core", Target: "name", TargetType: "name", RequiresTable: "table", RequiresSchema: "schema" }
+	// Match structs with balanced braces: { ... }
 	var dependencies []backends.Dependency
+	pos := 0
+	for pos < len(depsStr) {
+		// Find next opening brace
+		openIdx := strings.Index(depsStr[pos:], "{")
+		if openIdx == -1 {
+			break
+		}
+		openIdx += pos
 
-	// Split by struct boundaries (simplified - assumes single-line structs or properly formatted)
-	// This is a basic parser - for production, consider using go/parser
-	depStructRegex := regexp.MustCompile(`\{[^}]*\}`)
-	structMatches := depStructRegex.FindAllString(depsStr, -1)
-
-	for _, structStr := range structMatches {
-		dep := backends.Dependency{}
-		// Extract Connection
-		if match := regexp.MustCompile(`Connection:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.Connection = match[1]
-		}
-		// Extract Schema
-		if match := regexp.MustCompile(`Schema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.Schema = match[1]
-		}
-		// Extract Target
-		if match := regexp.MustCompile(`Target:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.Target = match[1]
-		}
-		// Extract TargetType
-		if match := regexp.MustCompile(`TargetType:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.TargetType = match[1]
-		} else {
-			dep.TargetType = "name" // Default
-		}
-		// Extract RequiresTable
-		if match := regexp.MustCompile(`RequiresTable:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.RequiresTable = match[1]
-		}
-		// Extract RequiresSchema
-		if match := regexp.MustCompile(`RequiresSchema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
-			dep.RequiresSchema = match[1]
+		// Find matching closing brace
+		braceCount := 1
+		closeIdx := openIdx + 1
+		for closeIdx < len(depsStr) && braceCount > 0 {
+			switch depsStr[closeIdx] {
+			case '{':
+				braceCount++
+			case '}':
+				braceCount--
+			}
+			closeIdx++
 		}
 
-		// Only add if Target is set (required field)
-		if dep.Target != "" {
-			dependencies = append(dependencies, dep)
+		if braceCount == 0 {
+			structStr := depsStr[openIdx:closeIdx]
+			dep := backends.Dependency{}
+			// Extract Connection
+			if match := regexp.MustCompile(`Connection:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.Connection = strings.TrimSpace(match[1])
+			}
+			// Extract Schema
+			if match := regexp.MustCompile(`Schema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.Schema = strings.TrimSpace(match[1])
+			}
+			// Extract Target
+			if match := regexp.MustCompile(`Target:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.Target = strings.TrimSpace(match[1])
+			}
+			// Extract TargetType
+			if match := regexp.MustCompile(`TargetType:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.TargetType = strings.TrimSpace(match[1])
+			} else {
+				dep.TargetType = "name" // Default
+			}
+			// Extract RequiresTable
+			if match := regexp.MustCompile(`RequiresTable:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.RequiresTable = strings.TrimSpace(match[1])
+			}
+			// Extract RequiresSchema
+			if match := regexp.MustCompile(`RequiresSchema:\s*["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`).FindStringSubmatch(structStr); len(match) >= 2 {
+				dep.RequiresSchema = strings.TrimSpace(match[1])
+			}
+
+			// Only add if Target is set (required field)
+			if dep.Target != "" {
+				dependencies = append(dependencies, dep)
+			}
 		}
+
+		pos = closeIdx
 	}
 
 	return dependencies

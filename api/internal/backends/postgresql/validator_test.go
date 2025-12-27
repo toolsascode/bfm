@@ -56,6 +56,21 @@ func (m *mockStateTrackerForValidator) Initialize(ctx interface{}) error {
 	return nil
 }
 
+func (m *mockStateTrackerForValidator) ReindexMigrations(ctx interface{}, registry interface{}) error {
+	return nil
+}
+
+func (m *mockStateTrackerForValidator) GetMigrationDetail(ctx interface{}, migrationID string) (*state.MigrationDetail, error) {
+	return nil, nil
+}
+
+func (m *mockStateTrackerForValidator) GetMigrationExecutions(ctx interface{}, migrationID string) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (m *mockStateTrackerForValidator) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+
 func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	backend := &Backend{} // We'll need to use a real backend or mock differently
 	// For now, we'll test the logic without actual database calls
@@ -74,7 +89,8 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	_ = reg.Register(depMigration)
 
 	// Mark it as applied
-	tracker.appliedMigrations["core_20240101120000_base_migration"] = true
+	// Migration ID format: {version}_{name}_{backend}_{connection}
+	tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = true
 
 	validator := NewDependencyValidator(backend, tracker, reg)
 
@@ -94,7 +110,7 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	})
 
 	t.Run("validate simple dependency - not applied", func(t *testing.T) {
-		tracker.appliedMigrations["core_20240101120000_base_migration"] = false
+		tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = false
 
 		migration := &backends.MigrationScript{
 			Version:      "20240101120002",
@@ -110,7 +126,7 @@ func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 		}
 
 		// Reset
-		tracker.appliedMigrations["core_20240101120000_base_migration"] = true
+		tracker.appliedMigrations["20240101120000_base_migration_postgresql_core"] = true
 	})
 
 	t.Run("validate structured dependency - applied", func(t *testing.T) {

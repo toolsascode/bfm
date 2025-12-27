@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -280,6 +281,85 @@ func (m *mockStateTracker) UpdateMigrationInfo(ctx interface{}, migrationID, sch
 
 func (m *mockStateTracker) Initialize(ctx interface{}) error {
 	return m.healthCheckError
+}
+
+func (m *mockStateTracker) ReindexMigrations(ctx interface{}, registry interface{}) error {
+	return nil
+}
+
+func (m *mockStateTracker) GetMigrationDetail(ctx interface{}, migrationID string) (*state.MigrationDetail, error) {
+	// Find migration in listItems
+	for _, item := range m.listItems {
+		if item.MigrationID == migrationID {
+			return &state.MigrationDetail{
+				MigrationID:            item.MigrationID,
+				Schema:                 item.Schema,
+				Version:                item.Version,
+				Name:                   item.Name,
+				Connection:             item.Connection,
+				Backend:                item.Backend,
+				UpSQL:                  "",
+				DownSQL:                "",
+				Dependencies:           []string{},
+				StructuredDependencies: []backends.Dependency{},
+				Status:                 item.LastStatus,
+			}, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([]*state.MigrationExecution, error) {
+	// Check if this migration is applied
+	applied := m.appliedMigrations[migrationID]
+	if !applied {
+		return []*state.MigrationExecution{}, nil
+	}
+
+	// Parse migration ID to extract details: {version}_{name}_{backend}_{connection}
+	parts := strings.Split(migrationID, "_")
+	if len(parts) < 4 {
+		return []*state.MigrationExecution{}, nil
+	}
+
+	// Extract version, backend, and connection
+	version := parts[0]
+	backend := parts[len(parts)-2]
+	connection := parts[len(parts)-1]
+
+	// Return execution records for both empty schema and "public" schema
+	// This allows the executor to find the execution regardless of which schema it's looking for
+	return []*state.MigrationExecution{
+		{
+			ID:          1,
+			MigrationID: migrationID,
+			Schema:      "", // Empty schema
+			Version:     version,
+			Connection:  connection,
+			Backend:     backend,
+			Status:      "applied",
+			Applied:     true,
+			AppliedAt:   time.Now().Format(time.RFC3339),
+			CreatedAt:   time.Now().Format(time.RFC3339),
+			UpdatedAt:   time.Now().Format(time.RFC3339),
+		},
+		{
+			ID:          2,
+			MigrationID: migrationID,
+			Schema:      "public", // Public schema
+			Version:     version,
+			Connection:  connection,
+			Backend:     backend,
+			Status:      "applied",
+			Applied:     true,
+			AppliedAt:   time.Now().Format(time.RFC3339),
+			CreatedAt:   time.Now().Format(time.RFC3339),
+			UpdatedAt:   time.Now().Format(time.RFC3339),
+		},
+	}, nil
+}
+func (m *mockStateTracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return []*state.MigrationExecution{}, nil
 }
 
 func setupTestRouter(reg *mockRegistry, tracker *mockStateTracker) (*gin.Engine, *executor.Executor) {
@@ -915,7 +995,10 @@ func TestHandler_rollbackMigration(t *testing.T) {
 	}
 	_ = reg.Register(migration)
 	migrationID := "public_test_20240101120000_test_migration"
-	tracker.appliedMigrations[migrationID] = true
+	// Use the base migration ID format that executor expects: {version}_{name}_{backend}_{connection}
+	baseMigrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
+	// Set applied status using base ID (executor uses base ID when checking via GetMigrationExecutions)
+	tracker.appliedMigrations[baseMigrationID] = true
 	router, exec := setupTestRouter(reg, tracker)
 
 	// Set up backend and connection for rollback
@@ -998,8 +1081,11 @@ func TestHandler_rollbackMigration_NotApplied(t *testing.T) {
 		DownSQL:    "DROP TABLE test;",
 	}
 	_ = reg.Register(migration)
+	// Use the base migration ID format that executor expects: {version}_{name}_{backend}_{connection}
+	baseMigrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	migrationID := "public_test_20240101120000_test_migration"
-	tracker.appliedMigrations[migrationID] = false
+	// Set applied status to false using base ID (executor uses base ID when checking)
+	tracker.appliedMigrations[baseMigrationID] = false
 	router, exec := setupTestRouter(reg, tracker)
 
 	// Set up backend and connection for rollback

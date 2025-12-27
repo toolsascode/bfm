@@ -184,6 +184,7 @@ message MigrationHistoryItem {
 // RollbackMigrationRequest represents a request to rollback a migration
 message RollbackMigrationRequest {
   string migration_id = 1;   // Required: ID of migration to rollback
+  repeated string schemas = 2; // Optional: Array for dynamic schemas
 }
 
 // RollbackResponse represents the result of a rollback operation
