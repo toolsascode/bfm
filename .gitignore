@@ -101,3 +101,8 @@ dist-ssr
 .env.production
 
 prompt.md
+
+# Swagger/OpenAPI generated files (swag generates these, we only keep openapi.yaml)
+api/internal/api/http/docs.go
+api/internal/api/http/swagger.yaml
+api/internal/api/http/swagger.json

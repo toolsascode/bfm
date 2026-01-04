@@ -302,17 +302,9 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		status = "applied"
 	}
 
-	// Only update status in migrations_list if migration exists (populated from sfm folder)
-	// migrations_list should only be populated via ReindexMigrations() or RegisterScannedMigration()
-	// This UPDATE will affect 0 rows if migration doesn't exist, which is acceptable
-	// The foreign key constraint will prevent history insert if migration doesn't exist in list
-	updateListSQL := fmt.Sprintf(`
-		UPDATE %s
-		SET status = $1,
-		    updated_at = CURRENT_TIMESTAMP
-		WHERE migration_id = $2
-	`, listTableName)
-
+	// Ensure migration exists in migrations_list before inserting history
+	// Use INSERT ... ON CONFLICT DO UPDATE to create if missing, update if exists
+	// This ensures the foreign key constraint is satisfied before inserting into migrations_history
 	listStatus := status
 	if isRollback {
 		listStatus = "rolled_back"
@@ -321,8 +313,36 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		listStatus = "applied"
 	}
 
-	_, err := t.db.ExecContext(ctxVal, updateListSQL, listStatus, baseMigrationID)
-	// Don't error if 0 rows affected - migration might not be in list yet (should be indexed from sfm first)
+	// Extract name from baseMigrationID if needed
+	// Format: {version}_{name}_{backend}_{connection}
+	migrationName := ""
+	baseParts := strings.Split(baseMigrationID, "_")
+	if len(baseParts) >= 4 {
+		// Version is first part, backend is second-to-last, connection is last
+		// Name is everything in between
+		migrationName = strings.Join(baseParts[1:len(baseParts)-2], "_")
+	}
+
+	// Use empty string for schema if not provided (migrations_list allows empty schema)
+	schemaValue := ""
+	if len(schemas) > 0 {
+		schemaValue = schemas[0]
+	}
+
+	upsertListSQL := fmt.Sprintf(`
+		INSERT INTO %s (migration_id, schema, version, name, connection, backend, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (migration_id) DO UPDATE SET
+			status = $7,
+			updated_at = CURRENT_TIMESTAMP
+	`, listTableName)
+
+	_, err := t.db.ExecContext(ctxVal, upsertListSQL,
+		baseMigrationID, schemaValue, migration.Version, migrationName,
+		migration.Connection, migration.Backend, listStatus)
+	if err != nil {
+		return fmt.Errorf("failed to upsert migration in migrations_list: %w", err)
+	}
 
 	// Skip insertion if no schemas specified
 	if len(schemas) == 0 {

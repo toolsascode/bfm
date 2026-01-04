@@ -1,0 +1,631 @@
+basePath: /api/v1
+definitions:
+  dto.DependencyResponse:
+    properties:
+      connection:
+        type: string
+      requires_schema:
+        type: string
+      requires_table:
+        type: string
+      schema:
+        type: string
+      target:
+        type: string
+      target_type:
+        type: string
+    type: object
+  dto.MigrateDownRequest:
+    properties:
+      dry_run:
+        type: boolean
+      ignore_dependencies:
+        type: boolean
+      migration_id:
+        type: string
+      schemas:
+        description: Array for dynamic schemas
+        items:
+          type: string
+        type: array
+    required:
+    - migration_id
+    type: object
+  dto.MigrateResponse:
+    properties:
+      applied:
+        items:
+          type: string
+        type: array
+      errors:
+        items:
+          type: string
+        type: array
+      skipped:
+        items:
+          type: string
+        type: array
+      success:
+        type: boolean
+    type: object
+  dto.MigrateUpRequest:
+    properties:
+      connection:
+        type: string
+      dry_run:
+        type: boolean
+      ignore_dependencies:
+        type: boolean
+      schemas:
+        description: Array for dynamic schemas
+        items:
+          type: string
+        type: array
+      target:
+        $ref: '#/definitions/registry.MigrationTarget'
+    required:
+    - connection
+    type: object
+  dto.MigrationDetailResponse:
+    properties:
+      applied:
+        type: boolean
+      backend:
+        type: string
+      connection:
+        type: string
+      dependencies:
+        description: List of migration names this migration depends on (backward compatibility)
+        items:
+          type: string
+        type: array
+      down_sql:
+        description: Contains SQL for SQL backends or JSON for NoSQL backends
+        type: string
+      migration_id:
+        type: string
+      name:
+        type: string
+      schema:
+        type: string
+      structured_dependencies:
+        description: Structured dependencies with validation requirements
+        items:
+          $ref: '#/definitions/dto.DependencyResponse'
+        type: array
+      table:
+        type: string
+      up_sql:
+        description: Contains SQL for SQL backends or JSON for NoSQL backends
+        type: string
+      version:
+        type: string
+    type: object
+  dto.MigrationListItem:
+    properties:
+      applied:
+        type: boolean
+      applied_at:
+        type: string
+      backend:
+        type: string
+      connection:
+        type: string
+      error_message:
+        type: string
+      migration_id:
+        type: string
+      name:
+        type: string
+      schema:
+        type: string
+      status:
+        type: string
+      table:
+        type: string
+      version:
+        type: string
+    type: object
+  dto.MigrationListResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/dto.MigrationListItem'
+        type: array
+      total:
+        type: integer
+    type: object
+  dto.ReindexResponse:
+    properties:
+      added:
+        items:
+          type: string
+        type: array
+      removed:
+        items:
+          type: string
+        type: array
+      total:
+        type: integer
+      updated:
+        items:
+          type: string
+        type: array
+    type: object
+  dto.RollbackRequest:
+    properties:
+      schemas:
+        description: Array for dynamic schemas
+        items:
+          type: string
+        type: array
+    type: object
+  registry.MigrationTarget:
+    properties:
+      backend:
+        description: Backend type filter
+        type: string
+      connection:
+        description: Connection name filter
+        type: string
+      schema:
+        description: Schema filter (optional)
+        type: string
+      tables:
+        description: Table filters (optional, empty = all)
+        items:
+          type: string
+        type: array
+      version:
+        description: Version filter (optional, empty = latest)
+        type: string
+    type: object
+host: localhost:7070
+info:
+  contact:
+    name: BfM Support
+    url: https://github.com/toolsascode/bfm
+  description: |-
+    BfM is a comprehensive database migration system that supports multiple backends
+    (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
+
+    This API allows you to:
+    - Execute up migrations
+    - Execute down migrations (rollback)
+    - List migrations with filtering
+    - Get migration details and status
+    - View migration history
+    - Check system health
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  title: Backend For Migrations (BfM) API
+  version: 0.3.0
+paths:
+  /health:
+    get:
+      consumes:
+      - application/json
+      description: Checks the health status of the API
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Healthy
+          schema:
+            additionalProperties: true
+            type: object
+        "503":
+          description: Unhealthy
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Health check
+      tags:
+      - health
+  /migrations:
+    get:
+      consumes:
+      - application/json
+      description: Lists all migrations with optional filtering
+      parameters:
+      - description: Schema filter
+        in: query
+        name: schema
+        type: string
+      - description: Table filter
+        in: query
+        name: table
+        type: string
+      - description: Connection filter
+        in: query
+        name: connection
+        type: string
+      - description: Backend filter
+        in: query
+        name: backend
+        type: string
+      - description: Status filter
+        in: query
+        name: status
+        type: string
+      - description: Version filter
+        in: query
+        name: version
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/dto.MigrationListResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: List migrations
+      tags:
+      - migrations
+  /migrations/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Gets detailed information about a specific migration
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/dto.MigrationDetailResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Migration not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get migration details
+      tags:
+      - migrations
+  /migrations/{id}/executions:
+    get:
+      consumes:
+      - application/json
+      description: Gets all execution records for a specific migration
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get migration executions
+      tags:
+      - migrations
+  /migrations/{id}/history:
+    get:
+      consumes:
+      - application/json
+      description: Gets the execution history for a specific migration including rollbacks
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Migration not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get migration history
+      tags:
+      - migrations
+  /migrations/{id}/rollback:
+    post:
+      consumes:
+      - application/json
+      description: Rolls back a specific migration
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Rollback request
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/dto.RollbackRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Migration not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Rollback migration
+      tags:
+      - migrations
+  /migrations/{id}/status:
+    get:
+      consumes:
+      - application/json
+      description: Gets the current status of a specific migration
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get migration status
+      tags:
+      - migrations
+  /migrations/down:
+    post:
+      consumes:
+      - application/json
+      description: Executes down migrations to rollback a specific migration
+      parameters:
+      - description: Rollback request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.MigrateDownRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/dto.MigrateResponse'
+        "206":
+          description: Partial success
+          schema:
+            $ref: '#/definitions/dto.MigrateResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Execute down migrations (rollback)
+      tags:
+      - migrations
+  /migrations/executions/recent:
+    get:
+      consumes:
+      - application/json
+      description: Gets recent execution records across all migrations
+      parameters:
+      - default: 10
+        description: Limit number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get recent executions
+      tags:
+      - migrations
+  /migrations/reindex:
+    post:
+      consumes:
+      - application/json
+      description: Reindexes all migration files and synchronizes with database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/dto.ReindexResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Reindex migrations
+      tags:
+      - migrations
+  /migrations/up:
+    post:
+      consumes:
+      - application/json
+      description: Executes migrations based on the provided target and connection
+      parameters:
+      - description: Migration request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/dto.MigrateUpRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            $ref: '#/definitions/dto.MigrateResponse'
+        "206":
+          description: Partial success
+          schema:
+            $ref: '#/definitions/dto.MigrateResponse'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Execute up migrations
+      tags:
+      - migrations
+securityDefinitions:
+  Bearer:
+    description: 'API token authentication. Include the token in the Authorization
+      header: Authorization: Bearer {BFM_API_TOKEN}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

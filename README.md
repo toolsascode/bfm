@@ -443,7 +443,7 @@ docker run -p 8080:8080 -e SWAGGER_JSON=/openapi.yaml -v $(pwd)/api/internal/api
 #### Migrate Endpoint
 
 ```bash
-POST /api/v1/migrate
+POST /api/v1/migrations/up
 Authorization: Bearer {BFM_API_TOKEN}
 Content-Type: application/json
 
@@ -456,9 +456,9 @@ Content-Type: application/json
     "connection": "core"
   },
   "connection": "core",
-  "schema": "core",
-  "environment": "",
-  "dry_run": false
+  "schemas": ["core"],
+  "dry_run": false,
+  "ignore_dependencies": false
 }
 ```
 
@@ -474,6 +474,82 @@ Response:
 ```
 
 **Note**: For complete API documentation, see the [OpenAPI Specification](#openapi-specification) section above.
+
+#### Ignoring Dependencies
+
+By default, BfM validates and respects migration dependencies, ensuring migrations execute in the correct order. However, you can force execution of a migration regardless of dependencies by setting `ignore_dependencies: true` in your request:
+
+```bash
+POST /api/v1/migrations/up
+Authorization: Bearer {BFM_API_TOKEN}
+Content-Type: application/json
+
+{
+  "target": {
+    "backend": "postgresql",
+    "connection": "core",
+    "version": "20250115120000"
+  },
+  "connection": "core",
+  "schemas": ["core"],
+  "ignore_dependencies": true
+}
+```
+
+When `ignore_dependencies` is `true`:
+- Dependency resolution is skipped
+- Migrations are sorted by version only
+- Dependency validation is bypassed
+- The migration executes immediately, even if dependencies are not satisfied
+
+**Warning**: Use this option with caution, as it can lead to execution errors if required dependencies are not met.
+
+#### Template Variables in Migrations
+
+BfM supports template variable replacement in migration files. Variables are replaced at execution time with actual values. Available variables:
+
+- `{{.Connection}}` - Connection name
+- `{{.Schema}}` - Schema name (uses the schema from the execution context)
+- `{{.Backend}}` - Backend name (e.g., "postgresql", "greptimedb", "etcd")
+- `{{.Version}}` - Migration version (timestamp)
+
+**Example SQL Migration:**
+
+```sql
+-- 20250115120000_create_users.up.sql
+CREATE TABLE {{.Schema}}.users (
+  id SERIAL PRIMARY KEY,
+  connection_name VARCHAR(100) DEFAULT '{{.Connection}}',
+  backend_type VARCHAR(50) DEFAULT '{{.Backend}}',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- If executed with schema "core" and connection "core", this becomes:
+-- CREATE TABLE core.users (
+--   id SERIAL PRIMARY KEY,
+--   connection_name VARCHAR(100) DEFAULT 'core',
+--   backend_type VARCHAR(50) DEFAULT 'postgresql',
+--   created_at TIMESTAMP DEFAULT NOW()
+-- );
+```
+
+**Example JSON Migration (for etcd):**
+
+```json
+[
+  {
+    "operation": "put",
+    "key": "/{{.Connection}}/{{.Schema}}/config",
+    "value": {
+      "backend": "{{.Backend}}",
+      "version": "{{.Version}}",
+      "migrated_at": "2025-01-15T12:00:00Z"
+    }
+  }
+]
+```
+
+Template variables work in both `.up.sql`, `.down.sql`, `.up.json`, and `.down.json` migration files. Variables are replaced using Go's `text/template` package, so you can use all standard template features.
 
 ### Health Check
 

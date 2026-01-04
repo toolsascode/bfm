@@ -431,6 +431,30 @@ test-all: test-api test-frontend ## Run all tests
 	@echo "$(GREEN)All tests complete!$(NC)"
 
 # ============================================================================
+# OpenAPI Specification
+# ============================================================================
+
+OPENAPI_FILE := api/internal/api/http/openapi.yaml
+
+validate-openapi: ## Validate OpenAPI specification
+	@echo "$(GREEN)Validating OpenAPI specification...$(NC)"
+	@if ! command -v openapi-spec-validator &> /dev/null; then \
+		echo "$(YELLOW)openapi-spec-validator not found. Installing...$(NC)"; \
+		pip install openapi-spec-validator || (echo "$(RED)Failed to install openapi-spec-validator. Install manually: pip install openapi-spec-validator$(NC)" && exit 1); \
+	fi
+	@bash scripts/validate-openapi.sh $(OPENAPI_FILE) || (echo "$(RED)OpenAPI validation failed$(NC)" && exit 1)
+	@echo "$(GREEN)OpenAPI specification is valid!$(NC)"
+
+generate-openapi: ## Generate OpenAPI 3.1.1 specification from code annotations
+	@echo "$(GREEN)Generating OpenAPI specification...$(NC)"
+	@if ! command -v swag &> /dev/null; then \
+		echo "$(YELLOW)swag not found. Installing...$(NC)"; \
+		cd api && go install github.com/swaggo/swag/cmd/swag@latest || (echo "$(RED)Failed to install swag. Install manually: go install github.com/swaggo/swag/cmd/swag@latest$(NC)" && exit 1); \
+	fi
+	@bash scripts/generate-openapi.sh || (echo "$(RED)OpenAPI generation failed$(NC)" && exit 1)
+	@echo "$(GREEN)OpenAPI specification generated successfully!$(NC)"
+
+# ============================================================================
 # Pre-commit Hooks
 # ============================================================================
 

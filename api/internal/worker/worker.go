@@ -43,8 +43,8 @@ func (w *Worker) processJob(ctx context.Context, job *queue.Job) (*queue.JobResu
 	// Convert queue.MigrationTarget to registry.MigrationTarget
 	target := convertQueueTarget(job.Target)
 
-	// Execute migration
-	result, err := w.executor.ExecuteSync(ctx, target, job.Connection, job.Schema, job.DryRun)
+	// Execute migration (queue jobs don't support ignore_dependencies yet, use default false)
+	result, err := w.executor.ExecuteSync(ctx, target, job.Connection, job.Schema, job.DryRun, false)
 	if err != nil {
 		return &queue.JobResult{
 			JobID:   job.ID,

@@ -81,10 +81,11 @@ type ReindexResponse struct {
 
 // MigrateUpRequest represents a request to execute up migrations
 type MigrateUpRequest struct {
-	Target     *registry.MigrationTarget `json:"target"`
-	Connection string                    `json:"connection" binding:"required"`
-	Schemas    []string                  `json:"schemas"` // Array for dynamic schemas
-	DryRun     bool                      `json:"dry_run"`
+	Target             *registry.MigrationTarget `json:"target"`
+	Connection         string                    `json:"connection" binding:"required"`
+	Schemas            []string                  `json:"schemas"` // Array for dynamic schemas
+	DryRun             bool                      `json:"dry_run"`
+	IgnoreDependencies bool                      `json:"ignore_dependencies"`
 }
 
 // MigrationExecutionResponse represents an execution record from migrations_executions
@@ -104,7 +105,8 @@ type MigrationExecutionResponse struct {
 
 // MigrateDownRequest represents a request to execute down migrations
 type MigrateDownRequest struct {
-	MigrationID string   `json:"migration_id" binding:"required"`
-	Schemas     []string `json:"schemas"` // Array for dynamic schemas
-	DryRun      bool     `json:"dry_run"`
+	MigrationID        string   `json:"migration_id" binding:"required"`
+	Schemas            []string `json:"schemas"` // Array for dynamic schemas
+	DryRun             bool     `json:"dry_run"`
+	IgnoreDependencies bool     `json:"ignore_dependencies"`
 }

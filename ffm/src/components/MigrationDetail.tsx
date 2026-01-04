@@ -23,6 +23,9 @@ function ConfirmModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   confirmButtonClass = "bg-bfm-green-dark text-white hover:bg-bfm-green",
+  showIgnoreDependencies = false,
+  ignoreDependencies = false,
+  onIgnoreDependenciesChange,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +35,9 @@ function ConfirmModal({
   confirmText?: string;
   cancelText?: string;
   confirmButtonClass?: string;
+  showIgnoreDependencies?: boolean;
+  ignoreDependencies?: boolean;
+  onIgnoreDependenciesChange?: (value: boolean) => void;
 }) {
   if (!isOpen) return null;
 
@@ -41,6 +47,21 @@ function ConfirmModal({
         <div className="p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">{title}</h2>
           <p className="text-gray-600 text-sm mb-6">{message}</p>
+          {showIgnoreDependencies && onIgnoreDependenciesChange && (
+            <div className="mb-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ignoreDependencies}
+                  onChange={(e) => onIgnoreDependenciesChange(e.target.checked)}
+                  className="w-4 h-4 text-bfm-blue border-gray-300 rounded focus:ring-bfm-blue"
+                />
+                <span className="text-sm text-gray-700">
+                  Ignore dependencies
+                </span>
+              </label>
+            </div>
+          )}
           <div className="flex gap-3 justify-end">
             <button
               type="button"
@@ -186,6 +207,9 @@ export default function MigrationDetail() {
     confirmText?: string;
     cancelText?: string;
     confirmButtonClass?: string;
+    showIgnoreDependencies?: boolean;
+    ignoreDependencies?: boolean;
+    onIgnoreDependenciesChange?: (value: boolean) => void;
     onConfirm: () => void;
   } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<{
@@ -203,6 +227,7 @@ export default function MigrationDetail() {
   const [executionsLoading, setExecutionsLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPerPage, setHistoryPerPage] = useState(10);
+  const [ignoreDependencies, setIgnoreDependencies] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -437,6 +462,7 @@ export default function MigrationDetail() {
           version: migration.version,
         },
         schemas: schemaToUse ? [schemaToUse] : [],
+        ignore_dependencies: ignoreDependencies,
       };
 
       const response = await apiClient.migrateUp(migrateRequest);
@@ -479,6 +505,9 @@ export default function MigrationDetail() {
       confirmText: "Execute",
       cancelText: "Cancel",
       confirmButtonClass: "bg-bfm-green-dark text-white hover:bg-bfm-green",
+      showIgnoreDependencies: true,
+      ignoreDependencies: ignoreDependencies,
+      onIgnoreDependenciesChange: setIgnoreDependencies,
       onConfirm: () => {
         setShowConfirmModal(false);
         executeMigration();
@@ -513,6 +542,9 @@ export default function MigrationDetail() {
       confirmText: "Execute",
       cancelText: "Cancel",
       confirmButtonClass: "bg-bfm-green-dark text-white hover:bg-bfm-green",
+      showIgnoreDependencies: true,
+      ignoreDependencies: ignoreDependencies,
+      onIgnoreDependenciesChange: setIgnoreDependencies,
       onConfirm: () => {
         setShowConfirmModal(false);
         executeMigration(value);
@@ -1843,6 +1875,11 @@ export default function MigrationDetail() {
           confirmText={confirmModalConfig.confirmText}
           cancelText={confirmModalConfig.cancelText}
           confirmButtonClass={confirmModalConfig.confirmButtonClass}
+          showIgnoreDependencies={confirmModalConfig.showIgnoreDependencies}
+          ignoreDependencies={confirmModalConfig.ignoreDependencies}
+          onIgnoreDependenciesChange={
+            confirmModalConfig.onIgnoreDependenciesChange
+          }
         />
       )}
     </div>

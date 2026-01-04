@@ -25,9 +25,38 @@ import (
 	"github.com/toolsascode/bfm/api/internal/state"
 	statepg "github.com/toolsascode/bfm/api/internal/state/postgresql"
 
+	_ "github.com/toolsascode/bfm/api/docs"
+
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 )
+
+// @title           Backend For Migrations (BfM) API
+// @version         0.3.0
+// @description     BfM is a comprehensive database migration system that supports multiple backends
+// @description     (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
+// @description
+// @description     This API allows you to:
+// @description     - Execute up migrations
+// @description     - Execute down migrations (rollback)
+// @description     - List migrations with filtering
+// @description     - Get migration details and status
+// @description     - View migration history
+// @description     - Check system health
+//
+// @contact.name   BfM Support
+// @contact.url    https://github.com/toolsascode/bfm
+//
+// @license.name  Apache 2.0
+// @license.url   https://www.apache.org/licenses/LICENSE-2.0.html
+//
+// @host      localhost:7070
+// @BasePath  /api/v1
+//
+// @securityDefinitions.apikey Bearer
+// @in header
+// @name Authorization
+// @description API token authentication. Include the token in the Authorization header: Authorization: Bearer {BFM_API_TOKEN}
 
 func main() {
 	// Load configuration

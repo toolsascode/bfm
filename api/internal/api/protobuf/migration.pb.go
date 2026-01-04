@@ -101,14 +101,15 @@ func (x *MigrationTarget) GetConnection() string {
 
 // MigrateRequest represents a migration request
 type MigrateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Target        *MigrationTarget       `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
-	Connection    string                 `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
-	Schema        string                 `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`                           // Optional
-	SchemaName    string                 `protobuf:"bytes,4,opt,name=schema_name,json=schemaName,proto3" json:"schema_name,omitempty"` // For dynamic schemas
-	DryRun        bool                   `protobuf:"varint,5,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`            // Optional, default false
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Target             *MigrationTarget       `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Connection         string                 `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
+	Schema             string                 `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`                                                    // Optional
+	SchemaName         string                 `protobuf:"bytes,4,opt,name=schema_name,json=schemaName,proto3" json:"schema_name,omitempty"`                          // For dynamic schemas
+	DryRun             bool                   `protobuf:"varint,5,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`                                     // Optional, default false
+	IgnoreDependencies bool                   `protobuf:"varint,6,opt,name=ignore_dependencies,json=ignoreDependencies,proto3" json:"ignore_dependencies,omitempty"` // Optional, default false
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MigrateRequest) Reset() {
@@ -172,6 +173,13 @@ func (x *MigrateRequest) GetSchemaName() string {
 func (x *MigrateRequest) GetDryRun() bool {
 	if x != nil {
 		return x.DryRun
+	}
+	return false
+}
+
+func (x *MigrateRequest) GetIgnoreDependencies() bool {
+	if x != nil {
+		return x.IgnoreDependencies
 	}
 	return false
 }
@@ -316,12 +324,13 @@ func (x *MigrateProgress) GetProgress() int32 {
 
 // MigrateDownRequest represents a request to execute down migrations
 type MigrateDownRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to rollback
-	Schemas       []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                            // Optional: Array for dynamic schemas
-	DryRun        bool                   `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`               // Optional, default false
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId        string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`                       // Required: ID of migration to rollback
+	Schemas            []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                                                  // Optional: Array for dynamic schemas
+	DryRun             bool                   `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`                                     // Optional, default false
+	IgnoreDependencies bool                   `protobuf:"varint,4,opt,name=ignore_dependencies,json=ignoreDependencies,proto3" json:"ignore_dependencies,omitempty"` // Optional, default false
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MigrateDownRequest) Reset() {
@@ -371,6 +380,13 @@ func (x *MigrateDownRequest) GetSchemas() []string {
 func (x *MigrateDownRequest) GetDryRun() bool {
 	if x != nil {
 		return x.DryRun
+	}
+	return false
+}
+
+func (x *MigrateDownRequest) GetIgnoreDependencies() bool {
+	if x != nil {
+		return x.IgnoreDependencies
 	}
 	return false
 }
@@ -1584,7 +1600,7 @@ const file_migration_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x1e\n" +
 	"\n" +
 	"connection\x18\x05 \x01(\tR\n" +
-	"connection\"\xb6\x01\n" +
+	"connection\"\xe7\x01\n" +
 	"\x0eMigrateRequest\x122\n" +
 	"\x06target\x18\x01 \x01(\v2\x1a.migration.MigrationTargetR\x06target\x12\x1e\n" +
 	"\n" +
@@ -1593,7 +1609,8 @@ const file_migration_proto_rawDesc = "" +
 	"\x06schema\x18\x03 \x01(\tR\x06schema\x12\x1f\n" +
 	"\vschema_name\x18\x04 \x01(\tR\n" +
 	"schemaName\x12\x17\n" +
-	"\adry_run\x18\x05 \x01(\bR\x06dryRun\"w\n" +
+	"\adry_run\x18\x05 \x01(\bR\x06dryRun\x12/\n" +
+	"\x13ignore_dependencies\x18\x06 \x01(\bR\x12ignoreDependencies\"w\n" +
 	"\x0fMigrateResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\aapplied\x18\x02 \x03(\tR\aapplied\x12\x18\n" +
@@ -1603,11 +1620,12 @@ const file_migration_proto_rawDesc = "" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1a\n" +
-	"\bprogress\x18\x04 \x01(\x05R\bprogress\"j\n" +
+	"\bprogress\x18\x04 \x01(\x05R\bprogress\"\x9b\x01\n" +
 	"\x12MigrateDownRequest\x12!\n" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x18\n" +
 	"\aschemas\x18\x02 \x03(\tR\aschemas\x12\x17\n" +
-	"\adry_run\x18\x03 \x01(\bR\x06dryRun\"\xb1\x01\n" +
+	"\adry_run\x18\x03 \x01(\bR\x06dryRun\x12/\n" +
+	"\x13ignore_dependencies\x18\x04 \x01(\bR\x12ignoreDependencies\"\xb1\x01\n" +
 	"\x15ListMigrationsRequest\x12\x16\n" +
 	"\x06schema\x18\x01 \x01(\tR\x06schema\x12\x14\n" +
 	"\x05table\x18\x02 \x01(\tR\x05table\x12\x1e\n" +

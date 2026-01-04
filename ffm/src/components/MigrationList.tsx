@@ -34,6 +34,7 @@ export default function MigrationList() {
   const [forceRollback, setForceRollback] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [ignoreDependencies, setIgnoreDependencies] = useState(false);
 
   useEffect(() => {
     loadMigrations();
@@ -390,6 +391,7 @@ export default function MigrationList() {
               connection: migration.connection,
               schemas: [executionSchema.trim()],
               dry_run: false,
+              ignore_dependencies: ignoreDependencies,
             });
 
             if (response.success) {
@@ -589,7 +591,16 @@ export default function MigrationList() {
               {selectedMigrations.size !== 1 ? "s" : ""} selected
             </div>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ignoreDependencies}
+                onChange={(e) => setIgnoreDependencies(e.target.checked)}
+                className="w-4 h-4 text-bfm-blue border-gray-300 rounded focus:ring-bfm-blue"
+              />
+              <span className="text-sm text-white">Ignore dependencies</span>
+            </label>
             <div className="relative flex-1 sm:flex-initial execution-schema-container">
               <div className="relative">
                 <input

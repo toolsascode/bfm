@@ -21,12 +21,14 @@ export interface MigrateUpRequest {
   connection: string;
   schemas?: string[]; // Array for dynamic schemas
   dry_run?: boolean;
+  ignore_dependencies?: boolean;
 }
 
 export interface MigrateDownRequest {
   migration_id: string;
   schemas?: string[]; // Array for dynamic schemas
   dry_run?: boolean;
+  ignore_dependencies?: boolean;
 }
 
 export interface MigrateResponse {

@@ -155,6 +155,19 @@ func (h *Handler) setExecutionContext(c *gin.Context) context.Context {
 }
 
 // migrateUp handles up migration requests
+// @Summary      Execute up migrations
+// @Description  Executes migrations based on the provided target and connection
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        request body dto.MigrateUpRequest true "Migration request"
+// @Success      200 {object} dto.MigrateResponse "Success"
+// @Success      206 {object} dto.MigrateResponse "Partial success"
+// @Failure      400 {object} map[string]interface{} "Bad request"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/up [post]
 func (h *Handler) migrateUp(c *gin.Context) {
 	var req dto.MigrateUpRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -172,6 +185,7 @@ func (h *Handler) migrateUp(c *gin.Context) {
 		req.Connection,
 		req.Schemas,
 		req.DryRun,
+		req.IgnoreDependencies,
 	)
 
 	if err != nil {
@@ -196,6 +210,19 @@ func (h *Handler) migrateUp(c *gin.Context) {
 }
 
 // migrateDown handles down migration requests
+// @Summary      Execute down migrations (rollback)
+// @Description  Executes down migrations to rollback a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        request body dto.MigrateDownRequest true "Rollback request"
+// @Success      200 {object} dto.MigrateResponse "Success"
+// @Success      206 {object} dto.MigrateResponse "Partial success"
+// @Failure      400 {object} map[string]interface{} "Bad request"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/down [post]
 func (h *Handler) migrateDown(c *gin.Context) {
 	var req dto.MigrateDownRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -212,6 +239,7 @@ func (h *Handler) migrateDown(c *gin.Context) {
 		req.MigrationID,
 		req.Schemas,
 		req.DryRun,
+		req.IgnoreDependencies,
 	)
 
 	if err != nil {
@@ -236,6 +264,23 @@ func (h *Handler) migrateDown(c *gin.Context) {
 }
 
 // listMigrations lists all migrations with their status
+// @Summary      List migrations
+// @Description  Lists all migrations with optional filtering
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        schema query string false "Schema filter"
+// @Param        table query string false "Table filter"
+// @Param        connection query string false "Connection filter"
+// @Param        backend query string false "Backend filter"
+// @Param        status query string false "Status filter"
+// @Param        version query string false "Version filter"
+// @Success      200 {object} dto.MigrationListResponse "Success"
+// @Failure      400 {object} map[string]interface{} "Bad request"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations [get]
 func (h *Handler) listMigrations(c *gin.Context) {
 	var filters dto.MigrationListFilters
 	if err := c.ShouldBindQuery(&filters); err != nil {
@@ -287,6 +332,18 @@ func (h *Handler) listMigrations(c *gin.Context) {
 }
 
 // getMigration gets a specific migration by ID
+// @Summary      Get migration details
+// @Description  Gets detailed information about a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Success      200 {object} dto.MigrationDetailResponse "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      404 {object} map[string]interface{} "Migration not found"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id} [get]
 func (h *Handler) getMigration(c *gin.Context) {
 	migrationID := c.Param("id")
 
@@ -433,6 +490,17 @@ func (h *Handler) getMigration(c *gin.Context) {
 }
 
 // getMigrationStatus gets the status of a specific migration
+// @Summary      Get migration status
+// @Description  Gets the current status of a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/status [get]
 func (h *Handler) getMigrationStatus(c *gin.Context) {
 	migrationID := c.Param("id")
 
@@ -539,6 +607,18 @@ func (h *Handler) getMigrationStatus(c *gin.Context) {
 }
 
 // getMigrationHistory gets the execution history for a specific migration (including rollbacks)
+// @Summary      Get migration history
+// @Description  Gets the execution history for a specific migration including rollbacks
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      404 {object} map[string]interface{} "Migration not found"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/history [get]
 func (h *Handler) getMigrationHistory(c *gin.Context) {
 	migrationID := c.Param("id")
 
@@ -610,6 +690,17 @@ func (h *Handler) getMigrationHistory(c *gin.Context) {
 }
 
 // getMigrationExecutions gets all execution records for a specific migration
+// @Summary      Get migration executions
+// @Description  Gets all execution records for a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/executions [get]
 func (h *Handler) getMigrationExecutions(c *gin.Context) {
 	migrationID := c.Param("id")
 
@@ -645,6 +736,17 @@ func (h *Handler) getMigrationExecutions(c *gin.Context) {
 }
 
 // getRecentExecutions gets recent execution records across all migrations
+// @Summary      Get recent executions
+// @Description  Gets recent execution records across all migrations
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        limit query int false "Limit number of results" default(10)
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/executions/recent [get]
 func (h *Handler) getRecentExecutions(c *gin.Context) {
 	limit := 10 // Default limit
 	if limitParam := c.Query("limit"); limitParam != "" {
@@ -684,6 +786,20 @@ func (h *Handler) getRecentExecutions(c *gin.Context) {
 }
 
 // rollbackMigration rolls back a specific migration
+// @Summary      Rollback migration
+// @Description  Rolls back a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Param        request body dto.RollbackRequest false "Rollback request"
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      400 {object} map[string]interface{} "Bad request"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      404 {object} map[string]interface{} "Migration not found"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/rollback [post]
 func (h *Handler) rollbackMigration(c *gin.Context) {
 	migrationID := c.Param("id")
 
@@ -733,6 +849,14 @@ func (h *Handler) rollbackMigration(c *gin.Context) {
 }
 
 // Health handles health check requests
+// @Summary      Health check
+// @Description  Checks the health status of the API
+// @Tags         health
+// @Accept       json
+// @Produce      json
+// @Success      200 {object} map[string]interface{} "Healthy"
+// @Success      503 {object} map[string]interface{} "Unhealthy"
+// @Router       /health [get]
 func (h *Handler) Health(c *gin.Context) {
 	// Check state tracker health
 	healthStatus := gin.H{
@@ -757,6 +881,16 @@ func (h *Handler) Health(c *gin.Context) {
 }
 
 // reindexMigrations reindexes all migration files and synchronizes with database
+// @Summary      Reindex migrations
+// @Description  Reindexes all migration files and synchronizes with database
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Success      200 {object} dto.ReindexResponse "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/reindex [post]
 func (h *Handler) reindexMigrations(c *gin.Context) {
 	// Get SFM path from environment variable
 	sfmPath := os.Getenv("BFM_SFM_PATH")
@@ -781,7 +915,7 @@ func (h *Handler) reindexMigrations(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-//go:embed openapi.yaml
+//go:embed swagger.yaml
 var openAPISpecYAML []byte
 
 // OpenAPISpec serves the OpenAPI specification in YAML format

@@ -380,7 +380,7 @@ func TestNewHandler(t *testing.T) {
 	if handler == nil {
 		t.Fatal("NewHandler() returned nil")
 	}
-	if handler.executor != exec {
+	if handler.executor != exec { //nolint:SA5011 // t.Fatal exits the test, so handler is not nil after this point
 		t.Error("NewHandler() executor mismatch")
 	}
 }
@@ -1323,9 +1323,13 @@ func TestHandler_OpenAPISpecJSON(t *testing.T) {
 		t.Fatalf("Failed to unmarshal JSON response: %v", err)
 	}
 
-	// Verify it's a valid OpenAPI spec structure
+	// Verify it's a valid OpenAPI/Swagger spec structure
+	// Swag generates Swagger 2.0 format (uses "swagger" field)
+	// OpenAPI 3.x format uses "openapi" field
 	if _, ok := response["openapi"]; !ok {
-		t.Error("Expected 'openapi' field in response")
+		if _, ok := response["swagger"]; !ok {
+			t.Error("Expected 'openapi' or 'swagger' field in response")
+		}
 	}
 }
 

@@ -621,17 +621,17 @@ func TestExecutor_ExecuteSync_NoMigrations(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
 	if result == nil {
 		t.Fatal("ExecuteSync() returned nil result")
 	}
-	if !result.Success {
+	if !result.Success { //nolint:SA5011 // t.Fatal exits the test, so result is not nil after this point
 		t.Error("ExecuteSync() should return success for no migrations")
 	}
-	if len(result.Applied) != 0 {
+	if len(result.Applied) != 0 { //nolint:SA5011 // t.Fatal exits the test, so result is not nil after this point
 		t.Errorf("Expected 0 applied migrations, got %v", len(result.Applied))
 	}
 }
@@ -669,14 +669,14 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
 	if result == nil {
 		t.Fatal("ExecuteSync() returned nil result")
 	}
-	if len(result.Skipped) != 1 {
+	if len(result.Skipped) != 1 { //nolint:SA5011 // t.Fatal exits the test, so result is not nil after this point
 		t.Errorf("Expected 1 skipped migration, got %v", len(result.Skipped))
 	}
 	if backend.executeCalled {
@@ -714,14 +714,14 @@ func TestExecutor_ExecuteSync_DryRun(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
 	if result == nil {
 		t.Fatal("ExecuteSync() returned nil result")
 	}
-	if len(result.Applied) != 1 {
+	if len(result.Applied) != 1 { //nolint:SA5011 // t.Fatal exits the test, so result is not nil after this point
 		t.Errorf("Expected 1 applied migration (dry-run), got %v", len(result.Applied))
 	}
 	if backend.executeCalled {
@@ -757,7 +757,7 @@ func TestExecutor_ExecuteSync_BackendNotFound(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err == nil {
 		t.Error("ExecuteSync() expected error for missing backend")
 		return
@@ -787,7 +787,7 @@ func TestExecutor_ExecuteSync_ConnectionNotFound(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	_, err := exec.ExecuteSync(context.Background(), target, "nonexistent", "", false)
+	_, err := exec.ExecuteSync(context.Background(), target, "nonexistent", "", false, false)
 	if err == nil {
 		t.Error("ExecuteSync() expected error for missing connection")
 		return
@@ -807,7 +807,7 @@ func TestExecutor_ExecuteUp(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteUp(context.Background(), target, "test", []string{}, false)
+	result, err := exec.ExecuteUp(context.Background(), target, "test", []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteUp() error = %v", err)
 	}
@@ -829,7 +829,7 @@ func TestExecutor_ExecuteUp_WithSchemas(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteUp(context.Background(), target, "test", []string{"schema1", "schema2"}, false)
+	result, err := exec.ExecuteUp(context.Background(), target, "test", []string{"schema1", "schema2"}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteUp() error = %v", err)
 	}
@@ -843,7 +843,7 @@ func TestExecutor_ExecuteDown_MigrationNotFound(t *testing.T) {
 	tracker := newMockStateTracker()
 	exec := NewExecutor(reg, tracker)
 
-	_, err := exec.ExecuteDown(context.Background(), "nonexistent", []string{}, false)
+	_, err := exec.ExecuteDown(context.Background(), "nonexistent", []string{}, false, false)
 	if err == nil {
 		t.Error("ExecuteDown() expected error for missing migration")
 	}
@@ -881,7 +881,7 @@ func TestExecutor_ExecuteDown_NotApplied(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	// Migration is not applied
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -922,7 +922,7 @@ func TestExecutor_ExecuteDown_Successful(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -971,7 +971,7 @@ func TestExecutor_ExecuteDown_WithSchemas(t *testing.T) {
 	tracker.appliedMigrations["schema1_"+baseID] = true
 	tracker.appliedMigrations["schema2_"+baseID] = true
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{"schema1", "schema2"}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{"schema1", "schema2"}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -1012,7 +1012,7 @@ func TestExecutor_ExecuteDown_NoDownSQL(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -1054,7 +1054,7 @@ func TestExecutor_ExecuteDown_ExecutionError(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -1098,7 +1098,7 @@ func TestExecutor_ExecuteDown_CheckStatusError(t *testing.T) {
 
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -1407,7 +1407,7 @@ func TestExecutor_SetQueue(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.Execute(context.Background(), target, "test", "", false)
+	result, err := exec.Execute(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)
 	}
@@ -1432,7 +1432,7 @@ func TestExecutor_Execute_WithoutQueue(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.Execute(context.Background(), target, "test", "", false)
+	result, err := exec.Execute(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)
 	}
@@ -1474,7 +1474,7 @@ func TestExecutor_Execute_QueueError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	_, err := exec.Execute(context.Background(), target, "test", "", false)
+	_, err := exec.Execute(context.Background(), target, "test", "", false, false)
 	if err == nil {
 		t.Error("Execute() expected error when queue publish fails")
 	}
@@ -1614,7 +1614,7 @@ func TestExecutor_ExecuteSync_WithError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -1660,7 +1660,7 @@ func TestExecutor_ExecuteSync_BackendConnectError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err == nil {
 		t.Error("ExecuteSync() expected error for connection failure")
 	}
@@ -1769,7 +1769,7 @@ func TestExecutor_ExecuteSync_RecordMigrationError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -1811,7 +1811,7 @@ func TestExecutor_ExecuteDown_RecordMigrationError(t *testing.T) {
 	migrationID := fmt.Sprintf("%s_%s_%s_%s", migration.Version, migration.Name, migration.Backend, migration.Connection)
 	tracker.appliedMigrations[migrationID] = true
 
-	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false)
+	result, err := exec.ExecuteDown(context.Background(), migrationID, []string{}, false, false)
 	if err != nil {
 		t.Errorf("ExecuteDown() error = %v", err)
 	}
@@ -1847,7 +1847,7 @@ func TestConvertTarget(t *testing.T) {
 		Connection: "test",
 	}
 
-	result, err := exec.Execute(context.Background(), target, "test", "", false)
+	result, err := exec.Execute(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)
 	}
@@ -1889,7 +1889,7 @@ func TestConvertTarget_Nil(t *testing.T) {
 	}
 	_ = exec.SetConnections(connections)
 
-	result, err := exec.Execute(context.Background(), nil, "test", "", false)
+	result, err := exec.Execute(context.Background(), nil, "test", "", false, false)
 	if err != nil {
 		t.Errorf("Execute() error = %v", err)
 	}
@@ -1943,7 +1943,7 @@ func TestExecutor_ExecuteSync_FindByTargetError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	_, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err == nil {
 		t.Error("ExecuteSync() expected error when FindByTarget fails")
 	}
@@ -1983,7 +1983,7 @@ func TestExecutor_ExecuteSync_IsMigrationAppliedError(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2034,7 +2034,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2076,7 +2076,7 @@ func TestExecutor_ExecuteSync_WithSchema(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "custom_schema", true)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "custom_schema", true, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2140,7 +2140,7 @@ func TestExecutor_ExecuteSync_WithStructuredDependencies(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2203,7 +2203,7 @@ func TestExecutor_ExecuteSync_WithSimpleDependencies(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2247,7 +2247,7 @@ func TestExecutor_ExecuteSync_MigrationWithSchema(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", true, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}
@@ -2301,7 +2301,7 @@ func TestExecutor_ExecuteSync_CircularDependency(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	// Should detect circular dependency and add error to result
 	if err == nil && result != nil {
 		if len(result.Errors) == 0 {
@@ -2342,7 +2342,7 @@ func TestExecutor_ExecuteSync_MissingDependency(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	// Should handle missing dependency gracefully
 	if err == nil && result != nil {
 		if len(result.Errors) == 0 {
@@ -2403,7 +2403,7 @@ func TestExecutor_ExecuteSync_BothDependencyTypes(t *testing.T) {
 		Backend:    "postgresql",
 	}
 
-	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false)
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
 	if err != nil {
 		t.Errorf("ExecuteSync() error = %v", err)
 	}

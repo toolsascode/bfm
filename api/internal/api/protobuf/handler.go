@@ -53,7 +53,7 @@ func (s *Server) Migrate(ctx context.Context, req *MigrateRequest) (*MigrateResp
 	}
 
 	// Execute migrations
-	result, err := s.executor.Execute(ctx, target, req.Connection, schema, req.DryRun)
+	result, err := s.executor.Execute(ctx, target, req.Connection, schema, req.DryRun, req.IgnoreDependencies)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to execute migrations: %v", err)
 	}
@@ -220,7 +220,7 @@ func (s *Server) MigrateDown(ctx context.Context, req *MigrateDownRequest) (*Mig
 	}
 
 	// Execute down migrations
-	result, err := s.executor.ExecuteDown(ctx, req.MigrationId, schemas, req.DryRun)
+	result, err := s.executor.ExecuteDown(ctx, req.MigrationId, schemas, req.DryRun, req.IgnoreDependencies)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to execute down migrations: %v", err)
 	}

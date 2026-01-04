@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/toolsascode/bfm/api/internal/backends"
@@ -127,13 +129,13 @@ func (e *Executor) GetConnectionConfig(name string) (*backends.ConnectionConfig,
 }
 
 // ExecuteSync executes migrations synchronously (bypasses queue, used by worker)
-func (e *Executor) ExecuteSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
-	return e.executeSync(ctx, target, connectionName, schemaName, dryRun)
+func (e *Executor) ExecuteSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
+	return e.executeSync(ctx, target, connectionName, schemaName, dryRun, ignoreDependencies)
 }
 
 // Execute executes migrations based on a target specification
 // If queue is configured, it will queue the job instead of executing directly
-func (e *Executor) Execute(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
+func (e *Executor) Execute(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	// If queue is enabled, queue the job instead of executing
 	e.mu.Lock()
 	hasQueue := e.queue != nil
@@ -144,7 +146,7 @@ func (e *Executor) Execute(ctx context.Context, target *registry.MigrationTarget
 	}
 
 	// Otherwise, execute synchronously
-	return e.executeSync(ctx, target, connectionName, schemaName, dryRun)
+	return e.executeSync(ctx, target, connectionName, schemaName, dryRun, ignoreDependencies)
 }
 
 // queueJob queues a migration job for async execution
@@ -435,7 +437,7 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 }
 
 // executeSync executes migrations synchronously
-func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool) (*ExecuteResult, error) {
+func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
 	migrations, err := e.registry.FindByTarget(target)
 	if err != nil {
@@ -457,61 +459,75 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		logger.Debug("  - %s_%s (connection=%s, schema=%s)", m.Version, m.Name, m.Connection, m.Schema)
 	}
 
-	// If any of the selected migrations declares structured dependencies, expand the set
-	// with any pending dependency migrations (including cross-connection) so that
-	// dependencies are executed automatically ahead of dependents.
-	migrations, err = e.expandWithPendingDependencies(ctx, migrations)
-	if err != nil {
-		return nil, fmt.Errorf("failed to expand migrations with dependencies: %w", err)
-	}
-
-	// Get backend for the target connection (needed for validation)
-	connectionConfig, err := e.getConnectionConfig(connectionName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get connection config: %w", err)
-	}
-
-	targetBackend, ok := e.backends[connectionConfig.Backend]
-	if !ok {
-		return nil, fmt.Errorf("backend %s not registered", connectionConfig.Backend)
-	}
-
-	// Sort migrations topologically based on dependencies
-	// Use DependencyResolver for structured dependencies, fall back to simple topologicalSort for backward compatibility
-	sortedMigrations, err := e.resolveDependencies(migrations)
-	if err != nil {
-		// If dependency resolution fails, fall back to version-based sort and report error
-		logger.Warnf("Dependency resolution failed: %v, falling back to version-based sort", err)
+	// Expand with pending dependencies (unless ignore_dependencies is true)
+	var sortedMigrations []*backends.MigrationScript
+	var dependencyResolutionError error
+	if ignoreDependencies {
+		// Skip dependency expansion and validation, just sort by version
 		sort.Slice(migrations, func(i, j int) bool {
 			return migrations[i].Version < migrations[j].Version
 		})
 		sortedMigrations = migrations
-		// Add error to result but continue execution
-	}
+		logger.Infof("Ignoring dependencies: sorting migrations by version only")
+	} else {
+		// If any of the selected migrations declares structured dependencies, expand the set
+		// with any pending dependency migrations (including cross-connection) so that
+		// dependencies are executed automatically ahead of dependents.
+		migrations, err = e.expandWithPendingDependencies(ctx, migrations)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand migrations with dependencies: %w", err)
+		}
 
-	// Ensure target backend is connected (for validation)
-	if err := targetBackend.Connect(connectionConfig); err != nil {
-		return nil, fmt.Errorf("failed to connect to backend: %w", err)
-	}
-	defer func() { _ = targetBackend.Close() }()
+		// Get backend for the target connection (needed for validation)
+		connectionConfig, err := e.getConnectionConfig(connectionName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get connection config: %w", err)
+		}
 
-	// Validate dependencies after sorting (for PostgreSQL backend)
-	// Pass the sorted execution set so validator knows which migrations will be executed
-	// Only validate migrations that belong to the target connection
-	if connectionConfig.Backend == "postgresql" {
-		pgBackend, ok := targetBackend.(*postgresql.Backend)
-		if ok {
-			validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
-			for _, migration := range sortedMigrations {
-				// Only validate migrations for the target connection
-				if migration.Connection == connectionName {
-					validationErrors := validator.ValidateDependenciesWithExecutionSet(ctx, migration, schemaName, sortedMigrations)
-					if len(validationErrors) > 0 {
-						var errorMsgs []string
-						for _, err := range validationErrors {
-							errorMsgs = append(errorMsgs, err.Error())
+		targetBackend, ok := e.backends[connectionConfig.Backend]
+		if !ok {
+			return nil, fmt.Errorf("backend %s not registered", connectionConfig.Backend)
+		}
+
+		// Sort migrations topologically based on dependencies
+		// Use DependencyResolver for structured dependencies, fall back to simple topologicalSort for backward compatibility
+		var depErr error
+		sortedMigrations, depErr = e.resolveDependencies(migrations)
+		if depErr != nil {
+			// If dependency resolution fails, fall back to version-based sort and report error
+			logger.Warnf("Dependency resolution failed: %v, falling back to version-based sort", depErr)
+			sort.Slice(migrations, func(i, j int) bool {
+				return migrations[i].Version < migrations[j].Version
+			})
+			sortedMigrations = migrations
+			dependencyResolutionError = depErr
+			// Add error to result but continue execution
+		}
+
+		// Ensure target backend is connected (for validation)
+		if err := targetBackend.Connect(connectionConfig); err != nil {
+			return nil, fmt.Errorf("failed to connect to backend: %w", err)
+		}
+		defer func() { _ = targetBackend.Close() }()
+
+		// Validate dependencies after sorting (for PostgreSQL backend)
+		// Pass the sorted execution set so validator knows which migrations will be executed
+		// Only validate migrations that belong to the target connection
+		if connectionConfig.Backend == "postgresql" {
+			pgBackend, ok := targetBackend.(*postgresql.Backend)
+			if ok {
+				validator := postgresql.NewDependencyValidator(pgBackend, e.stateTracker, e.registry)
+				for _, migration := range sortedMigrations {
+					// Only validate migrations for the target connection
+					if migration.Connection == connectionName {
+						validationErrors := validator.ValidateDependenciesWithExecutionSet(ctx, migration, schemaName, sortedMigrations)
+						if len(validationErrors) > 0 {
+							var errorMsgs []string
+							for _, err := range validationErrors {
+								errorMsgs = append(errorMsgs, err.Error())
+							}
+							return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
 						}
-						return nil, fmt.Errorf("dependency validation failed: %s", strings.Join(errorMsgs, "; "))
 					}
 				}
 			}
@@ -533,8 +549,8 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 	}
 
 	// If dependency resolution had errors, add them to result
-	if err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", err))
+	if dependencyResolutionError != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", dependencyResolutionError))
 	}
 
 	// Process each migration
@@ -627,6 +643,23 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			continue
 		}
 
+		// Apply template variable replacement
+		upSQL, err := replaceTemplateVariables(migration.UpSQL, migration, schema)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in UpSQL: %v", migrationID, err))
+			continue
+		}
+
+		downSQL := migration.DownSQL
+		if downSQL != "" {
+			var err error
+			downSQL, err = replaceTemplateVariables(migration.DownSQL, migration, schema)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in DownSQL: %v", migrationID, err))
+				continue
+			}
+		}
+
 		// Convert executor.MigrationScript to backends.MigrationScript
 		// Use provided schema instead of migration.Schema for dynamic schemas
 		backendMigration := &backends.MigrationScript{
@@ -635,8 +668,8 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			Name:       migration.Name,
 			Connection: migration.Connection,
 			Backend:    migration.Backend,
-			UpSQL:      migration.UpSQL,
-			DownSQL:    migration.DownSQL,
+			UpSQL:      upSQL,
+			DownSQL:    downSQL,
 		}
 
 		// Execute the migration using its own backend
@@ -999,7 +1032,7 @@ func (e *Executor) IsMigrationApplied(ctx context.Context, migrationID string) (
 }
 
 // ExecuteUp executes up migrations for the given schemas
-func (e *Executor) ExecuteUp(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemas []string, dryRun bool) (*ExecuteResult, error) {
+func (e *Executor) ExecuteUp(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemas []string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	result := &ExecuteResult{
 		Applied: []string{},
 		Skipped: []string{},
@@ -1013,7 +1046,7 @@ func (e *Executor) ExecuteUp(ctx context.Context, target *registry.MigrationTarg
 
 	// Execute for each schema
 	for _, schema := range schemas {
-		schemaResult, err := e.executeSync(ctx, target, connectionName, schema, dryRun)
+		schemaResult, err := e.executeSync(ctx, target, connectionName, schema, dryRun, ignoreDependencies)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: %v", schema, err))
 			continue
@@ -1029,7 +1062,7 @@ func (e *Executor) ExecuteUp(ctx context.Context, target *registry.MigrationTarg
 }
 
 // ExecuteDown executes down migrations for the given schemas
-func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas []string, dryRun bool) (*ExecuteResult, error) {
+func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas []string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	result := &ExecuteResult{
 		Applied: []string{},
 		Skipped: []string{},
@@ -1095,6 +1128,24 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 			continue
 		}
 
+		// Apply template variable replacement to down SQL
+		downSQL, err := replaceTemplateVariables(migration.DownSQL, migration, schema)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to replace template variables in DownSQL: %v", schema, err))
+			continue
+		}
+
+		// Apply template variable replacement to up SQL (used as DownSQL in rollback)
+		upSQL := migration.UpSQL
+		if upSQL != "" {
+			var err error
+			upSQL, err = replaceTemplateVariables(migration.UpSQL, migration, schema)
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("schema %s: failed to replace template variables in UpSQL: %v", schema, err))
+				continue
+			}
+		}
+
 		// Create a down migration script with schema
 		downMigration := &backends.MigrationScript{
 			Schema:     schema,
@@ -1102,8 +1153,8 @@ func (e *Executor) ExecuteDown(ctx context.Context, migrationID string, schemas 
 			Name:       migration.Name + "_down",
 			Connection: migration.Connection,
 			Backend:    migration.Backend,
-			UpSQL:      migration.DownSQL, // Use DownSQL as UpSQL for down migration
-			DownSQL:    migration.UpSQL,   // Use UpSQL as DownSQL
+			UpSQL:      downSQL, // Use DownSQL as UpSQL for down migration
+			DownSQL:    upSQL,   // Use UpSQL as DownSQL
 		}
 
 		err = backend.ExecuteMigration(ctx, downMigration)
@@ -1373,6 +1424,38 @@ type ExecuteResult struct {
 	Errors  []string
 	Queued  bool   // Whether the job was queued instead of executed
 	JobID   string // Job ID if queued
+}
+
+// replaceTemplateVariables replaces template variables in SQL/JSON content
+// Variables: {{.Connection}}, {{.Schema}}, {{.Backend}}, {{.Version}}
+func replaceTemplateVariables(content string, migration *backends.MigrationScript, schema string) (string, error) {
+	// Determine schema to use
+	schemaToUse := schema
+	if schemaToUse == "" {
+		schemaToUse = migration.Schema
+	}
+
+	// Create template data
+	data := map[string]string{
+		"Connection": migration.Connection,
+		"Schema":     schemaToUse,
+		"Backend":    migration.Backend,
+		"Version":    migration.Version,
+	}
+
+	// Parse template
+	tmpl, err := template.New("migration").Parse(content)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	// Execute template
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }
 
 // getMigrationID generates a unique migration ID
