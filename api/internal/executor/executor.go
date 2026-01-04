@@ -1428,6 +1428,7 @@ type ExecuteResult struct {
 
 // replaceTemplateVariables replaces template variables in SQL/JSON content
 // Variables: {{.Connection}}, {{.Schema}}, {{.Backend}}, {{.Version}}
+// Note: Variable names are case-insensitive (e.g., {{.connection}} == {{.Connection}})
 func replaceTemplateVariables(content string, migration *backends.MigrationScript, schema string) (string, error) {
 	// Determine schema to use
 	schemaToUse := schema
@@ -1435,7 +1436,7 @@ func replaceTemplateVariables(content string, migration *backends.MigrationScrip
 		schemaToUse = migration.Schema
 	}
 
-	// Create template data
+	// Create template data (using canonical case)
 	data := map[string]string{
 		"Connection": migration.Connection,
 		"Schema":     schemaToUse,
@@ -1443,8 +1444,12 @@ func replaceTemplateVariables(content string, migration *backends.MigrationScrip
 		"Version":    migration.Version,
 	}
 
+	// Normalize template variables to canonical case (first letter uppercase, rest lowercase)
+	// This makes the template variables case-insensitive
+	normalizedContent := normalizeTemplateVariables(content)
+
 	// Parse template
-	tmpl, err := template.New("migration").Parse(content)
+	tmpl, err := template.New("migration").Parse(normalizedContent)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
@@ -1456,6 +1461,35 @@ func replaceTemplateVariables(content string, migration *backends.MigrationScrip
 	}
 
 	return buf.String(), nil
+}
+
+// normalizeTemplateVariables normalizes template variable names to canonical case
+// Converts {{.variable}} -> {{.Variable}}, {{.VARIABLE}} -> {{.Variable}}, etc.
+func normalizeTemplateVariables(content string) string {
+	// Map of lowercase variable names to canonical names
+	canonicalVars := map[string]string{
+		"connection": "Connection",
+		"schema":     "Schema",
+		"backend":    "Backend",
+		"version":    "Version",
+	}
+
+	// Regex to match template variables: {{.VariableName}}
+	re := regexp.MustCompile(`\{\{\.([A-Za-z][A-Za-z0-9_]*)\}\}`)
+
+	return re.ReplaceAllStringFunc(content, func(match string) string {
+		// Extract the variable name (remove {{. and }})
+		varName := match[3 : len(match)-2]
+
+		// Convert to lowercase to look up canonical name
+		lowerVarName := strings.ToLower(varName)
+		if canonicalName, exists := canonicalVars[lowerVarName]; exists {
+			return "{{." + canonicalName + "}}"
+		}
+
+		// If not in our canonical list, return as-is
+		return match
+	})
 }
 
 // getMigrationID generates a unique migration ID
