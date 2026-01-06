@@ -2,7 +2,6 @@ package postgresql
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,34 +9,43 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/toolsascode/bfm/api/internal/backends"
 	"github.com/toolsascode/bfm/api/internal/state"
 )
 
 // Tracker implements StateTracker for PostgreSQL
 type Tracker struct {
-	db     *sql.DB
+	pool   *pgxpool.Pool
 	schema string
 }
 
 // NewTracker creates a new PostgreSQL state tracker
 func NewTracker(connStr string, schema string) (*Tracker, error) {
-	db, err := sql.Open("postgres", connStr)
+	// Parse connection config
+	poolConfig, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, fmt.Errorf("failed to parse PostgreSQL connection string: %w", err)
 	}
 
 	// Configure connection pool settings
-	configureConnectionPool(db)
+	configureConnectionPool(poolConfig)
+
+	// Create connection pool
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PostgreSQL connection pool: %w", err)
+	}
 
 	tracker := &Tracker{
-		db:     db,
+		pool:   pool,
 		schema: schema,
 	}
 
 	// Initialize the tracker (create table if needed)
 	if err := tracker.Initialize(context.Background()); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("failed to initialize tracker: %w", err)
 	}
 
@@ -51,7 +59,7 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 	// Ensure schema exists
 	if t.schema != "" && t.schema != "public" {
 		schemaQuery := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", quoteIdentifier(t.schema))
-		if _, err := t.db.ExecContext(ctxVal, schemaQuery); err != nil {
+		if _, err := t.pool.Exec(ctxVal, schemaQuery); err != nil {
 			return fmt.Errorf("failed to create schema: %w", err)
 		}
 	}
@@ -80,7 +88,7 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 		)
 	`, listTableName)
 
-	if _, err := t.db.ExecContext(ctxVal, createListTableSQL); err != nil {
+	if _, err := t.pool.Exec(ctxVal, createListTableSQL); err != nil {
 		return fmt.Errorf("failed to create migrations_list table: %w", err)
 	}
 
@@ -88,13 +96,13 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 	// Note: migration_id is PRIMARY KEY so already indexed, but explicit index is kept for consistency
 	// All tables with migration_id column must have an index on it for performance and foreign key constraints
 	indexSQL1 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_migration_id ON %s (migration_id)", listTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL1)
+	_, _ = t.pool.Exec(ctxVal, indexSQL1)
 
 	indexSQL2 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_connection_backend ON %s (connection, backend)", listTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL2)
+	_, _ = t.pool.Exec(ctxVal, indexSQL2)
 
 	indexSQL3 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_list_status ON %s (status)", listTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL3)
+	_, _ = t.pool.Exec(ctxVal, indexSQL3)
 
 	// Create migrations_history table
 	historyTableName := "migrations_history"
@@ -121,20 +129,20 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 		)
 	`, historyTableName, listTableName)
 
-	if _, err := t.db.ExecContext(ctxVal, createHistoryTableSQL); err != nil {
+	if _, err := t.pool.Exec(ctxVal, createHistoryTableSQL); err != nil {
 		return fmt.Errorf("failed to create migrations_history table: %w", err)
 	}
 
 	// Create indexes for migrations_history
 	// Index on migration_id is required for foreign key performance and to avoid using migration names that don't exist in migrations_list
 	indexSQL4 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_migration_id ON %s (migration_id)", historyTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL4)
+	_, _ = t.pool.Exec(ctxVal, indexSQL4)
 
 	indexSQL5 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_applied_at ON %s (applied_at DESC)", historyTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL5)
+	_, _ = t.pool.Exec(ctxVal, indexSQL5)
 
 	indexSQL6 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_history_status ON %s (status)", historyTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL6)
+	_, _ = t.pool.Exec(ctxVal, indexSQL6)
 
 	// Create migrations_executions table
 	executionsTableName := "migrations_executions"
@@ -161,20 +169,20 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 		)
 	`, executionsTableName, listTableName)
 
-	if _, err := t.db.ExecContext(ctxVal, createExecutionsTableSQL); err != nil {
+	if _, err := t.pool.Exec(ctxVal, createExecutionsTableSQL); err != nil {
 		return fmt.Errorf("failed to create migrations_executions table: %w", err)
 	}
 
 	// Create indexes for migrations_executions
 	// Index on migration_id is required for foreign key performance and to avoid using migration names that don't exist in migrations_list
 	indexSQL7 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_executions_migration_id ON %s (migration_id)", executionsTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL7)
+	_, _ = t.pool.Exec(ctxVal, indexSQL7)
 
 	indexSQL8 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_executions_status ON %s (status)", executionsTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL8)
+	_, _ = t.pool.Exec(ctxVal, indexSQL8)
 
 	indexSQL9 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_executions_created_at ON %s (created_at DESC)", executionsTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL9)
+	_, _ = t.pool.Exec(ctxVal, indexSQL9)
 
 	// Create migrations_dependencies table
 	dependenciesTableName := "migrations_dependencies"
@@ -199,17 +207,17 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 		)
 	`, dependenciesTableName, listTableName, listTableName)
 
-	if _, err := t.db.ExecContext(ctxVal, createDependenciesTableSQL); err != nil {
+	if _, err := t.pool.Exec(ctxVal, createDependenciesTableSQL); err != nil {
 		return fmt.Errorf("failed to create migrations_dependencies table: %w", err)
 	}
 
 	// Create indexes for migrations_dependencies
 	// Index on migration_id is required for foreign key performance and to avoid using migration names that don't exist in migrations_list
 	indexSQL10 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_dependencies_migration_id ON %s (migration_id)", dependenciesTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL10)
+	_, _ = t.pool.Exec(ctxVal, indexSQL10)
 
 	indexSQL11 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_dependencies_dependency_id ON %s (dependency_id)", dependenciesTableName)
-	_, _ = t.db.ExecContext(ctxVal, indexSQL11)
+	_, _ = t.pool.Exec(ctxVal, indexSQL11)
 
 	// Migrate existing data from old tables if they exist
 	executionsTableNameForMigration := executionsTableName
@@ -337,7 +345,7 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 			updated_at = CURRENT_TIMESTAMP
 	`, listTableName)
 
-	_, err := t.db.ExecContext(ctxVal, upsertListSQL,
+	_, err := t.pool.Exec(ctxVal, upsertListSQL,
 		baseMigrationID, schemaValue, migration.Version, migrationName,
 		migration.Connection, migration.Backend, listStatus)
 	if err != nil {
@@ -385,7 +393,7 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 	for _, schema := range schemas {
 		// Insert into migrations_history
 		var historyID int
-		err = t.db.QueryRowContext(ctxVal, insertHistorySQL,
+		err = t.pool.QueryRow(ctxVal, insertHistorySQL,
 			baseMigrationID, schema, migration.Version,
 			migration.Connection, migration.Backend, status, migration.ErrorMessage,
 			executedBy, executionMethod, migration.ExecutionContext, appliedAt, appliedAt).Scan(&historyID)
@@ -394,7 +402,7 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		}
 
 		// Insert into migrations_executions
-		_, err = t.db.ExecContext(ctxVal, insertExecutionSQL,
+		_, err = t.pool.Exec(ctxVal, insertExecutionSQL,
 			baseMigrationID, schema, migration.Version,
 			migration.Connection, migration.Backend, execStatus, applied, appliedAtPtr)
 		if err != nil {
@@ -457,11 +465,11 @@ func (t *Tracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationF
 
 	query += " ORDER BY applied_at DESC"
 
-	rows, err := t.db.QueryContext(ctxVal, query, args...)
+	rows, err := t.pool.Query(ctxVal, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migrations: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var records []*state.MigrationRecord
 	for rows.Next() {
@@ -542,17 +550,16 @@ func (t *Tracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilt
 		}
 	}
 
-	rows, err := t.db.QueryContext(ctxVal, query, args...)
+	rows, err := t.pool.Query(ctxVal, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migrations list: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var items []*state.MigrationListItem
 	for rows.Next() {
 		var item state.MigrationListItem
-		var createdAt sql.NullTime
-		var updatedAt sql.NullTime
+		var createdAt, updatedAt *time.Time
 
 		err := rows.Scan(
 			&item.MigrationID,
@@ -577,8 +584,8 @@ func (t *Tracker) GetMigrationList(ctx interface{}, filters *state.MigrationFilt
 		}
 
 		// Use updated_at as last_applied_at if status is applied
-		if item.Applied && updatedAt.Valid {
-			item.LastAppliedAt = updatedAt.Time.Format(time.RFC3339)
+		if item.Applied && updatedAt != nil {
+			item.LastAppliedAt = updatedAt.Format(time.RFC3339)
 		}
 
 		items = append(items, &item)
@@ -626,13 +633,13 @@ func (t *Tracker) GetMigrationDetail(ctx interface{}, migrationID string) (*stat
 	`, listTableName)
 
 	var detail state.MigrationDetail
-	var schemaStr sql.NullString
-	var upSQL, downSQL sql.NullString
-	var dependencies pq.StringArray
-	var structuredDepsJSON sql.NullString
-	var createdAt, updatedAt sql.NullTime
+	var schemaStr *string
+	var upSQL, downSQL *string
+	var dependencies []string
+	var structuredDepsJSON *string
+	var createdAt, updatedAt *time.Time
 
-	err := t.db.QueryRowContext(ctxVal, query, baseMigrationID).Scan(
+	err := t.pool.QueryRow(ctxVal, query, baseMigrationID).Scan(
 		&detail.MigrationID,
 		&schemaStr,
 		&detail.Version,
@@ -647,28 +654,28 @@ func (t *Tracker) GetMigrationDetail(ctx interface{}, migrationID string) (*stat
 		&createdAt,
 		&updatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migration detail: %w", err)
 	}
 
-	if schemaStr.Valid {
-		detail.Schema = schemaStr.String
+	if schemaStr != nil {
+		detail.Schema = *schemaStr
 	}
-	if upSQL.Valid {
-		detail.UpSQL = upSQL.String
+	if upSQL != nil {
+		detail.UpSQL = *upSQL
 	}
-	if downSQL.Valid {
-		detail.DownSQL = downSQL.String
+	if downSQL != nil {
+		detail.DownSQL = *downSQL
 	}
 	if dependencies != nil {
-		detail.Dependencies = []string(dependencies)
+		detail.Dependencies = dependencies
 	}
-	if structuredDepsJSON.Valid && structuredDepsJSON.String != "" {
+	if structuredDepsJSON != nil && *structuredDepsJSON != "" {
 		var structuredDeps []backends.Dependency
-		if err := json.Unmarshal([]byte(structuredDepsJSON.String), &structuredDeps); err == nil {
+		if err := json.Unmarshal([]byte(*structuredDepsJSON), &structuredDeps); err == nil {
 			detail.StructuredDependencies = structuredDeps
 		}
 	}
@@ -715,17 +722,17 @@ func (t *Tracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([
 		ORDER BY created_at DESC
 	`, executionsTableName)
 
-	rows, err := t.db.QueryContext(ctxVal, query, baseMigrationID)
+	rows, err := t.pool.Query(ctxVal, query, baseMigrationID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query migration executions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var executions []*state.MigrationExecution
 	for rows.Next() {
 		var exec state.MigrationExecution
-		var schemaStr sql.NullString
-		var appliedAt, createdAt, updatedAt sql.NullTime
+		var schemaStr *string
+		var appliedAt, createdAt, updatedAt *time.Time
 
 		err := rows.Scan(
 			&exec.ID,
@@ -744,17 +751,17 @@ func (t *Tracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([
 			return nil, fmt.Errorf("failed to scan migration execution: %w", err)
 		}
 
-		if schemaStr.Valid {
-			exec.Schema = schemaStr.String
+		if schemaStr != nil {
+			exec.Schema = *schemaStr
 		}
-		if appliedAt.Valid {
-			exec.AppliedAt = appliedAt.Time.Format(time.RFC3339)
+		if appliedAt != nil {
+			exec.AppliedAt = appliedAt.Format(time.RFC3339)
 		}
-		if createdAt.Valid {
-			exec.CreatedAt = createdAt.Time.Format(time.RFC3339)
+		if createdAt != nil {
+			exec.CreatedAt = createdAt.Format(time.RFC3339)
 		}
-		if updatedAt.Valid {
-			exec.UpdatedAt = updatedAt.Time.Format(time.RFC3339)
+		if updatedAt != nil {
+			exec.UpdatedAt = updatedAt.Format(time.RFC3339)
 		}
 
 		executions = append(executions, &exec)
@@ -780,17 +787,17 @@ func (t *Tracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.Migr
 		LIMIT $1
 	`, executionsTableName)
 
-	rows, err := t.db.QueryContext(ctxVal, query, limit)
+	rows, err := t.pool.Query(ctxVal, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query recent executions: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	var executions []*state.MigrationExecution
 	for rows.Next() {
 		var exec state.MigrationExecution
-		var schemaStr sql.NullString
-		var appliedAt, createdAt, updatedAt sql.NullTime
+		var schemaStr *string
+		var appliedAt, createdAt, updatedAt *time.Time
 
 		err := rows.Scan(
 			&exec.ID,
@@ -809,17 +816,17 @@ func (t *Tracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.Migr
 			return nil, fmt.Errorf("failed to scan migration execution: %w", err)
 		}
 
-		if schemaStr.Valid {
-			exec.Schema = schemaStr.String
+		if schemaStr != nil {
+			exec.Schema = *schemaStr
 		}
-		if appliedAt.Valid {
-			exec.AppliedAt = appliedAt.Time.Format(time.RFC3339)
+		if appliedAt != nil {
+			exec.AppliedAt = appliedAt.Format(time.RFC3339)
 		}
-		if createdAt.Valid {
-			exec.CreatedAt = createdAt.Time.Format(time.RFC3339)
+		if createdAt != nil {
+			exec.CreatedAt = createdAt.Format(time.RFC3339)
 		}
-		if updatedAt.Valid {
-			exec.UpdatedAt = updatedAt.Time.Format(time.RFC3339)
+		if updatedAt != nil {
+			exec.UpdatedAt = updatedAt.Format(time.RFC3339)
 		}
 
 		executions = append(executions, &exec)
@@ -839,7 +846,7 @@ func (t *Tracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool,
 
 	query := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE migration_id = $1 AND status = 'applied')", listTableName)
 	var exists bool
-	err := t.db.QueryRowContext(ctxVal, query, migrationID).Scan(&exists)
+	err := t.pool.QueryRow(ctxVal, query, migrationID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check migration status: %w", err)
 	}
@@ -865,8 +872,8 @@ func (t *Tracker) GetLastMigrationVersion(ctx interface{}, schema, table string)
 	`, listTableName)
 
 	var version string
-	err := t.db.QueryRowContext(ctxVal, query, schema).Scan(&version)
-	if err == sql.ErrNoRows {
+	err := t.pool.QueryRow(ctxVal, query, schema).Scan(&version)
+	if err == pgx.ErrNoRows {
 		return "", nil
 	}
 	if err != nil {
@@ -897,7 +904,7 @@ func (t *Tracker) RegisterScannedMigration(ctx interface{}, migrationID, schema,
 		ON CONFLICT (migration_id) DO NOTHING`
 
 	now := time.Now()
-	_, err := t.db.ExecContext(ctxVal, insertListSQL,
+	_, err := t.pool.Exec(ctxVal, insertListSQL,
 		migrationID, schemaValue, version, name, connection, backend,
 		"pending", now, now)
 	if err != nil {
@@ -934,16 +941,13 @@ func (t *Tracker) UpdateMigrationInfo(ctx interface{}, migrationID, schema, tabl
 		WHERE migration_id = $6
 	`, listTableName)
 
-	result, err := t.db.ExecContext(ctxVal, updateSQL,
+	result, err := t.pool.Exec(ctxVal, updateSQL,
 		schemaValue, version, name, connection, backend, migrationID)
 	if err != nil {
 		return fmt.Errorf("failed to update migration info: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
+	rowsAffected := result.RowsAffected()
 
 	if rowsAffected == 0 {
 		return fmt.Errorf("migration %s not found", migrationID)
@@ -962,7 +966,7 @@ func (t *Tracker) DeleteMigration(ctx interface{}, migrationID string) error {
 	}
 
 	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE migration_id = $1", listTableName)
-	_, err := t.db.ExecContext(ctxVal, deleteSQL, migrationID)
+	_, err := t.pool.Exec(ctxVal, deleteSQL, migrationID)
 	if err != nil {
 		return fmt.Errorf("failed to delete migration: %w", err)
 	}
@@ -1102,7 +1106,7 @@ func (t *Tracker) ReindexMigrations(ctx interface{}, registry interface{}) error
 		}
 
 		// Insert/update migrations_list (always, even with empty schema)
-		_, err = t.db.ExecContext(ctxVal, upsertSQL,
+		_, err = t.pool.Exec(ctxVal, upsertSQL,
 			migrationID,
 			schemaValue,
 			migration.Version,
@@ -1111,7 +1115,7 @@ func (t *Tracker) ReindexMigrations(ctx interface{}, registry interface{}) error
 			migration.Backend,
 			upSQLFilename,
 			downSQLFilename,
-			pq.Array(dependencies),
+			dependencies,
 			string(structuredDepsJSON),
 			status,
 		)
@@ -1156,7 +1160,7 @@ func (t *Tracker) ReindexMigrations(ctx interface{}, registry interface{}) error
 
 		// Create one record per schema
 		for _, schema := range schemas {
-			_, err = t.db.ExecContext(ctxVal, insertExecutionSQL,
+			_, err = t.pool.Exec(ctxVal, insertExecutionSQL,
 				migrationID,
 				schema,
 				migration.Version,
@@ -1199,7 +1203,7 @@ func (t *Tracker) updateMigrationDependencies(ctx context.Context, migrationID s
 
 	// Delete existing dependencies for this migration
 	deleteSQL := fmt.Sprintf("DELETE FROM %s WHERE migration_id = $1", dependenciesTableName)
-	_, err := t.db.ExecContext(ctx, deleteSQL, migrationID)
+	_, err := t.pool.Exec(ctx, deleteSQL, migrationID)
 	if err != nil {
 		return fmt.Errorf("failed to delete existing dependencies: %w", err)
 	}
@@ -1232,11 +1236,11 @@ func (t *Tracker) updateMigrationDependencies(ctx context.Context, migrationID s
 			targetType = "name"
 		}
 
-		_, err = t.db.ExecContext(ctx, insertSQL,
+		_, err = t.pool.Exec(ctx, insertSQL,
 			migrationID,
 			dependencyID,
 			dep.Connection,
-			pq.Array(schemas),
+			schemas,
 			dep.Target,
 			targetType,
 			dep.RequiresTable,
@@ -1269,11 +1273,11 @@ func (t *Tracker) updateMigrationDependencies(ctx context.Context, migrationID s
 			VALUES ($1, $2, $3, $4, $5, $6)
 		`, dependenciesTableName)
 
-		_, err = t.db.ExecContext(ctx, insertSQL,
+		_, err = t.pool.Exec(ctx, insertSQL,
 			migrationID,
 			dependencyID,
 			migration.Connection,
-			pq.Array(schemas),
+			schemas,
 			depName,
 			"name",
 		)
@@ -1307,7 +1311,7 @@ func (t *Tracker) resolveDependencyID(ctx context.Context, dep backends.Dependen
 	}
 
 	var migrationID string
-	err := t.db.QueryRowContext(ctx, query, args...).Scan(&migrationID)
+	err := t.pool.QueryRow(ctx, query, args...).Scan(&migrationID)
 	if err != nil {
 		return "", fmt.Errorf("dependency not found: %w", err)
 	}
@@ -1324,7 +1328,7 @@ func (t *Tracker) findMigrationIDByName(ctx context.Context, name string, listTa
 	`, listTableName)
 
 	var migrationID string
-	err := t.db.QueryRowContext(ctx, query, name).Scan(&migrationID)
+	err := t.pool.QueryRow(ctx, query, name).Scan(&migrationID)
 	if err != nil {
 		return "", fmt.Errorf("migration not found: %w", err)
 	}
@@ -1334,8 +1338,9 @@ func (t *Tracker) findMigrationIDByName(ctx context.Context, name string, listTa
 
 // Close closes the database connection
 func (t *Tracker) Close() error {
-	if t.db != nil {
-		return t.db.Close()
+	if t.pool != nil {
+		t.pool.Close()
+		t.pool = nil
 	}
 	return nil
 }
@@ -1361,7 +1366,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 		schemaName = t.schema
 	}
 
-	err := t.db.QueryRowContext(ctx, checkTableSQL, schemaName).Scan(&tableExists)
+	err := t.pool.QueryRow(ctx, checkTableSQL, schemaName).Scan(&tableExists)
 	if err != nil || !tableExists {
 		// Old table doesn't exist, nothing to migrate
 		return nil
@@ -1375,11 +1380,11 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 		ORDER BY applied_at DESC
 	`, oldTableName)
 
-	rows, err := t.db.QueryContext(ctx, query)
+	rows, err := t.pool.Query(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to query old table: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	// Track which migrations we've seen to avoid duplicates in list table
 	seenMigrations := make(map[string]bool)
@@ -1540,7 +1545,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 				updated_at = CURRENT_TIMESTAMP
 		`, listTableName)
 
-		_, err := t.db.ExecContext(ctx, insertListSQL,
+		_, err := t.pool.Exec(ctx, insertListSQL,
 			baseMigrationID, schemaValue, version, name, connection, backend,
 			lastStatus, lastAppliedAt, time.Now())
 		if err != nil {
@@ -1582,7 +1587,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 			createdAt = time.Now()
 		}
 
-		_, err = t.db.ExecContext(ctx, insertExecutionSQL,
+		_, err = t.pool.Exec(ctx, insertExecutionSQL,
 			baseMigrationID, schema, version, connection, backend, execStatus, applied, appliedAtPtr, createdAt)
 		if err != nil {
 			return fmt.Errorf("failed to insert into migrations_executions: %w", err)
@@ -1618,7 +1623,7 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 				executionMethod = "api" // Rollbacks are typically via API
 			}
 
-			_, err := t.db.ExecContext(ctx, insertHistorySQL,
+			_, err := t.pool.Exec(ctx, insertHistorySQL,
 				baseMigrationID, record.schema, record.version, record.connection, record.backend,
 				status, record.errorMsg, "system", executionMethod, record.appliedAt, record.appliedAt)
 			if err != nil {
@@ -1637,26 +1642,32 @@ func quoteIdentifier(name string) string {
 
 // configureConnectionPool configures the database connection pool with reasonable defaults
 // that can be overridden via environment variables
-func configureConnectionPool(db *sql.DB) {
-	// Max open connections per pool (default: 5)
-	// This limits how many connections each sql.DB instance can open
-	maxOpenConns := getEnvInt("BFM_DB_MAX_OPEN_CONNS", 5)
-	db.SetMaxOpenConns(maxOpenConns)
+func configureConnectionPool(config *pgxpool.Config) {
+	// Max connections per pool (default: 2, reduced from 5 to prevent connection exhaustion)
+	// This limits how many connections each pool instance can open
+	maxConns := getEnvInt("BFM_DB_MAX_OPEN_CONNS", 2)
+	config.MaxConns = int32(maxConns)
 
-	// Max idle connections per pool (default: 2)
+	// Max idle connections per pool (default: 1, reduced from 2)
 	// This keeps some connections ready for reuse
-	maxIdleConns := getEnvInt("BFM_DB_MAX_IDLE_CONNS", 2)
-	db.SetMaxIdleConns(maxIdleConns)
+	maxIdleConns := getEnvInt("BFM_DB_MAX_IDLE_CONNS", 1)
+	config.MinConns = int32(maxIdleConns)
 
-	// Connection max lifetime (default: 5 minutes)
+	// Connection max lifetime (default: 3 minutes, reduced from 5)
 	// This prevents using stale connections
-	connMaxLifetime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute
-	db.SetConnMaxLifetime(connMaxLifetime)
+	connMaxLifetime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_LIFETIME_MINUTES", 3)) * time.Minute
+	config.MaxConnLifetime = connMaxLifetime
 
-	// Connection max idle time (default: 1 minute)
+	// Connection max idle time (default: 30 seconds, supports both seconds and minutes for flexibility)
 	// This closes idle connections after this duration
-	connMaxIdleTime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_MINUTES", 1)) * time.Minute
-	db.SetConnMaxIdleTime(connMaxIdleTime)
+	// Check for seconds first (more granular), then fall back to minutes
+	var connMaxIdleTime time.Duration
+	if idleTimeSeconds := getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_SECONDS", 0); idleTimeSeconds > 0 {
+		connMaxIdleTime = time.Duration(idleTimeSeconds) * time.Second
+	} else {
+		connMaxIdleTime = time.Duration(getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_MINUTES", 1)) * time.Minute
+	}
+	config.MaxConnIdleTime = connMaxIdleTime
 }
 
 // getEnvInt gets an integer environment variable or returns the default value

@@ -2,21 +2,19 @@ package postgresql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/toolsascode/bfm/api/internal/backends"
-
-	_ "github.com/lib/pq"
 )
 
 // Backend implements the Backend interface for PostgreSQL
 type Backend struct {
-	db     *sql.DB
+	pool   *pgxpool.Pool
 	config *backends.ConnectionConfig
 }
 
@@ -32,6 +30,12 @@ func (b *Backend) Name() string {
 
 // Connect establishes a connection to PostgreSQL
 func (b *Backend) Connect(config *backends.ConnectionConfig) error {
+	// Close existing connection if any to prevent connection leaks
+	if b.pool != nil {
+		b.pool.Close()
+		b.pool = nil
+	}
+
 	b.config = config
 
 	// Build connection string
@@ -44,17 +48,25 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 		config.Database,
 	)
 
-	var err error
-	b.db, err = sql.Open("postgres", connStr)
+	// Parse connection config
+	poolConfig, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return fmt.Errorf("failed to open PostgreSQL connection: %w", err)
+		return fmt.Errorf("failed to parse PostgreSQL connection string: %w", err)
 	}
 
 	// Configure connection pool settings
-	configureConnectionPool(b.db)
+	configureConnectionPool(poolConfig)
+
+	// Create connection pool
+	b.pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create PostgreSQL connection pool: %w", err)
+	}
 
 	// Test connection
-	if err := b.db.Ping(); err != nil {
+	if err := b.pool.Ping(context.Background()); err != nil {
+		b.pool.Close() // Clean up on ping failure
+		b.pool = nil
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -63,8 +75,9 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 
 // Close closes the PostgreSQL connection
 func (b *Backend) Close() error {
-	if b.db != nil {
-		return b.db.Close()
+	if b.pool != nil {
+		b.pool.Close()
+		b.pool = nil
 	}
 	return nil
 }
@@ -72,7 +85,7 @@ func (b *Backend) Close() error {
 // CreateSchema creates a schema if it doesn't exist
 func (b *Backend) CreateSchema(ctx context.Context, schemaName string) error {
 	query := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", quoteIdentifier(schemaName))
-	_, err := b.db.ExecContext(ctx, query)
+	_, err := b.pool.Exec(ctx, query)
 	if err != nil {
 		return fmt.Errorf("failed to create schema %s: %w", schemaName, err)
 	}
@@ -89,7 +102,7 @@ func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, er
 		)
 	`
 	var exists bool
-	err := b.db.QueryRowContext(ctx, query, schemaName).Scan(&exists)
+	err := b.pool.QueryRow(ctx, query, schemaName).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check schema existence: %w", err)
 	}
@@ -106,7 +119,7 @@ func (b *Backend) TableExists(ctx context.Context, schemaName, tableName string)
 		)
 	`
 	var exists bool
-	err := b.db.QueryRowContext(ctx, query, schemaName, tableName).Scan(&exists)
+	err := b.pool.QueryRow(ctx, query, schemaName, tableName).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check table existence: %w", err)
 	}
@@ -129,11 +142,11 @@ func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.Migr
 	}
 
 	// Begin transaction
-	tx, err := b.db.BeginTx(ctx, nil)
+	tx, err := b.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Execute migration SQL
 	// If schema is specified, set search_path or use schema-qualified names
@@ -141,18 +154,18 @@ func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.Migr
 	if migration.Schema != "" {
 		// Set search_path for the transaction
 		setPathSQL := fmt.Sprintf("SET search_path TO %s, public", quoteIdentifier(migration.Schema))
-		if _, err := tx.ExecContext(ctx, setPathSQL); err != nil {
+		if _, err := tx.Exec(ctx, setPathSQL); err != nil {
 			return fmt.Errorf("failed to set search_path: %w", err)
 		}
 	}
 
 	// Execute the migration SQL
-	if _, err := tx.ExecContext(ctx, sql); err != nil {
+	if _, err := tx.Exec(ctx, sql); err != nil {
 		return fmt.Errorf("failed to execute migration: %w", err)
 	}
 
 	// Commit transaction
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -161,10 +174,10 @@ func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.Migr
 
 // HealthCheck verifies the backend is accessible
 func (b *Backend) HealthCheck(ctx context.Context) error {
-	if b.db == nil {
+	if b.pool == nil {
 		return fmt.Errorf("database connection not initialized")
 	}
-	return b.db.PingContext(ctx)
+	return b.pool.Ping(ctx)
 }
 
 // quoteIdentifier quotes a PostgreSQL identifier
@@ -174,26 +187,32 @@ func quoteIdentifier(name string) string {
 
 // configureConnectionPool configures the database connection pool with reasonable defaults
 // that can be overridden via environment variables
-func configureConnectionPool(db *sql.DB) {
-	// Max open connections per pool (default: 5)
-	// This limits how many connections each sql.DB instance can open
-	maxOpenConns := getEnvInt("BFM_DB_MAX_OPEN_CONNS", 5)
-	db.SetMaxOpenConns(maxOpenConns)
+func configureConnectionPool(config *pgxpool.Config) {
+	// Max connections per pool (default: 2, reduced from 5 to prevent connection exhaustion)
+	// This limits how many connections each pool instance can open
+	maxConns := getEnvInt("BFM_DB_MAX_OPEN_CONNS", 2)
+	config.MaxConns = int32(maxConns)
 
-	// Max idle connections per pool (default: 2)
+	// Max idle connections per pool (default: 1, reduced from 2)
 	// This keeps some connections ready for reuse
-	maxIdleConns := getEnvInt("BFM_DB_MAX_IDLE_CONNS", 2)
-	db.SetMaxIdleConns(maxIdleConns)
+	maxIdleConns := getEnvInt("BFM_DB_MAX_IDLE_CONNS", 1)
+	config.MinConns = int32(maxIdleConns)
 
-	// Connection max lifetime (default: 5 minutes)
+	// Connection max lifetime (default: 3 minutes, reduced from 5)
 	// This prevents using stale connections
-	connMaxLifetime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_LIFETIME_MINUTES", 5)) * time.Minute
-	db.SetConnMaxLifetime(connMaxLifetime)
+	connMaxLifetime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_LIFETIME_MINUTES", 3)) * time.Minute
+	config.MaxConnLifetime = connMaxLifetime
 
-	// Connection max idle time (default: 1 minute)
+	// Connection max idle time (default: 30 seconds, supports both seconds and minutes for flexibility)
 	// This closes idle connections after this duration
-	connMaxIdleTime := time.Duration(getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_MINUTES", 1)) * time.Minute
-	db.SetConnMaxIdleTime(connMaxIdleTime)
+	// Check for seconds first (more granular), then fall back to minutes
+	var connMaxIdleTime time.Duration
+	if idleTimeSeconds := getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_SECONDS", 0); idleTimeSeconds > 0 {
+		connMaxIdleTime = time.Duration(idleTimeSeconds) * time.Second
+	} else {
+		connMaxIdleTime = time.Duration(getEnvInt("BFM_DB_CONN_MAX_IDLE_TIME_MINUTES", 1)) * time.Minute
+	}
+	config.MaxConnIdleTime = connMaxIdleTime
 }
 
 // getEnvInt gets an integer environment variable or returns the default value
