@@ -411,10 +411,16 @@ export default function Dashboard() {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number, name: string) => [
-                  `${value} (${((value / total) * 100).toFixed(1)}%)`,
-                  name,
-                ]}
+                formatter={(
+                  value: number | undefined,
+                  name: string | undefined,
+                ) => {
+                  if (value === undefined) return [name || "", ""];
+                  return [
+                    `${value} (${((value / total) * 100).toFixed(1)}%)`,
+                    name || "",
+                  ];
+                }}
               />
               <Legend
                 verticalAlign="bottom"
@@ -473,165 +479,171 @@ export default function Dashboard() {
         <h2 className="mb-4 text-gray-800 text-xl font-semibold">
           Recently Added Files
         </h2>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Migration ID
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Backend
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Connection
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Status
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Version
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentlyAddedFiles.length === 0 ? (
+        <div className="overflow-x-auto max-w-full">
+          <table className="w-full border-collapse min-w-full">
+            <thead>
               <tr>
-                <td colSpan={5} className="text-center text-gray-500 py-8">
-                  No migrations found
-                </td>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Migration ID
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Backend
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Connection
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Status
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Version
+                </th>
               </tr>
-            ) : (
-              recentlyAddedFiles.map((migration) => (
-                <tr
-                  key={migration.migration_id}
-                  className="hover:bg-gray-50 transition-colors"
-                >
-                  <td className="p-3 border-b border-gray-200">
-                    <Link
-                      to={`/migrations/${migration.migration_id}`}
-                      className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline"
-                    >
-                      {migration.migration_id}
-                    </Link>
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {migration.backend}
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {migration.connection || "-"}
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        migration.status === "success" ||
-                        migration.status === "applied"
-                          ? "bg-green-100 text-green-800"
-                          : migration.status === "failed"
-                            ? "bg-red-100 text-red-800"
-                            : migration.status === "rolled_back"
-                              ? "bg-orange-100 text-orange-800"
-                              : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {migration.status === "rolled_back"
-                        ? "Rolled Back"
-                        : migration.status || "pending"}
-                    </span>
-                  </td>
-                  <td className="p-3 border-b border-gray-200 font-mono text-sm">
-                    {migration.version}
+            </thead>
+            <tbody>
+              {recentlyAddedFiles.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center text-gray-500 py-8">
+                    No migrations found
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                recentlyAddedFiles.map((migration) => (
+                  <tr
+                    key={migration.migration_id}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="p-3 border-b border-gray-200 max-w-[300px]">
+                      <Link
+                        to={`/migrations/${migration.migration_id}`}
+                        className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline truncate block"
+                        title={migration.migration_id}
+                      >
+                        {migration.migration_id}
+                      </Link>
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {migration.backend}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {migration.connection || "-"}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                          migration.status === "success" ||
+                          migration.status === "applied"
+                            ? "bg-green-100 text-green-800"
+                            : migration.status === "failed"
+                              ? "bg-red-100 text-red-800"
+                              : migration.status === "rolled_back"
+                                ? "bg-orange-100 text-orange-800"
+                                : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {migration.status === "rolled_back"
+                          ? "Rolled Back"
+                          : migration.status || "pending"}
+                      </span>
+                    </td>
+                    <td className="p-3 border-b border-gray-200 font-mono text-sm">
+                      {migration.version}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="mb-4 text-gray-800 text-xl font-semibold">
           Recent Migrations
         </h2>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Migration ID
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Schema
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Connection
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Backend
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Status
-              </th>
-              <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
-                Created At
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentExecutions.length === 0 ? (
+        <div className="overflow-x-auto max-w-full">
+          <table className="w-full border-collapse min-w-full">
+            <thead>
               <tr>
-                <td colSpan={6} className="text-center text-gray-500 py-8">
-                  No executions found
-                </td>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Migration ID
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Schema
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Connection
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Backend
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Status
+                </th>
+                <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200">
+                  Created At
+                </th>
               </tr>
-            ) : (
-              recentExecutions.map((execution) => (
-                <tr key={execution.id} className="hover:bg-gray-50">
-                  <td className="p-3 border-b border-gray-200">
-                    <Link
-                      to={`/migrations/${execution.migration_id}`}
-                      className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline"
-                    >
-                      {execution.migration_id}
-                    </Link>
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {execution.schema || "-"}
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {execution.connection}
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {execution.backend}
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        execution.status === "applied"
-                          ? "bg-green-100 text-green-800"
-                          : execution.status === "failed"
-                            ? "bg-red-100 text-red-800"
-                            : execution.status === "rolled_back"
-                              ? "bg-orange-100 text-orange-800"
-                              : "bg-yellow-100 text-yellow-800"
-                      }`}
-                    >
-                      {execution.status === "rolled_back"
-                        ? "Rolled Back"
-                        : execution.status || "pending"}
-                    </span>
-                  </td>
-                  <td className="p-3 border-b border-gray-200">
-                    {execution.created_at
-                      ? format(
-                          new Date(execution.created_at),
-                          "yyyy-MM-dd HH:mm:ss",
-                        )
-                      : "-"}
+            </thead>
+            <tbody>
+              {recentExecutions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="text-center text-gray-500 py-8">
+                    No executions found
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                recentExecutions.map((execution) => (
+                  <tr key={execution.id} className="hover:bg-gray-50">
+                    <td className="p-3 border-b border-gray-200 max-w-[300px]">
+                      <Link
+                        to={`/migrations/${execution.migration_id}`}
+                        className="text-bfm-blue no-underline hover:text-bfm-blue-dark hover:underline truncate block"
+                        title={execution.migration_id}
+                      >
+                        {execution.migration_id}
+                      </Link>
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {execution.schema || "-"}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {execution.connection}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {execution.backend}
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      <span
+                        className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                          execution.status === "applied"
+                            ? "bg-green-100 text-green-800"
+                            : execution.status === "failed"
+                              ? "bg-red-100 text-red-800"
+                              : execution.status === "rolled_back"
+                                ? "bg-orange-100 text-orange-800"
+                                : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {execution.status === "rolled_back"
+                          ? "Rolled Back"
+                          : execution.status || "pending"}
+                      </span>
+                    </td>
+                    <td className="p-3 border-b border-gray-200">
+                      {execution.created_at
+                        ? format(
+                            new Date(execution.created_at),
+                            "yyyy-MM-dd HH:mm:ss",
+                          )
+                        : "-"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

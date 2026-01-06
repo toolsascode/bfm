@@ -268,7 +268,7 @@ export default function Layout({ onLogout }: LayoutProps) {
         )}
       </nav>
       <main
-        className={`flex-1 p-4 md:p-8 min-h-screen transition-all duration-300 ${
+        className={`flex-1 p-4 md:p-8 min-h-screen transition-all duration-300 max-w-full overflow-x-hidden ${
           sidebarCollapsed ? "md:ml-20" : "md:ml-64"
         }`}
       >

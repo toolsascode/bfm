@@ -641,7 +641,10 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Migration ID
               </label>
-              <div className="text-gray-800 text-base">
+              <div
+                className="text-gray-800 text-base truncate"
+                title={migration.migration_id}
+              >
                 {migration.migration_id}
               </div>
             </div>
@@ -649,7 +652,10 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Name
               </label>
-              <div className="text-gray-800 text-base font-medium">
+              <div
+                className="text-gray-800 text-base font-medium truncate"
+                title={migration.name || ""}
+              >
                 {migration.name}
               </div>
             </div>
@@ -1169,8 +1175,8 @@ export default function MigrationDetail() {
               No executions found for this migration.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
                 <thead>
                   <tr>
                     <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1208,7 +1214,10 @@ export default function MigrationDetail() {
                       key={execution.id}
                       className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="p-3 border-b border-gray-200 text-sm font-mono">
+                      <td
+                        className="p-3 border-b border-gray-200 text-sm font-mono max-w-[200px] truncate"
+                        title={String(execution.id)}
+                      >
                         {execution.id}
                       </td>
                       <td className="p-3 border-b border-gray-200 text-sm">
@@ -1412,8 +1421,8 @@ export default function MigrationDetail() {
                 <p className="text-gray-600 text-sm mb-4">
                   This migration has been executed on the following schemas:
                 </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
+                <div className="overflow-x-auto max-w-full">
+                  <table className="w-full border-collapse min-w-full">
                     <thead>
                       <tr>
                         <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1463,10 +1472,11 @@ export default function MigrationDetail() {
                                   key={execution.migration_id}
                                   className="hover:bg-gray-50 transition-colors"
                                 >
-                                  <td className="p-3 border-b border-gray-200">
+                                  <td className="p-3 border-b border-gray-200 max-w-[300px]">
                                     <Link
                                       to={`/migrations/${execution.migration_id}`}
-                                      className="text-bfm-blue no-underline hover:underline text-sm font-mono"
+                                      className="text-bfm-blue no-underline hover:underline text-sm font-mono truncate block"
+                                      title={execution.migration_id}
                                     >
                                       {execution.migration_id}
                                     </Link>
@@ -1636,8 +1646,8 @@ export default function MigrationDetail() {
             <h2 className="text-gray-800 mb-4 text-xl font-semibold">
               Execution History
             </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
                 <thead>
                   <tr>
                     <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1678,7 +1688,10 @@ export default function MigrationDetail() {
                           >
                             <td className="p-3 border-b border-gray-200">
                               <div className="flex flex-col">
-                                <span className="text-gray-800 text-sm font-mono">
+                                <span
+                                  className="text-gray-800 text-sm font-mono max-w-[300px] truncate"
+                                  title={record.migration_id}
+                                >
                                   {record.migration_id}
                                 </span>
                                 {record.migration_id.includes("_rollback") && (

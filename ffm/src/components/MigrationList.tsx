@@ -1303,7 +1303,7 @@ export default function MigrationList() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-md overflow-x-auto animate-scale-in transition-all hover:shadow-lg">
+      <div className="bg-white rounded-lg shadow-md overflow-x-auto animate-scale-in transition-all hover:shadow-lg max-w-full">
         <table className="w-full overflow-hidden border-collapse">
           <thead>
             <tr>
@@ -1327,7 +1327,7 @@ export default function MigrationList() {
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Version
               </th>
-              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0 max-w-[290px]">
                 Name
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
@@ -1391,7 +1391,10 @@ export default function MigrationList() {
                   <td className="p-4 border-b border-gray-200">
                     {migration.version}
                   </td>
-                  <td className="p-4 border-b border-gray-200">
+                  <td
+                    className="p-4 border-b border-gray-200 max-w-[260px] truncate"
+                    title={migration.name || "-"}
+                  >
                     {migration.name || "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
@@ -1400,7 +1403,10 @@ export default function MigrationList() {
                   <td className="p-4 border-b border-gray-200">
                     {migration.backend}
                   </td>
-                  <td className="p-4 border-b border-gray-200">
+                  <td
+                    className="p-4 border-b border-gray-200 max-w-[180px] truncate"
+                    title={migration.schema || "-"}
+                  >
                     <span className="text-gray-500 italic">
                       {migration.schemaCount > 0
                         ? "Multiple"
