@@ -6,7 +6,7 @@ require (
 	github.com/apache/pulsar-client-go v0.18.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/lib/pq v1.10.9
-	github.com/segmentio/kafka-go v0.4.49
+	github.com/segmentio/kafka-go v0.4.50
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/etcd/client/v3 v3.6.7
