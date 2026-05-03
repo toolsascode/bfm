@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { apiClient } from "../services/api";
 import type {
@@ -9,6 +9,7 @@ import type {
   MigrateResponse,
   MigrationListItem,
   MigrationExecution,
+  SkippedMigration,
 } from "../types/api";
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
@@ -23,6 +24,9 @@ function ConfirmModal({
   confirmText = "Confirm",
   cancelText = "Cancel",
   confirmButtonClass = "bg-bfm-green-dark text-white hover:bg-bfm-green",
+  showIgnoreDependencies = false,
+  ignoreDependencies = false,
+  onIgnoreDependenciesChange,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +36,9 @@ function ConfirmModal({
   confirmText?: string;
   cancelText?: string;
   confirmButtonClass?: string;
+  showIgnoreDependencies?: boolean;
+  ignoreDependencies?: boolean;
+  onIgnoreDependenciesChange?: (value: boolean) => void;
 }) {
   if (!isOpen) return null;
 
@@ -41,6 +48,21 @@ function ConfirmModal({
         <div className="p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">{title}</h2>
           <p className="text-gray-600 text-sm mb-6">{message}</p>
+          {showIgnoreDependencies && onIgnoreDependenciesChange && (
+            <div className="mb-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ignoreDependencies}
+                  onChange={(e) => onIgnoreDependenciesChange(e.target.checked)}
+                  className="w-4 h-4 text-bfm-blue border-gray-300 rounded focus:ring-bfm-blue"
+                />
+                <span className="text-sm text-gray-700">
+                  Ignore dependencies
+                </span>
+              </label>
+            </div>
+          )}
           <div className="flex gap-3 justify-end">
             <button
               type="button"
@@ -186,6 +208,9 @@ export default function MigrationDetail() {
     confirmText?: string;
     cancelText?: string;
     confirmButtonClass?: string;
+    showIgnoreDependencies?: boolean;
+    ignoreDependencies?: boolean;
+    onIgnoreDependenciesChange?: (value: boolean) => void;
     onConfirm: () => void;
   } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<{
@@ -203,6 +228,12 @@ export default function MigrationDetail() {
   const [executionsLoading, setExecutionsLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPerPage, setHistoryPerPage] = useState(10);
+  const [ignoreDependencies, setIgnoreDependencies] = useState(false);
+  const [recentlySkipped, setRecentlySkipped] = useState<SkippedMigration[]>(
+    [],
+  );
+  const [recentlySkippedLoading, setRecentlySkippedLoading] = useState(false);
+  const lastHistoryRef = useRef<MigrationHistoryItem[]>([]);
 
   useEffect(() => {
     if (id) {
@@ -210,10 +241,12 @@ export default function MigrationDetail() {
       loadStatus();
       loadHistory();
       loadExecutions();
+      loadSkippedMigrations();
       const interval = setInterval(() => {
         loadStatus();
         loadHistory();
         loadExecutions();
+        loadSkippedMigrations();
       }, 5000); // Refresh status every 5 seconds
       return () => clearInterval(interval);
     }
@@ -260,6 +293,8 @@ export default function MigrationDetail() {
         const dateB = new Date(b.applied_at).getTime();
         return dateB - dateA;
       });
+
+      lastHistoryRef.current = sortedHistory;
       setHistory(sortedHistory);
     } catch (err) {
       // Silently fail history updates
@@ -276,6 +311,19 @@ export default function MigrationDetail() {
       // Silently fail executions updates
     } finally {
       setExecutionsLoading(false);
+    }
+  };
+
+  const loadSkippedMigrations = async () => {
+    if (!id) return;
+    try {
+      setRecentlySkippedLoading(true);
+      const data = await apiClient.getSkippedMigrations(id, 5);
+      setRecentlySkipped(data.skipped);
+    } catch (err) {
+      // Silently fail skipped migrations updates
+    } finally {
+      setRecentlySkippedLoading(false);
     }
   };
 
@@ -437,10 +485,17 @@ export default function MigrationDetail() {
           version: migration.version,
         },
         schemas: schemaToUse ? [schemaToUse] : [],
+        ignore_dependencies: ignoreDependencies,
       };
 
       const response = await apiClient.migrateUp(migrateRequest);
       setExecutionResult(response);
+
+      // Skipped migrations are now tracked automatically by the backend
+      // Reload skipped migrations after execution
+      if (response.skipped && response.skipped.length > 0) {
+        loadSkippedMigrations();
+      }
 
       if (response.success) {
         if (response.queued) {
@@ -462,6 +517,7 @@ export default function MigrationDetail() {
       loadHistory(); // Reload history to get the latest status and applied_at
       loadExecutions();
       loadSchemaExecutions();
+      loadSkippedMigrations();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to execute migration";
@@ -479,6 +535,9 @@ export default function MigrationDetail() {
       confirmText: "Execute",
       cancelText: "Cancel",
       confirmButtonClass: "bg-bfm-green-dark text-white hover:bg-bfm-green",
+      showIgnoreDependencies: true,
+      ignoreDependencies: ignoreDependencies,
+      onIgnoreDependenciesChange: setIgnoreDependencies,
       onConfirm: () => {
         setShowConfirmModal(false);
         executeMigration();
@@ -493,7 +552,7 @@ export default function MigrationDetail() {
     // Check if schema/prefix is required
     const needsValue = needsSchemaOrPrefix(migration);
 
-    if (needsValue) {
+    if (needsValue || executions.length > 1) {
       // Show modal to get schema/prefix from user
       setShowSchemaModal(true);
       return;
@@ -513,6 +572,9 @@ export default function MigrationDetail() {
       confirmText: "Execute",
       cancelText: "Cancel",
       confirmButtonClass: "bg-bfm-green-dark text-white hover:bg-bfm-green",
+      showIgnoreDependencies: true,
+      ignoreDependencies: ignoreDependencies,
+      onIgnoreDependenciesChange: setIgnoreDependencies,
       onConfirm: () => {
         setShowConfirmModal(false);
         executeMigration(value);
@@ -609,7 +671,10 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Migration ID
               </label>
-              <div className="text-gray-800 text-base">
+              <div
+                className="text-gray-800 text-base"
+                title={migration.migration_id}
+              >
                 {migration.migration_id}
               </div>
             </div>
@@ -617,7 +682,10 @@ export default function MigrationDetail() {
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Name
               </label>
-              <div className="text-gray-800 text-base font-medium">
+              <div
+                className="text-gray-800 text-base font-medium"
+                title={migration.name || ""}
+              >
                 {migration.name}
               </div>
             </div>
@@ -1123,6 +1191,95 @@ export default function MigrationDetail() {
           )}
         </div>
 
+        {/* Recently Skipped Migrations */}
+        {recentlySkippedLoading ? (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Recently Skipped Migrations
+            </h2>
+            <div className="text-center py-8 text-gray-500">
+              Loading skipped migrations...
+            </div>
+          </div>
+        ) : recentlySkipped.length > 0 ? (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Recently Skipped Migrations ({recentlySkipped.length})
+            </h2>
+            <p className="text-gray-600 text-sm mb-4">
+              The following migrations were skipped during recent execution
+              attempts (already applied):
+            </p>
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
+                <thead>
+                  <tr>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Schema Name
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Execution Method
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Skipped At
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Reason
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentlySkipped.map((entry) => (
+                    <tr
+                      key={entry.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 border-b border-gray-200">
+                        <div
+                          className="text-gray-800 text-sm font-medium"
+                          title={entry.schema || "Not specified"}
+                        >
+                          {entry.schema || (
+                            <span className="text-gray-400 italic">
+                              Not specified
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                            entry.execution_method === "manual"
+                              ? "bg-blue-100 text-blue-800"
+                              : entry.execution_method === "api"
+                                ? "bg-purple-100 text-purple-800"
+                                : entry.execution_method === "cli"
+                                  ? "bg-gray-100 text-gray-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {entry.execution_method}
+                        </span>
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm text-gray-700">
+                        {format(
+                          new Date(entry.skipped_at),
+                          "yyyy-MM-dd HH:mm:ss",
+                        )}
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span className="text-sm text-gray-700">
+                          Already applied
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
         {/* Executions Table */}
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h2 className="text-gray-800 mb-4 text-xl font-semibold">
@@ -1137,8 +1294,8 @@ export default function MigrationDetail() {
               No executions found for this migration.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
                 <thead>
                   <tr>
                     <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1176,7 +1333,10 @@ export default function MigrationDetail() {
                       key={execution.id}
                       className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="p-3 border-b border-gray-200 text-sm font-mono">
+                      <td
+                        className="p-3 border-b border-gray-200 text-sm font-mono max-w-[200px] truncate"
+                        title={String(execution.id)}
+                      >
                         {execution.id}
                       </td>
                       <td className="p-3 border-b border-gray-200 text-sm">
@@ -1380,8 +1540,8 @@ export default function MigrationDetail() {
                 <p className="text-gray-600 text-sm mb-4">
                   This migration has been executed on the following schemas:
                 </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
+                <div className="overflow-x-auto max-w-full">
+                  <table className="w-full border-collapse min-w-full">
                     <thead>
                       <tr>
                         <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1431,10 +1591,11 @@ export default function MigrationDetail() {
                                   key={execution.migration_id}
                                   className="hover:bg-gray-50 transition-colors"
                                 >
-                                  <td className="p-3 border-b border-gray-200">
+                                  <td className="p-3 border-b border-gray-200 max-w-[300px]">
                                     <Link
                                       to={`/migrations/${execution.migration_id}`}
-                                      className="text-bfm-blue no-underline hover:underline text-sm font-mono"
+                                      className="text-bfm-blue no-underline hover:underline text-sm font-mono truncate block"
+                                      title={execution.migration_id}
                                     >
                                       {execution.migration_id}
                                     </Link>
@@ -1604,8 +1765,8 @@ export default function MigrationDetail() {
             <h2 className="text-gray-800 mb-4 text-xl font-semibold">
               Execution History
             </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
                 <thead>
                   <tr>
                     <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
@@ -1646,7 +1807,10 @@ export default function MigrationDetail() {
                           >
                             <td className="p-3 border-b border-gray-200">
                               <div className="flex flex-col">
-                                <span className="text-gray-800 text-sm font-mono">
+                                <span
+                                  className="text-gray-800 text-sm font-mono max-w-[300px] truncate"
+                                  title={record.migration_id}
+                                >
                                   {record.migration_id}
                                 </span>
                                 {record.migration_id.includes("_rollback") && (
@@ -1843,6 +2007,11 @@ export default function MigrationDetail() {
           confirmText={confirmModalConfig.confirmText}
           cancelText={confirmModalConfig.cancelText}
           confirmButtonClass={confirmModalConfig.confirmButtonClass}
+          showIgnoreDependencies={confirmModalConfig.showIgnoreDependencies}
+          ignoreDependencies={confirmModalConfig.ignoreDependencies}
+          onIgnoreDependenciesChange={
+            confirmModalConfig.onIgnoreDependenciesChange
+          }
         />
       )}
     </div>
