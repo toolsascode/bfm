@@ -90,7 +90,6 @@ type MigrateUpRequest struct {
 
 // MigrationExecutionResponse represents an execution record from migrations_executions
 type MigrationExecutionResponse struct {
-	ID          int    `json:"id"`
 	MigrationID string `json:"migration_id"`
 	Schema      string `json:"schema"`
 	Version     string `json:"version"`

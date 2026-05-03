@@ -44,9 +44,12 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 		api.GET("/migrations", h.authenticate, h.listMigrations)
 		api.GET("/migrations/:id", h.authenticate, h.getMigration)
 		api.GET("/migrations/:id/status", h.authenticate, h.getMigrationStatus)
+		api.GET("/migrations/:id/applied", h.authenticate, h.isMigrationApplied)
 		api.GET("/migrations/:id/history", h.authenticate, h.getMigrationHistory)
 		api.GET("/migrations/:id/executions", h.authenticate, h.getMigrationExecutions)
 		api.GET("/migrations/executions/recent", h.authenticate, h.getRecentExecutions)
+		api.GET("/migrations/:id/skipped", h.authenticate, h.getSkippedMigrations)
+		api.GET("/migrations/skipped/recent", h.authenticate, h.getRecentSkippedMigrations)
 		api.POST("/migrations/:id/rollback", h.authenticate, h.rollbackMigration)
 		api.POST("/migrations/reindex", h.authenticate, h.reindexMigrations)
 		api.GET("/health", h.Health)
@@ -146,9 +149,10 @@ func (h *Handler) setExecutionContext(c *gin.Context) context.Context {
 	executionMethod := h.getExecutionMethod(c)
 
 	executionContext := map[string]interface{}{
-		"endpoint":   c.Request.URL.Path,
-		"method":     c.Request.Method,
-		"request_id": c.GetString("request_id"), // If you add request ID middleware
+		"endpoint":        c.Request.URL.Path,
+		"method":          c.Request.Method,
+		"request_id":      c.GetString("request_id"), // If you add request ID middleware
+		"connection_type": "http",
 	}
 
 	return executor.SetExecutionContext(ctx, executedBy, executionMethod, executionContext)
@@ -606,6 +610,31 @@ func (h *Handler) getMigrationStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// isMigrationApplied checks if a migration has been applied
+// @Summary      Check if migration is applied
+// @Description  Returns a simple boolean indicating if the migration has been applied
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Success      200 {object} map[string]bool "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/applied [get]
+func (h *Handler) isMigrationApplied(c *gin.Context) {
+	migrationID := c.Param("id")
+
+	// Check if migration is applied using the executor
+	applied, err := h.executor.IsMigrationApplied(c.Request.Context(), migrationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"applied": applied})
+}
+
 // getMigrationHistory gets the execution history for a specific migration (including rollbacks)
 // @Summary      Get migration history
 // @Description  Gets the execution history for a specific migration including rollbacks
@@ -715,7 +744,6 @@ func (h *Handler) getMigrationExecutions(c *gin.Context) {
 	executionDTOs := make([]dto.MigrationExecutionResponse, 0, len(executions))
 	for _, exec := range executions {
 		executionDTOs = append(executionDTOs, dto.MigrationExecutionResponse{
-			ID:          exec.ID,
 			MigrationID: exec.MigrationID,
 			Schema:      exec.Schema,
 			Version:     exec.Version,
@@ -766,7 +794,6 @@ func (h *Handler) getRecentExecutions(c *gin.Context) {
 	executionDTOs := make([]dto.MigrationExecutionResponse, 0, len(executions))
 	for _, exec := range executions {
 		executionDTOs = append(executionDTOs, dto.MigrationExecutionResponse{
-			ID:          exec.ID,
 			MigrationID: exec.MigrationID,
 			Schema:      exec.Schema,
 			Version:     exec.Version,
@@ -782,6 +809,109 @@ func (h *Handler) getRecentExecutions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"executions": executionDTOs,
+	})
+}
+
+// getSkippedMigrations gets skipped migrations for a specific migration
+// @Summary      Get skipped migrations
+// @Description  Gets skipped migrations for a specific migration
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Migration ID"
+// @Param        limit query int false "Limit number of results" default(5)
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/{id}/skipped [get]
+func (h *Handler) getSkippedMigrations(c *gin.Context) {
+	migrationID := c.Param("id")
+	limit := 5 // Default limit
+	if limitParam := c.Query("limit"); limitParam != "" {
+		if parsedLimit, err := strconv.Atoi(limitParam); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get skipped migrations from state tracker
+	skipped, err := h.executor.GetSkippedMigrations(c.Request.Context(), migrationID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert to DTO format
+	skippedDTOs := make([]gin.H, 0, len(skipped))
+	for _, s := range skipped {
+		skippedDTOs = append(skippedDTOs, gin.H{
+			"id":                s.ID,
+			"migration_id":      s.MigrationID,
+			"schema":            s.Schema,
+			"version":           s.Version,
+			"connection":        s.Connection,
+			"backend":           s.Backend,
+			"executed_by":       s.ExecutedBy,
+			"execution_method":  s.ExecutionMethod,
+			"execution_context": s.ExecutionContext,
+			"skipped_at":        s.SkippedAt,
+			"created_at":        s.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"migration_id": migrationID,
+		"skipped":      skippedDTOs,
+	})
+}
+
+// getRecentSkippedMigrations gets recent skipped migrations across all migrations
+// @Summary      Get recent skipped migrations
+// @Description  Gets recent skipped migrations across all migrations
+// @Tags         migrations
+// @Accept       json
+// @Produce      json
+// @Param        limit query int false "Limit number of results" default(5)
+// @Success      200 {object} map[string]interface{} "Success"
+// @Failure      401 {object} map[string]interface{} "Unauthorized"
+// @Failure      500 {object} map[string]interface{} "Internal server error"
+// @Security     Bearer
+// @Router       /migrations/skipped/recent [get]
+func (h *Handler) getRecentSkippedMigrations(c *gin.Context) {
+	limit := 5 // Default limit
+	if limitParam := c.Query("limit"); limitParam != "" {
+		if parsedLimit, err := strconv.Atoi(limitParam); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	// Get recent skipped migrations from state tracker (empty migrationID means all migrations)
+	skipped, err := h.executor.GetSkippedMigrations(c.Request.Context(), "", limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Convert to DTO format
+	skippedDTOs := make([]gin.H, 0, len(skipped))
+	for _, s := range skipped {
+		skippedDTOs = append(skippedDTOs, gin.H{
+			"id":                s.ID,
+			"migration_id":      s.MigrationID,
+			"schema":            s.Schema,
+			"version":           s.Version,
+			"connection":        s.Connection,
+			"backend":           s.Backend,
+			"executed_by":       s.ExecutedBy,
+			"execution_method":  s.ExecutionMethod,
+			"execution_context": s.ExecutionContext,
+			"skipped_at":        s.SkippedAt,
+			"created_at":        s.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"skipped": skippedDTOs,
 	})
 }
 

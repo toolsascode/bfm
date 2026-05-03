@@ -41,6 +41,7 @@ import (
 // @description     - Execute down migrations (rollback)
 // @description     - List migrations with filtering
 // @description     - Get migration details and status
+// @description     - Check if a migration is applied
 // @description     - View migration history
 // @description     - Check system health
 //
@@ -204,13 +205,14 @@ func main() {
 		if useJSON {
 			// JSON format
 			logEntry := map[string]interface{}{
-				"timestamp": param.TimeStamp.Format("2006-01-02T15:04:05.000Z07:00"),
-				"status":    param.StatusCode,
-				"latency":   param.Latency.String(),
-				"client_ip": param.ClientIP,
-				"method":    param.Method,
-				"path":      param.Path,
-				"error":     param.ErrorMessage,
+				"timestamp":       param.TimeStamp.Format("2006-01-02T15:04:05.000Z07:00"),
+				"status":          param.StatusCode,
+				"latency":         param.Latency.String(),
+				"client_ip":       param.ClientIP,
+				"method":          param.Method,
+				"path":            param.Path,
+				"error":           param.ErrorMessage,
+				"connection_type": "http",
 			}
 			if jsonBytes, err := json.Marshal(logEntry); err == nil {
 				return string(jsonBytes) + "\n"

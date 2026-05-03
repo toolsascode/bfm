@@ -440,6 +440,8 @@ docker run -p 8080:8080 -e SWAGGER_JSON=/openapi.yaml -v $(pwd)/api/internal/api
 
 ### HTTP API
 
+For a step-by-step, procedural guide on executing **one**, **some**, or **all** migrations (including the dynamic-schema gotchas), see [docs/EXECUTING_MIGRATIONS.md](docs/EXECUTING_MIGRATIONS.md).
+
 #### Migrate Endpoint
 
 ```bash
@@ -550,6 +552,57 @@ CREATE TABLE {{.Schema}}.users (
 ```
 
 Template variables work in both `.up.sql`, `.down.sql`, `.up.json`, and `.down.json` migration files. Variables are replaced using Go's `text/template` package, so you can use all standard template features.
+
+### Check if Migration is Applied
+
+Check if a specific migration has been applied:
+
+```bash
+GET /api/v1/migrations/{id}/applied
+Authorization: Bearer {BFM_API_TOKEN}
+```
+
+Response:
+
+```json
+{
+  "applied": true
+}
+```
+
+This endpoint returns a simple boolean indicating whether the migration has been applied. It's useful for quick status checks without retrieving full migration details.
+
+### gRPC API
+
+BfM also provides a gRPC API for programmatic access. The gRPC service includes all the same operations as the HTTP API, including:
+
+- `Migrate` - Execute database migrations (up)
+- `StreamMigrate` - Execute migrations with streaming progress updates
+- `MigrateDown` - Execute down migrations (rollback)
+- `ListMigrations` - List all migrations with optional filtering
+- `GetMigration` - Get detailed information about a specific migration
+- `GetMigrationStatus` - Get the current status of a specific migration
+- `IsMigrationApplied` - Check if a migration has been applied (returns boolean)
+- `GetMigrationHistory` - Get the execution history for a specific migration
+- `RollbackMigration` - Roll back a specific migration
+- `ReindexMigrations` - Reindex all migration files and synchronize with database
+- `Health` - Check the health status of the service
+
+**Example: Check if migration is applied via gRPC**
+
+```protobuf
+rpc IsMigrationApplied(IsMigrationAppliedRequest) returns (IsMigrationAppliedResponse);
+
+message IsMigrationAppliedRequest {
+  string migration_id = 1;
+}
+
+message IsMigrationAppliedResponse {
+  bool applied = 1;
+}
+```
+
+The gRPC server runs on port 9090 by default (configurable via `BFM_GRPC_PORT`).
 
 ### Health Check
 

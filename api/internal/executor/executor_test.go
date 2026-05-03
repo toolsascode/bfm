@@ -157,6 +157,21 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 	return nil
 }
 
+func (m *mockStateTracker) RecordDependencyMigration(ctx interface{}, migration *state.MigrationRecord) error {
+	if m.recordError != nil {
+		return m.recordError
+	}
+	// Requirement: Dependencies should NOT be recorded in history, only marked as applied
+	// Do NOT append to m.history - this is the key difference from RecordMigration
+	switch migration.Status {
+	case "success":
+		m.appliedMigrations[migration.MigrationID] = true
+	case "rolled_back":
+		m.appliedMigrations[migration.MigrationID] = false
+	}
+	return nil
+}
+
 func (m *mockStateTracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
 	if m.getMigrationHistoryError != nil {
 		return nil, m.getMigrationHistoryError
@@ -205,6 +220,14 @@ func (m *mockStateTracker) IsMigrationApplied(ctx interface{}, migrationID strin
 	if m.isAppliedError != nil {
 		return false, m.isAppliedError
 	}
+	return m.appliedMigrations[migrationID], nil
+}
+
+func (m *mockStateTracker) IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error) {
+	if m.isAppliedError != nil {
+		return false, m.isAppliedError
+	}
+	// For mock, treat pending/applied the same as applied
 	return m.appliedMigrations[migrationID], nil
 }
 
@@ -318,7 +341,6 @@ func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID s
 	// Use empty schema since tests don't specify schemas
 	return []*state.MigrationExecution{
 		{
-			ID:          1,
 			MigrationID: migrationID,
 			Schema:      "", // Empty schema for tests
 			Version:     version,
@@ -334,6 +356,14 @@ func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID s
 }
 func (m *mockStateTracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
 	return []*state.MigrationExecution{}, nil
+}
+
+func (m *mockStateTracker) RecordSkippedMigrations(ctx interface{}, skippedMigrationIDs []string, executedBy, executionMethod, executionContext string) error {
+	return nil
+}
+
+func (m *mockStateTracker) GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*state.SkippedMigration, error) {
+	return nil, nil
 }
 
 // mockBackend is a mock implementation of backends.Backend
@@ -642,6 +672,7 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "test_migration",
 		Connection: "test",
@@ -690,6 +721,7 @@ func TestExecutor_ExecuteSync_DryRun(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "test_migration",
 		Connection: "test",
@@ -1589,6 +1621,7 @@ func TestExecutor_ExecuteSync_WithError(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "test_migration",
 		Connection: "test",
@@ -1745,6 +1778,7 @@ func TestExecutor_ExecuteSync_RecordMigrationError(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "test_migration",
 		Connection: "test",
@@ -1959,6 +1993,7 @@ func TestExecutor_ExecuteSync_IsMigrationAppliedError(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "test_migration",
 		Connection: "test",
@@ -2001,6 +2036,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 	exec := NewExecutor(reg, tracker)
 
 	migration1 := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120000",
 		Name:       "migration1",
 		Connection: "test",
@@ -2010,6 +2046,7 @@ func TestExecutor_ExecuteSync_MultipleMigrations(t *testing.T) {
 	_ = reg.Register(migration1)
 
 	migration2 := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120001",
 		Name:       "migration2",
 		Connection: "test",
@@ -2095,6 +2132,7 @@ func TestExecutor_ExecuteSync_WithStructuredDependencies(t *testing.T) {
 
 	// Base migration
 	baseMigration := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120000",
 		Name:         "base_migration",
 		Connection:   "test",
@@ -2106,6 +2144,7 @@ func TestExecutor_ExecuteSync_WithStructuredDependencies(t *testing.T) {
 
 	// Dependent migration with structured dependency
 	dependentMigration := &backends.MigrationScript{
+		Schema:     "public",
 		Version:    "20240101120001",
 		Name:       "dependent_migration",
 		Connection: "test",
@@ -2164,6 +2203,7 @@ func TestExecutor_ExecuteSync_WithSimpleDependencies(t *testing.T) {
 
 	// Base migration
 	baseMigration := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120000",
 		Name:         "base",
 		Connection:   "test",
@@ -2175,6 +2215,7 @@ func TestExecutor_ExecuteSync_WithSimpleDependencies(t *testing.T) {
 
 	// Dependent migration with simple dependency
 	dependentMigration := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120001",
 		Name:         "dependent",
 		Connection:   "test",
@@ -2266,6 +2307,7 @@ func TestExecutor_ExecuteSync_CircularDependency(t *testing.T) {
 
 	// Create circular dependency: m1 -> m2 -> m1
 	m1 := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120000",
 		Name:         "migration1",
 		Connection:   "test",
@@ -2276,6 +2318,7 @@ func TestExecutor_ExecuteSync_CircularDependency(t *testing.T) {
 	_ = reg.Register(m1)
 
 	m2 := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120001",
 		Name:         "migration2",
 		Connection:   "test",
@@ -2317,6 +2360,7 @@ func TestExecutor_ExecuteSync_MissingDependency(t *testing.T) {
 
 	// Migration with missing dependency
 	migration := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120000",
 		Name:         "dependent",
 		Connection:   "test",
@@ -2358,6 +2402,7 @@ func TestExecutor_ExecuteSync_BothDependencyTypes(t *testing.T) {
 
 	// Base migration
 	base := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120000",
 		Name:         "base",
 		Connection:   "test",
@@ -2369,6 +2414,7 @@ func TestExecutor_ExecuteSync_BothDependencyTypes(t *testing.T) {
 
 	// Migration with both simple and structured dependencies
 	hybrid := &backends.MigrationScript{
+		Schema:       "public",
 		Version:      "20240101120001",
 		Name:         "hybrid",
 		Connection:   "test",

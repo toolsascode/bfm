@@ -194,6 +194,7 @@ info:
     - Execute down migrations (rollback)
     - List migrations with filtering
     - Get migration details and status
+    - Check if a migration is applied
     - View migration history
     - Check system health
   license:
@@ -318,6 +319,41 @@ paths:
       summary: Get migration details
       tags:
       - migrations
+  /migrations/{id}/applied:
+    get:
+      consumes:
+      - application/json
+      description: Returns a simple boolean indicating if the migration has been applied
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Check if migration is applied
+      tags:
+      - migrations
   /migrations/{id}/executions:
     get:
       consumes:
@@ -438,6 +474,45 @@ paths:
       security:
       - Bearer: []
       summary: Rollback migration
+      tags:
+      - migrations
+  /migrations/{id}/skipped:
+    get:
+      consumes:
+      - application/json
+      description: Gets skipped migrations for a specific migration
+      parameters:
+      - description: Migration ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 5
+        description: Limit number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get skipped migrations
       tags:
       - migrations
   /migrations/{id}/status:
@@ -576,6 +651,40 @@ paths:
       security:
       - Bearer: []
       summary: Reindex migrations
+      tags:
+      - migrations
+  /migrations/skipped/recent:
+    get:
+      consumes:
+      - application/json
+      description: Gets recent skipped migrations across all migrations
+      parameters:
+      - default: 5
+        description: Limit number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Success
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Get recent skipped migrations
       tags:
       - migrations
   /migrations/up:

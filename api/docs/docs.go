@@ -300,6 +300,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/migrations/skipped/recent": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Gets recent skipped migrations across all migrations",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "migrations"
+                ],
+                "summary": "Get recent skipped migrations",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Limit number of results",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/migrations/up": {
             "post": {
                 "security": [
@@ -409,6 +461,60 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Migration not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/migrations/{id}/applied": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Returns a simple boolean indicating if the migration has been applied",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "migrations"
+                ],
+                "summary": "Check if migration is applied",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Migration ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -594,6 +700,65 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Migration not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/migrations/{id}/skipped": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Gets skipped migrations for a specific migration",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "migrations"
+                ],
+                "summary": "Get skipped migrations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Migration ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 5,
+                        "description": "Limit number of results",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -950,7 +1115,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Backend For Migrations (BfM) API",
-	Description:      "BfM is a comprehensive database migration system that supports multiple backends\n(PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.\n\nThis API allows you to:\n- Execute up migrations\n- Execute down migrations (rollback)\n- List migrations with filtering\n- Get migration details and status\n- View migration history\n- Check system health",
+	Description:      "BfM is a comprehensive database migration system that supports multiple backends\n(PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.\n\nThis API allows you to:\n- Execute up migrations\n- Execute down migrations (rollback)\n- List migrations with filtering\n- Get migration details and status\n- Check if a migration is applied\n- View migration history\n- Check system health",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

@@ -30,6 +30,14 @@ func NewServer(exec *executor.Executor) *Server {
 	}
 }
 
+// setExecutionContext sets execution context in the request context for gRPC
+func (s *Server) setExecutionContext(ctx context.Context) context.Context {
+	executionContext := map[string]interface{}{
+		"connection_type": "grpc",
+	}
+	return executor.SetExecutionContext(ctx, "grpc_client", "api", executionContext)
+}
+
 // Migrate executes database migrations
 func (s *Server) Migrate(ctx context.Context, req *MigrateRequest) (*MigrateResponse, error) {
 	if req == nil || req.Target == nil {
@@ -51,6 +59,9 @@ func (s *Server) Migrate(ctx context.Context, req *MigrateRequest) (*MigrateResp
 		// For dynamic schemas, use schema_name value directly as schema name
 		schema = req.SchemaName
 	}
+
+	// Set execution context with connection type
+	ctx = s.setExecutionContext(ctx)
 
 	// Execute migrations
 	result, err := s.executor.Execute(ctx, target, req.Connection, schema, req.DryRun, req.IgnoreDependencies)
@@ -74,6 +85,9 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 	if req == nil || req.Target == nil {
 		return status.Error(codes.InvalidArgument, "request and target are required")
 	}
+
+	// Set execution context with connection type
+	ctx := s.setExecutionContext(stream.Context())
 
 	// Convert protobuf target to registry target
 	target := &registry.MigrationTarget{
@@ -116,7 +130,7 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 		}
 
 		// Check if already applied
-		applied, err := s.executor.IsMigrationApplied(stream.Context(), migrationID)
+		applied, err := s.executor.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			progress.Status = "failed"
 			progress.Message = fmt.Sprintf("Error checking status: %v", err)
@@ -170,7 +184,7 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 				DownSQL:    migration.DownSQL,
 			}
 
-			err = backend.ExecuteMigration(stream.Context(), backendMigration)
+			err = backend.ExecuteMigration(ctx, backendMigration)
 			_ = backend.Close()
 
 			if err != nil {
@@ -185,18 +199,23 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 			if migration.Table != nil {
 				tableValue = *migration.Table
 			}
+			// Extract execution context
+			executedBy, executionMethod, executionContext := executor.GetExecutionContext(ctx)
 			record := &state.MigrationRecord{
-				MigrationID:  migrationID,
-				Schema:       migration.Schema,
-				Table:        tableValue,
-				Version:      migration.Version,
-				Connection:   migration.Connection,
-				Backend:      migration.Backend,
-				Status:       "success",
-				AppliedAt:    time.Now().Format(time.RFC3339),
-				ErrorMessage: "",
+				MigrationID:      migrationID,
+				Schema:           migration.Schema,
+				Table:            tableValue,
+				Version:          migration.Version,
+				Connection:       migration.Connection,
+				Backend:          migration.Backend,
+				Status:           "success",
+				AppliedAt:        time.Now().Format(time.RFC3339),
+				ErrorMessage:     "",
+				ExecutedBy:       executedBy,
+				ExecutionMethod:  executionMethod,
+				ExecutionContext: executionContext,
 			}
-			_ = s.executor.GetStateTracker().RecordMigration(stream.Context(), record)
+			_ = s.executor.GetStateTracker().RecordMigration(ctx, record)
 		}
 
 		progress.Status = "success"
@@ -218,6 +237,9 @@ func (s *Server) MigrateDown(ctx context.Context, req *MigrateDownRequest) (*Mig
 	if len(schemas) == 0 {
 		schemas = []string{""}
 	}
+
+	// Set execution context with connection type
+	ctx = s.setExecutionContext(ctx)
 
 	// Execute down migrations
 	result, err := s.executor.ExecuteDown(ctx, req.MigrationId, schemas, req.DryRun, req.IgnoreDependencies)
@@ -453,6 +475,23 @@ func (s *Server) GetMigrationStatus(ctx context.Context, req *GetMigrationStatus
 	return response, nil
 }
 
+// IsMigrationApplied checks if a migration has been applied
+func (s *Server) IsMigrationApplied(ctx context.Context, req *IsMigrationAppliedRequest) (*IsMigrationAppliedResponse, error) {
+	if req == nil || req.MigrationId == "" {
+		return nil, status.Error(codes.InvalidArgument, "request and migration_id are required")
+	}
+
+	// Check if migration is applied using the executor
+	applied, err := s.executor.IsMigrationApplied(ctx, req.MigrationId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check migration status: %v", err)
+	}
+
+	return &IsMigrationAppliedResponse{
+		Applied: applied,
+	}, nil
+}
+
 // GetMigrationHistory gets the execution history for a specific migration
 func (s *Server) GetMigrationHistory(ctx context.Context, req *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error) {
 	if req == nil || req.MigrationId == "" {
@@ -530,6 +569,9 @@ func (s *Server) RollbackMigration(ctx context.Context, req *RollbackMigrationRe
 		return nil, status.Errorf(codes.FailedPrecondition, "migration is not applied: %s", req.MigrationId)
 	}
 
+	// Set execution context with connection type
+	ctx = s.setExecutionContext(ctx)
+
 	// Execute rollback with schemas
 	result, err := s.executor.Rollback(ctx, req.MigrationId, req.Schemas)
 	if err != nil {
@@ -556,6 +598,9 @@ func (s *Server) ReindexMigrations(ctx context.Context, req *ReindexMigrationsRe
 			sfmPath = "../sfm"
 		}
 	}
+
+	// Set execution context with connection type
+	ctx = s.setExecutionContext(ctx)
 
 	result, err := s.executor.ReindexMigrations(ctx, sfmPath)
 	if err != nil {

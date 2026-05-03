@@ -454,6 +454,18 @@ generate-openapi: ## Generate OpenAPI 3.1.1 specification from code annotations
 	@bash scripts/generate-openapi.sh || (echo "$(RED)OpenAPI generation failed$(NC)" && exit 1)
 	@echo "$(GREEN)OpenAPI specification generated successfully!$(NC)"
 
+generate-protobuf: ## Generate Protobuf and gRPC code from .proto files
+	@echo "$(GREEN)Generating Protobuf code...$(NC)"
+	@if ! command -v protoc &> /dev/null; then \
+		echo "$(RED)Error: protoc is not installed$(NC)"; \
+		echo "  Install it from: https://grpc.io/docs/protoc-installation/"; \
+		exit 1; \
+	fi
+	@cd api/internal/api/protobuf && bash generate.sh || (echo "$(RED)Protobuf generation failed$(NC)" && exit 1)
+	@echo "$(GREEN)Protobuf code generated successfully!$(NC)"
+
+protobuf: generate-protobuf ## Alias for generate-protobuf
+
 # ============================================================================
 # Pre-commit Hooks
 # ============================================================================

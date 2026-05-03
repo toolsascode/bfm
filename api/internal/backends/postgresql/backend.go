@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,6 +17,7 @@ import (
 type Backend struct {
 	pool   *pgxpool.Pool
 	config *backends.ConnectionConfig
+	mu     sync.Mutex // Protects pool and config from concurrent access
 }
 
 // NewBackend creates a new PostgreSQL backend
@@ -30,13 +32,8 @@ func (b *Backend) Name() string {
 
 // Connect establishes a connection to PostgreSQL
 func (b *Backend) Connect(config *backends.ConnectionConfig) error {
-	// Close existing connection if any to prevent connection leaks
-	if b.pool != nil {
-		b.pool.Close()
-		b.pool = nil
-	}
-
-	b.config = config
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	// Build connection string
 	connStr := fmt.Sprintf(
@@ -47,6 +44,39 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 		config.Password,
 		config.Database,
 	)
+
+	// Check if we're already connected to the same database
+	if b.pool != nil && b.config != nil {
+		existingConnStr := fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			b.config.Host,
+			b.config.Port,
+			b.config.Username,
+			b.config.Password,
+			b.config.Database,
+		)
+		// Reuse existing pool if connection string matches
+		if existingConnStr == connStr {
+			// Verify pool is still healthy
+			if err := b.pool.Ping(context.Background()); err == nil {
+				b.config = config
+				return nil
+			}
+			// Pool is unhealthy, close it and create a new one
+			b.pool.Close()
+			b.pool = nil
+		} else {
+			// Different connection, close existing pool
+			b.pool.Close()
+			b.pool = nil
+		}
+	} else if b.pool != nil {
+		// Pool exists but config is nil, close it
+		b.pool.Close()
+		b.pool = nil
+	}
+
+	b.config = config
 
 	// Parse connection config
 	poolConfig, err := pgxpool.ParseConfig(connStr)
@@ -65,8 +95,11 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 
 	// Test connection
 	if err := b.pool.Ping(context.Background()); err != nil {
-		b.pool.Close() // Clean up on ping failure
-		b.pool = nil
+		// Clean up on ping failure
+		if b.pool != nil {
+			b.pool.Close()
+			b.pool = nil
+		}
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -75,15 +108,22 @@ func (b *Backend) Connect(config *backends.ConnectionConfig) error {
 
 // Close closes the PostgreSQL connection
 func (b *Backend) Close() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if b.pool != nil {
 		b.pool.Close()
 		b.pool = nil
 	}
+	b.config = nil
 	return nil
 }
 
 // CreateSchema creates a schema if it doesn't exist
 func (b *Backend) CreateSchema(ctx context.Context, schemaName string) error {
+	if b.pool == nil {
+		return fmt.Errorf("database connection not initialized")
+	}
 	query := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", quoteIdentifier(schemaName))
 	_, err := b.pool.Exec(ctx, query)
 	if err != nil {
@@ -94,6 +134,9 @@ func (b *Backend) CreateSchema(ctx context.Context, schemaName string) error {
 
 // SchemaExists checks if a schema exists
 func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, error) {
+	if b.pool == nil {
+		return false, fmt.Errorf("database connection not initialized")
+	}
 	query := `
 		SELECT EXISTS(
 			SELECT 1
@@ -111,6 +154,9 @@ func (b *Backend) SchemaExists(ctx context.Context, schemaName string) (bool, er
 
 // TableExists checks if a table exists in a schema
 func (b *Backend) TableExists(ctx context.Context, schemaName, tableName string) (bool, error) {
+	if b.pool == nil {
+		return false, fmt.Errorf("database connection not initialized")
+	}
 	query := `
 		SELECT EXISTS(
 			SELECT 1
@@ -128,6 +174,9 @@ func (b *Backend) TableExists(ctx context.Context, schemaName, tableName string)
 
 // ExecuteMigration executes a migration script
 func (b *Backend) ExecuteMigration(ctx context.Context, migration *backends.MigrationScript) error {
+	if b.pool == nil {
+		return fmt.Errorf("database connection not initialized")
+	}
 	// Ensure schema exists if specified
 	if migration.Schema != "" {
 		exists, err := b.SchemaExists(ctx, migration.Schema)

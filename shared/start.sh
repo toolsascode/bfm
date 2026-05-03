@@ -6,11 +6,13 @@
 # Don't exit on error in cleanup - we want to clean up everything
 set -e
 
-# Colors for output
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+# JSON logging helper function
+log_json() {
+    local level=$1
+    shift
+    local message="$*"
+    echo "{\"level\":\"$level\",\"msg\":\"$message\",\"time\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+}
 
 # PID files
 PID_DIR="/tmp"
@@ -19,13 +21,13 @@ WORKER_PID_FILE="${PID_DIR}/bfm-worker.pid"
 
 # Cleanup function
 cleanup() {
-    echo -e "\n${YELLOW}Shutting down services...${NC}"
+    log_json "info" "Shutting down services..."
 
     # Stop worker if running
     if [ -f "$WORKER_PID_FILE" ]; then
         WORKER_PID=$(cat "$WORKER_PID_FILE")
         if kill -0 "$WORKER_PID" 2>/dev/null; then
-            echo -e "${YELLOW}Stopping BfM Worker (PID: $WORKER_PID)...${NC}"
+            log_json "info" "Stopping BfM Worker (PID: $WORKER_PID)"
             kill -TERM "$WORKER_PID" 2>/dev/null || true
             wait "$WORKER_PID" 2>/dev/null || true
         fi
@@ -36,14 +38,14 @@ cleanup() {
     if [ -f "$SERVER_PID_FILE" ]; then
         SERVER_PID=$(cat "$SERVER_PID_FILE")
         if kill -0 "$SERVER_PID" 2>/dev/null; then
-            echo -e "${YELLOW}Stopping BfM Server (PID: $SERVER_PID)...${NC}"
+            log_json "info" "Stopping BfM Server (PID: $SERVER_PID)"
             kill -TERM "$SERVER_PID" 2>/dev/null || true
             wait "$SERVER_PID" 2>/dev/null || true
         fi
         rm -f "$SERVER_PID_FILE"
     fi
 
-    echo -e "${GREEN}All services stopped.${NC}"
+    log_json "info" "All services stopped"
     exit 0
 }
 
@@ -55,37 +57,36 @@ mkdir -p "$PID_DIR"
 
 # Create SFM directory if it doesn't exist and BFM_SFM_PATH is set
 if [ -n "$BFM_SFM_PATH" ]; then
-    echo -e "${YELLOW}Creating SFM directory at $BFM_SFM_PATH if it doesn't exist...${NC}"
+    log_json "info" "Creating SFM directory at $BFM_SFM_PATH if it doesn't exist"
     mkdir -p "$BFM_SFM_PATH" || true
 fi
 
 # Start BfM Server
-echo -e "${GREEN}Starting BfM Server...${NC}"
+log_json "info" "Starting BfM Server"
 /app/bin/bfm-server &
 SERVER_PID=$!
 echo "$SERVER_PID" > "$SERVER_PID_FILE"
-echo -e "${GREEN}BfM Server started (PID: $SERVER_PID)${NC}"
+log_json "info" "BfM Server started (PID: $SERVER_PID)"
 
 # Wait for server to be ready
-echo -e "${YELLOW}Waiting for BfM Server to be ready...${NC}"
+log_json "info" "Waiting for BfM Server to be ready"
 SERVER_STARTED=false
 for i in {1..60}; do
     if curl -s http://localhost:7070/health > /dev/null 2>&1; then
-        echo -e "${GREEN}BfM Server is ready!${NC}"
+        log_json "info" "BfM Server is ready"
         SERVER_STARTED=true
         break
     fi
     # Check if server process is still running
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo -e "${RED}Error: BfM Server process (PID: $SERVER_PID) has exited${NC}"
+        log_json "error" "BfM Server process (PID: $SERVER_PID) has exited"
         # Don't exit immediately - let the wait loop continue to show logs
         SERVER_STARTED=false
     fi
     if [ $i -eq 60 ]; then
         if [ "$SERVER_STARTED" != "true" ]; then
-            echo -e "${RED}Error: BfM Server failed to start within 60 seconds${NC}"
-            echo -e "${YELLOW}Server process status:${NC}"
-            ps aux | grep bfm-server || echo "Server process not found"
+            log_json "error" "BfM Server failed to start within 60 seconds"
+            log_json "info" "Server process status: $(ps aux | grep bfm-server || echo 'Server process not found')"
             cleanup
             exit 1
         fi
@@ -95,17 +96,17 @@ done
 
 # Start BfM Worker conditionally
 if [ "${BFM_QUEUE_ENABLED:-false}" = "true" ]; then
-    echo -e "${GREEN}Starting BfM Worker (queue enabled)...${NC}"
+    log_json "info" "Starting BfM Worker (queue enabled)"
     /app/bin/bfm-worker &
     WORKER_PID=$!
     echo "$WORKER_PID" > "$WORKER_PID_FILE"
-    echo -e "${GREEN}BfM Worker started (PID: $WORKER_PID)${NC}"
+    log_json "info" "BfM Worker started (PID: $WORKER_PID)"
 else
-    echo -e "${YELLOW}BfM Worker not started (BFM_QUEUE_ENABLED is not 'true')${NC}"
+    log_json "info" "BfM Worker not started (BFM_QUEUE_ENABLED is not 'true')"
 fi
 
 # Generate runtime config for frontend from BFM_* environment variables
-echo -e "${GREEN}Generating runtime config for frontend...${NC}"
+log_json "info" "Generating runtime config for frontend"
 cat > /app/frontend/runtime-config.js << EOF
 window.__RUNTIME_CONFIG__ = {
   BFM_API_URL: '${BFM_FRONTEND_API_URL:-/api}',
@@ -121,17 +122,14 @@ if [ -f /app/frontend/index.html ]; then
     if ! grep -q "runtime-config.js" /app/frontend/index.html; then
         sed -i 's|</head>|<script src="/runtime-config.js"></script></head>|' /app/frontend/index.html
     fi
-    echo -e "${GREEN}Frontend runtime config generated${NC}"
+    log_json "info" "Frontend runtime config generated"
 else
-    echo -e "${YELLOW}Warning: Frontend directory not found, skipping runtime config injection${NC}"
+    log_json "warn" "Frontend directory not found, skipping runtime config injection"
 fi
 
-echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}All services started successfully!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo -e "  Frontend & API: http://localhost:7070"
-echo -e "  API (gRPC):     localhost:9090"
-echo -e "${GREEN}========================================${NC}\n"
+log_json "info" "All services started successfully"
+log_json "info" "Frontend & API: http://localhost:7070"
+log_json "info" "API (gRPC): localhost:9090"
 
 # Wait for server (foreground process)
 wait "$SERVER_PID" 2>/dev/null || true

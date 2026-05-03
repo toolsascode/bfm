@@ -191,6 +191,18 @@ func (m *mockStateTracker) RecordMigration(ctx interface{}, migration *state.Mig
 	return nil
 }
 
+func (m *mockStateTracker) RecordDependencyMigration(ctx interface{}, migration *state.MigrationRecord) error {
+	// Requirement: Dependencies should NOT be recorded in history, only marked as applied
+	// Do NOT append to m.history - this is the key difference from RecordMigration
+	switch migration.Status {
+	case "success":
+		m.appliedMigrations[migration.MigrationID] = true
+	case "rolled_back":
+		m.appliedMigrations[migration.MigrationID] = false
+	}
+	return nil
+}
+
 func (m *mockStateTracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
 	if m.getMigrationHistoryError != nil {
 		return nil, m.getMigrationHistoryError
@@ -239,6 +251,14 @@ func (m *mockStateTracker) IsMigrationApplied(ctx interface{}, migrationID strin
 	if m.isMigrationAppliedError != nil {
 		return false, m.isMigrationAppliedError
 	}
+	return m.appliedMigrations[migrationID], nil
+}
+
+func (m *mockStateTracker) IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error) {
+	if m.isMigrationAppliedError != nil {
+		return false, m.isMigrationAppliedError
+	}
+	// For mock, treat pending/applied the same as applied
 	return m.appliedMigrations[migrationID], nil
 }
 
@@ -331,7 +351,6 @@ func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID s
 	// This allows the executor to find the execution regardless of which schema it's looking for
 	return []*state.MigrationExecution{
 		{
-			ID:          1,
 			MigrationID: migrationID,
 			Schema:      "", // Empty schema
 			Version:     version,
@@ -344,7 +363,6 @@ func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID s
 			UpdatedAt:   time.Now().Format(time.RFC3339),
 		},
 		{
-			ID:          2,
 			MigrationID: migrationID,
 			Schema:      "public", // Public schema
 			Version:     version,
@@ -360,6 +378,14 @@ func (m *mockStateTracker) GetMigrationExecutions(ctx interface{}, migrationID s
 }
 func (m *mockStateTracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
 	return []*state.MigrationExecution{}, nil
+}
+
+func (m *mockStateTracker) RecordSkippedMigrations(ctx interface{}, skippedMigrationIDs []string, executedBy, executionMethod, executionContext string) error {
+	return nil
+}
+
+func (m *mockStateTracker) GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*state.SkippedMigration, error) {
+	return nil, nil
 }
 
 func setupTestRouter(reg *mockRegistry, tracker *mockStateTracker) (*gin.Engine, *executor.Executor) {

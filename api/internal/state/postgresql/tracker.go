@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/toolsascode/bfm/api/internal/backends"
+	"github.com/toolsascode/bfm/api/internal/logger"
 	"github.com/toolsascode/bfm/api/internal/state"
 )
 
@@ -152,7 +153,6 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 
 	createExecutionsTableSQL := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			id SERIAL PRIMARY KEY,
 			migration_id VARCHAR(255) NOT NULL,
 			schema VARCHAR(255) NOT NULL,
 			version VARCHAR(50) NOT NULL,
@@ -165,12 +165,62 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (migration_id) REFERENCES %s(migration_id) ON DELETE CASCADE,
-			UNIQUE (migration_id, schema, version, connection, backend)
+			PRIMARY KEY (migration_id, schema, version, connection, backend)
 		)
 	`, executionsTableName, listTableName)
 
 	if _, err := t.pool.Exec(ctxVal, createExecutionsTableSQL); err != nil {
 		return fmt.Errorf("failed to create migrations_executions table: %w", err)
+	}
+
+	// Migrate existing schema if needed (handle databases with old id column)
+	// Try to drop id column if it exists (for existing databases)
+	// This is safe because CREATE TABLE IF NOT EXISTS won't recreate the column
+	dropIDColumnSQL := fmt.Sprintf(`
+		ALTER TABLE %s DROP COLUMN IF EXISTS id
+	`, executionsTableName)
+	_, _ = t.pool.Exec(ctxVal, dropIDColumnSQL)
+
+	// Drop old unique constraint if it exists (will be replaced by PRIMARY KEY)
+	dropUniqueSQL := fmt.Sprintf(`
+		ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s_migration_id_schema_version_connection_backend_key
+	`, executionsTableName, executionsTableName)
+	_, _ = t.pool.Exec(ctxVal, dropUniqueSQL)
+
+	// Ensure composite primary key exists (CREATE TABLE already created it, but this handles existing tables)
+	// First check if a primary key on these columns already exists
+	// Use oid to check for primary key constraint
+	var schemaNameForCheck string
+	if t.schema != "" && t.schema != "public" {
+		schemaNameForCheck = t.schema
+	} else {
+		schemaNameForCheck = "public"
+	}
+	checkPKSQL := `
+		SELECT COUNT(*) FROM pg_constraint c
+		JOIN pg_class t ON c.conrelid = t.oid
+		JOIN pg_namespace n ON t.relnamespace = n.oid
+		WHERE n.nspname = $1
+		AND t.relname = $2
+		AND c.contype = 'p'
+		AND array_length(c.conkey, 1) = 5
+	`
+	var pkCount int
+	if err := t.pool.QueryRow(ctxVal, checkPKSQL, schemaNameForCheck, "migrations_executions").Scan(&pkCount); err == nil && pkCount == 0 {
+		// Drop any existing primary key first
+		dropOldPKSQL := fmt.Sprintf(`
+			ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s_pkey
+		`, executionsTableName, executionsTableName)
+		_, _ = t.pool.Exec(ctxVal, dropOldPKSQL)
+
+		// Create composite primary key
+		createPKSQL := fmt.Sprintf(`
+			ALTER TABLE %s ADD PRIMARY KEY (migration_id, schema, version, connection, backend)
+		`, executionsTableName)
+		if _, err := t.pool.Exec(ctxVal, createPKSQL); err != nil {
+			// Log warning but don't fail - table might already have the constraint
+			fmt.Printf("Note: Could not create composite primary key on %s (may already exist): %v\n", executionsTableName, err)
+		}
 	}
 
 	// Create indexes for migrations_executions
@@ -183,6 +233,35 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 
 	indexSQL9 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_executions_created_at ON %s (created_at DESC)", executionsTableName)
 	_, _ = t.pool.Exec(ctxVal, indexSQL9)
+
+	// Ensure foreign key constraint exists on migrations_executions.migration_id
+	// This constraint prevents invalid migration IDs from being inserted
+	var fkCount int
+	checkFKSQL := `
+		SELECT COUNT(*) FROM pg_constraint c
+		JOIN pg_class t ON c.conrelid = t.oid
+		JOIN pg_namespace n ON t.relnamespace = n.oid
+		JOIN pg_class r ON c.confrelid = r.oid
+		WHERE n.nspname = $1
+		AND t.relname = $2
+		AND r.relname = $3
+		AND c.contype = 'f'
+		AND c.conname LIKE '%migration_id%'
+	`
+	if err := t.pool.QueryRow(ctxVal, checkFKSQL, schemaNameForCheck, "migrations_executions", "migrations_list").Scan(&fkCount); err == nil && fkCount == 0 {
+		// Foreign key constraint doesn't exist, create it
+		createFKSQL := fmt.Sprintf(`
+			ALTER TABLE %s
+			ADD CONSTRAINT migrations_executions_migration_id_fkey
+			FOREIGN KEY (migration_id) REFERENCES %s(migration_id) ON DELETE CASCADE
+		`, executionsTableName, listTableName)
+		if _, err := t.pool.Exec(ctxVal, createFKSQL); err != nil {
+			// Log warning but don't fail - constraint might already exist with different name
+			fmt.Printf("Note: Could not create foreign key constraint on %s (may already exist): %v\n", executionsTableName, err)
+		} else {
+			fmt.Printf("✓ Foreign key constraint created on %s.migration_id -> %s.migration_id\n", executionsTableName, listTableName)
+		}
+	}
 
 	// Create migrations_dependencies table
 	dependenciesTableName := "migrations_dependencies"
@@ -219,6 +298,43 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 	indexSQL11 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_dependencies_dependency_id ON %s (dependency_id)", dependenciesTableName)
 	_, _ = t.pool.Exec(ctxVal, indexSQL11)
 
+	// Create migrations_skipped table
+	skippedTableName := "migrations_skipped"
+	if t.schema != "" && t.schema != "public" {
+		skippedTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_skipped"))
+	}
+
+	createSkippedTableSQL := fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id SERIAL PRIMARY KEY,
+			migration_id VARCHAR(255) NOT NULL,
+			schema VARCHAR(255) NOT NULL,
+			version VARCHAR(50) NOT NULL,
+			connection VARCHAR(255) NOT NULL,
+			backend VARCHAR(50) NOT NULL,
+			executed_by VARCHAR(255),
+			execution_method VARCHAR(20) NOT NULL DEFAULT 'api',
+			execution_context TEXT,
+			skipped_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (migration_id) REFERENCES %s(migration_id) ON DELETE CASCADE
+		)
+	`, skippedTableName, listTableName)
+
+	if _, err := t.pool.Exec(ctxVal, createSkippedTableSQL); err != nil {
+		return fmt.Errorf("failed to create migrations_skipped table: %w", err)
+	}
+
+	// Create indexes for migrations_skipped
+	indexSQL12 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_skipped_migration_id ON %s (migration_id)", skippedTableName)
+	_, _ = t.pool.Exec(ctxVal, indexSQL12)
+
+	indexSQL13 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_skipped_skipped_at ON %s (skipped_at DESC)", skippedTableName)
+	_, _ = t.pool.Exec(ctxVal, indexSQL13)
+
+	indexSQL14 := fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_migrations_skipped_connection_backend ON %s (connection, backend)", skippedTableName)
+	_, _ = t.pool.Exec(ctxVal, indexSQL14)
+
 	// Migrate existing data from old tables if they exist
 	executionsTableNameForMigration := executionsTableName
 	dependenciesTableNameForMigration := dependenciesTableName
@@ -228,6 +344,47 @@ func (t *Tracker) Initialize(ctx interface{}) error {
 	}
 
 	return nil
+}
+
+// extractBaseMigrationID removes prefixes (organization ID, schema, etc.) to get base migration_id
+// Migration ID can have multiple prefixes: {org_id}_{schema}_{version}_{name}_{backend}_{connection}
+// Base format: {version}_{name}_{backend}_{connection}
+// Version is typically 14 digits (YYYYMMDDHHMMSS), so we keep removing prefixes until we find a version
+func extractBaseMigrationID(migrationID string) string {
+	// Remove rollback suffix if present
+	id := migrationID
+	if strings.Contains(id, "_rollback") {
+		id = strings.TrimSuffix(id, "_rollback")
+	}
+
+	parts := strings.Split(id, "_")
+	if len(parts) < 4 {
+		// Not enough parts, return as-is
+		return id
+	}
+
+	// Find the first part that looks like a version (14 digits)
+	// Keep removing prefixes until we find a version
+	for i := 0; i < len(parts); i++ {
+		part := parts[i]
+		// Check if this part is a version (14 digits, YYYYMMDDHHMMSS)
+		if len(part) == 14 {
+			allDigits := true
+			for _, r := range part {
+				if r < '0' || r > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				// Found the version, this is the start of the base migration ID
+				return strings.Join(parts[i:], "_")
+			}
+		}
+	}
+
+	// If no version found, return original (might be a legacy format)
+	return id
 }
 
 // RecordMigration records a migration execution
@@ -254,40 +411,12 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 	// Migration ID can be in formats:
 	// - Base: {version}_{name}_{backend}_{connection}
 	// - Schema-specific: {schema}_{version}_{name}_{backend}_{connection}
+	// - With organization/tenant prefix: {org_id}_{schema}_{version}_{name}_{backend}_{connection}
 	// - With rollback suffix: ..._rollback
-	// migrations_list should always use the base ID (without schema prefix)
+	// migrations_list should always use the base ID (without prefixes)
 	migrationID := migration.MigrationID
 	isRollback := strings.Contains(migrationID, "_rollback")
-	if isRollback {
-		migrationID = strings.TrimSuffix(migrationID, "_rollback")
-	}
-
-	// Remove schema prefix if present to get base migration_id
-	// Schema-specific format: {schema}_{version}_{name}_{backend}_{connection}
-	// Base format: {version}_{name}_{backend}_{connection}
-	// Version is typically 14 digits (YYYYMMDDHHMMSS), so we check if first part is a version
-	baseMigrationID := migrationID
-	parts := strings.Split(migrationID, "_")
-	if len(parts) >= 5 {
-		// Check if first part looks like a schema name (not a version number)
-		// Versions are 14 digits, so if first part is not all digits, it might be a schema prefix
-		firstPart := parts[0]
-		isVersion := len(firstPart) >= 10 && len(firstPart) <= 20
-		if isVersion {
-			allDigits := true
-			for _, r := range firstPart {
-				if r < '0' || r > '9' {
-					allDigits = false
-					break
-				}
-			}
-			isVersion = allDigits
-		}
-		// If first part is not a version, it's likely a schema prefix - remove it
-		if !isVersion {
-			baseMigrationID = strings.Join(parts[1:], "_")
-		}
-	}
+	baseMigrationID := extractBaseMigrationID(migrationID)
 
 	executedBy := migration.ExecutedBy
 	if executedBy == "" {
@@ -298,17 +427,36 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		executionMethod = "api"
 	}
 
+	// Map status values
+	status := migration.Status
+	if status == "success" {
+		status = "applied"
+	}
+
+	// Extract connection type from execution context for logging
+	connectionType := "unknown"
+	if migration.ExecutionContext != "" {
+		var execCtx map[string]interface{}
+		if err := json.Unmarshal([]byte(migration.ExecutionContext), &execCtx); err == nil {
+			if ct, ok := execCtx["connection_type"].(string); ok && ct != "" {
+				connectionType = ct
+			}
+		}
+	}
+
+	// Log migration execution with connection type
+	logger.Infof("Recording migration: id=%s, status=%s, connection=%s, backend=%s, connection_type=%s, execution_method=%s",
+		baseMigrationID, status, migration.Connection, migration.Backend, connectionType, executionMethod)
+
 	// Convert schema to array
 	schemas := []string{}
 	if migration.Schema != "" {
 		schemas = []string{migration.Schema}
 	}
 
-	// Map status values
-	status := migration.Status
-	if status == "success" {
-		status = "applied"
-	}
+	// Debug logging for schema-specific migrations
+	logger.Debug("RecordMigration: migrationID=%s, baseMigrationID=%s, migration.Schema=%s, schemas=%v, status=%s",
+		migration.MigrationID, baseMigrationID, migration.Schema, schemas, status)
 
 	// Ensure migration exists in migrations_list before inserting history
 	// Use INSERT ... ON CONFLICT DO UPDATE to create if missing, update if exists
@@ -337,11 +485,16 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		schemaValue = schemas[0]
 	}
 
+	// Only update status if it's not already 'applied' to prevent overwriting successful migrations
+	// Reference the existing row using the table name in the CASE expression
 	upsertListSQL := fmt.Sprintf(`
-		INSERT INTO %s (migration_id, schema, version, name, connection, backend, status, created_at, updated_at)
+		INSERT INTO %s AS ml (migration_id, schema, version, name, connection, backend, status, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT (migration_id) DO UPDATE SET
-			status = $7,
+			status = CASE
+				WHEN ml.status = 'applied' THEN ml.status
+				ELSE EXCLUDED.status
+			END,
 			updated_at = CURRENT_TIMESTAMP
 	`, listTableName)
 
@@ -352,11 +505,7 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		return fmt.Errorf("failed to upsert migration in migrations_list: %w", err)
 	}
 
-	// Skip insertion if no schemas specified
-	if len(schemas) == 0 {
-		return nil
-	}
-
+	// Always record history, even if schema is empty
 	// Insert one record per schema into migrations_history
 	insertHistorySQL := fmt.Sprintf(`
 		INSERT INTO %s (migration_id, schema, version, connection, backend,
@@ -365,7 +514,183 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 		RETURNING id
 	`, historyTableName)
 
+	// If no schemas specified, use empty string to record history anyway
+	historySchemas := schemas
+	if len(historySchemas) == 0 {
+		historySchemas = []string{""}
+	}
+
+	// Insert history for each schema (or empty string if no schema)
+	for _, schema := range historySchemas {
+		var historyID int
+		logger.Debug("RecordMigration: Inserting into migrations_history: migration_id=%s, schema=%s, version=%s, connection=%s, backend=%s, status=%s",
+			baseMigrationID, schema, migration.Version, migration.Connection, migration.Backend, status)
+		err = t.pool.QueryRow(ctxVal, insertHistorySQL,
+			baseMigrationID, schema, migration.Version,
+			migration.Connection, migration.Backend, status, migration.ErrorMessage,
+			executedBy, executionMethod, migration.ExecutionContext, appliedAt, appliedAt).Scan(&historyID)
+		if err != nil {
+			logger.Errorf("RecordMigration: Failed to insert into migrations_history: migration_id=%s, schema=%s, error=%v",
+				baseMigrationID, schema, err)
+			return fmt.Errorf("failed to insert into migrations_history: %w", err)
+		}
+		logger.Debug("RecordMigration: Successfully inserted into migrations_history: id=%d, migration_id=%s, schema=%s",
+			historyID, baseMigrationID, schema)
+	}
+
+	// Skip migrations_executions if no schemas specified (this table requires schema)
+	if len(schemas) == 0 {
+		return nil
+	}
+
 	// Insert one record per schema into migrations_executions
+	applied := status == "applied"
+	var appliedAtPtr *time.Time
+	if applied {
+		appliedAtPtr = &appliedAt
+	}
+
+	execStatus := "pending"
+	if applied {
+		execStatus = "applied"
+	} else if status == "failed" {
+		execStatus = "failed"
+	}
+
+	// Validate that baseMigrationID exists in migrations_list before inserting into migrations_executions
+	// This ensures the foreign key constraint is satisfied and provides clear error messages
+	checkExistsSQL := fmt.Sprintf(`
+		SELECT COUNT(*) FROM %s WHERE migration_id = $1
+	`, listTableName)
+	var count int
+	err = t.pool.QueryRow(ctxVal, checkExistsSQL, baseMigrationID).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to validate migration_id %s: %w", baseMigrationID, err)
+	}
+	if count == 0 {
+		// This should not happen since we upsert into migrations_list above, but log as warning
+		fmt.Fprintf(os.Stderr, "⚠️  WARNING: Migration ID '%s' (extracted from '%s') does not exist in migrations_list. This may indicate an invalid migration ID format.\n", baseMigrationID, migration.MigrationID)
+		// Try to upsert again to ensure it exists
+		_, err = t.pool.Exec(ctxVal, upsertListSQL,
+			baseMigrationID, schemaValue, migration.Version, migrationName,
+			migration.Connection, migration.Backend, listStatus)
+		if err != nil {
+			return fmt.Errorf("failed to upsert migration in migrations_list (retry): %w", err)
+		}
+	}
+
+	insertExecutionSQL := fmt.Sprintf(`
+		INSERT INTO %s (migration_id, schema, version, connection, backend, status, applied, applied_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (migration_id, schema, version, connection, backend) DO UPDATE SET
+			status = EXCLUDED.status,
+			applied = EXCLUDED.applied,
+			applied_at = EXCLUDED.applied_at,
+			updated_at = CURRENT_TIMESTAMP
+	`, executionsTableName)
+
+	// Create one record per schema
+	for _, schema := range schemas {
+		// Insert into migrations_executions with foreign key validation
+		logger.Debug("RecordMigration: Upserting into migrations_executions: migration_id=%s, schema=%s, version=%s, connection=%s, backend=%s, status=%s, applied=%v",
+			baseMigrationID, schema, migration.Version, migration.Connection, migration.Backend, execStatus, applied)
+		_, err = t.pool.Exec(ctxVal, insertExecutionSQL,
+			baseMigrationID, schema, migration.Version,
+			migration.Connection, migration.Backend, execStatus, applied, appliedAtPtr)
+		if err != nil {
+			// Check if this is a foreign key violation
+			errStr := err.Error()
+			if strings.Contains(errStr, "foreign key") || strings.Contains(errStr, "violates foreign key constraint") {
+				fmt.Fprintf(os.Stderr, "❌ ERROR: Foreign key violation detected!\n")
+				fmt.Fprintf(os.Stderr, "   Migration ID: %s (extracted from: %s)\n", baseMigrationID, migration.MigrationID)
+				fmt.Fprintf(os.Stderr, "   Schema: %s, Version: %s, Connection: %s, Backend: %s\n", schema, migration.Version, migration.Connection, migration.Backend)
+				fmt.Fprintf(os.Stderr, "   This migration_id does not exist in migrations_list table.\n")
+				fmt.Fprintf(os.Stderr, "   Please ensure the migration is registered in migrations_list first.\n")
+				return fmt.Errorf("foreign key violation: migration_id '%s' does not exist in migrations_list: %w", baseMigrationID, err)
+			}
+			return fmt.Errorf("failed to insert into migrations_executions: %w", err)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("failed to insert into migrations_executions: %w", err)
+	}
+
+	return nil
+}
+
+// RecordDependencyMigration records a dependency migration as applied without creating history entries.
+// Requirement: Dependencies should only be recorded in the execution history of the migration that depends on them.
+// This method marks the dependency as applied in migrations_list and migrations_executions but skips migrations_history.
+func (t *Tracker) RecordDependencyMigration(ctx interface{}, migration *state.MigrationRecord) error {
+	ctxVal := ctx.(context.Context)
+
+	listTableName := "migrations_list"
+	executionsTableName := "migrations_executions"
+	if t.schema != "" && t.schema != "public" {
+		listTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_list"))
+		executionsTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_executions"))
+	}
+
+	appliedAt := time.Now()
+	if migration.AppliedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, migration.AppliedAt); err == nil {
+			appliedAt = parsed
+		}
+	}
+
+	migrationID := migration.MigrationID
+	baseMigrationID := extractBaseMigrationID(migrationID)
+
+	// Map status values
+	status := migration.Status
+	if status == "success" {
+		status = "applied"
+	}
+
+	listStatus := status
+
+	// Extract name from baseMigrationID
+	migrationName := ""
+	baseParts := strings.Split(baseMigrationID, "_")
+	if len(baseParts) >= 4 {
+		migrationName = strings.Join(baseParts[1:len(baseParts)-2], "_")
+	}
+
+	// Convert schema to array
+	schemas := []string{}
+	if migration.Schema != "" {
+		schemas = []string{migration.Schema}
+	}
+
+	schemaValue := ""
+	if len(schemas) > 0 {
+		schemaValue = schemas[0]
+	}
+
+	// Update migrations_list to mark dependency as applied (but don't create history)
+	upsertListSQL := fmt.Sprintf(`
+		INSERT INTO %s AS ml (migration_id, schema, version, name, connection, backend, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT (migration_id) DO UPDATE SET
+			status = CASE
+				WHEN ml.status = 'applied' THEN ml.status
+				ELSE EXCLUDED.status
+			END,
+			updated_at = CURRENT_TIMESTAMP
+	`, listTableName)
+
+	_, err := t.pool.Exec(ctxVal, upsertListSQL,
+		baseMigrationID, schemaValue, migration.Version, migrationName,
+		migration.Connection, migration.Backend, listStatus)
+	if err != nil {
+		return fmt.Errorf("failed to upsert dependency migration in migrations_list: %w", err)
+	}
+
+	// Update migrations_executions (but skip migrations_history - requirement 4)
+	if len(schemas) == 0 {
+		return nil
+	}
+
 	applied := status == "applied"
 	var appliedAtPtr *time.Time
 	if applied {
@@ -389,30 +714,16 @@ func (t *Tracker) RecordMigration(ctx interface{}, migration *state.MigrationRec
 			updated_at = CURRENT_TIMESTAMP
 	`, executionsTableName)
 
-	// Create one record per schema
 	for _, schema := range schemas {
-		// Insert into migrations_history
-		var historyID int
-		err = t.pool.QueryRow(ctxVal, insertHistorySQL,
-			baseMigrationID, schema, migration.Version,
-			migration.Connection, migration.Backend, status, migration.ErrorMessage,
-			executedBy, executionMethod, migration.ExecutionContext, appliedAt, appliedAt).Scan(&historyID)
-		if err != nil {
-			return fmt.Errorf("failed to insert into migrations_history: %w", err)
-		}
-
-		// Insert into migrations_executions
 		_, err = t.pool.Exec(ctxVal, insertExecutionSQL,
 			baseMigrationID, schema, migration.Version,
 			migration.Connection, migration.Backend, execStatus, applied, appliedAtPtr)
 		if err != nil {
-			return fmt.Errorf("failed to insert into migrations_executions: %w", err)
+			return fmt.Errorf("failed to insert dependency execution state for %s: %w", baseMigrationID, err)
 		}
 	}
-	if err != nil {
-		return fmt.Errorf("failed to insert into migrations_executions: %w", err)
-	}
 
+	logger.Debug("Recorded dependency migration %s as applied (no history entry created)", baseMigrationID)
 	return nil
 }
 
@@ -603,28 +914,8 @@ func (t *Tracker) GetMigrationDetail(ctx interface{}, migrationID string) (*stat
 		listTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_list"))
 	}
 
-	// Remove schema prefix if present to get base migration_id
-	baseMigrationID := migrationID
-	parts := strings.Split(migrationID, "_")
-	if len(parts) >= 5 {
-		// Check if first part is a version (all digits, 10-20 chars)
-		firstPart := parts[0]
-		isVersion := len(firstPart) >= 10 && len(firstPart) <= 20
-		if isVersion {
-			allDigits := true
-			for _, r := range firstPart {
-				if r < '0' || r > '9' {
-					allDigits = false
-					break
-				}
-			}
-			isVersion = allDigits
-		}
-		// If first part is not a version, it's likely a schema prefix - remove it
-		if !isVersion {
-			baseMigrationID = strings.Join(parts[1:], "_")
-		}
-	}
+	// Remove prefixes to get base migration_id
+	baseMigrationID := extractBaseMigrationID(migrationID)
 
 	query := fmt.Sprintf(`
 		SELECT migration_id, schema, version, name, connection, backend,
@@ -692,31 +983,11 @@ func (t *Tracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([
 		executionsTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_executions"))
 	}
 
-	// Remove schema prefix if present to get base migration_id
-	baseMigrationID := migrationID
-	parts := strings.Split(migrationID, "_")
-	if len(parts) >= 5 {
-		// Check if first part is a version (all digits, 10-20 chars)
-		firstPart := parts[0]
-		isVersion := len(firstPart) >= 10 && len(firstPart) <= 20
-		if isVersion {
-			allDigits := true
-			for _, r := range firstPart {
-				if r < '0' || r > '9' {
-					allDigits = false
-					break
-				}
-			}
-			isVersion = allDigits
-		}
-		// If first part is not a version, it's likely a schema prefix - remove it
-		if !isVersion {
-			baseMigrationID = strings.Join(parts[1:], "_")
-		}
-	}
+	// Remove prefixes to get base migration_id
+	baseMigrationID := extractBaseMigrationID(migrationID)
 
 	query := fmt.Sprintf(`
-		SELECT id, migration_id, schema, version, connection, backend,
+		SELECT migration_id, schema, version, connection, backend,
 		       status, applied, applied_at, created_at, updated_at
 		FROM %s WHERE migration_id = $1
 		ORDER BY created_at DESC
@@ -735,7 +1006,6 @@ func (t *Tracker) GetMigrationExecutions(ctx interface{}, migrationID string) ([
 		var appliedAt, createdAt, updatedAt *time.Time
 
 		err := rows.Scan(
-			&exec.ID,
 			&exec.MigrationID,
 			&schemaStr,
 			&exec.Version,
@@ -780,7 +1050,7 @@ func (t *Tracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.Migr
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, migration_id, schema, version, connection, backend,
+		SELECT migration_id, schema, version, connection, backend,
 		       status, applied, applied_at, created_at, updated_at
 		FROM %s
 		ORDER BY created_at DESC
@@ -800,7 +1070,6 @@ func (t *Tracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.Migr
 		var appliedAt, createdAt, updatedAt *time.Time
 
 		err := rows.Scan(
-			&exec.ID,
 			&exec.MigrationID,
 			&schemaStr,
 			&exec.Version,
@@ -835,18 +1104,349 @@ func (t *Tracker) GetRecentExecutions(ctx interface{}, limit int) ([]*state.Migr
 	return executions, rows.Err()
 }
 
-// IsMigrationApplied checks if a migration has been applied
-func (t *Tracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
+// RecordSkippedMigrations records skipped migrations for a given execution context
+func (t *Tracker) RecordSkippedMigrations(ctx interface{}, skippedMigrationIDs []string, executedBy, executionMethod, executionContext string) error {
+	if len(skippedMigrationIDs) == 0 {
+		return nil
+	}
+
 	ctxVal := ctx.(context.Context)
+
+	skippedTableName := "migrations_skipped"
+	if t.schema != "" && t.schema != "public" {
+		skippedTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_skipped"))
+	}
 
 	listTableName := "migrations_list"
 	if t.schema != "" && t.schema != "public" {
 		listTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_list"))
 	}
 
-	query := fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE migration_id = $1 AND status = 'applied')", listTableName)
+	// Get migration details for each skipped migration ID
+	// We need to extract schema, version, connection, backend from migrations_list
+	for _, migrationID := range skippedMigrationIDs {
+		// Extract base migration ID (remove schema prefix if present)
+		// migrations_list stores base IDs, and migrations_skipped foreign key references base IDs
+		baseMigrationID := extractBaseMigrationID(migrationID)
+
+		// Extract schema from the original migrationID if it has a prefix
+		var schema string
+		if baseMigrationID != migrationID {
+			// There was a prefix, extract it
+			parts := strings.Split(migrationID, "_")
+			baseParts := strings.Split(baseMigrationID, "_")
+			if len(parts) > len(baseParts) {
+				// The difference is the prefix, which could be organization ID + schema
+				// For simplicity, use the first part as schema
+				schema = parts[0]
+			}
+		}
+
+		// Query migrations_list to get migration details using base migration ID
+		query := fmt.Sprintf(`
+			SELECT schema, version, connection, backend
+			FROM %s
+			WHERE migration_id = $1
+		`, listTableName)
+
+		var dbSchema, version, connection, backend string
+		err := t.pool.QueryRow(ctxVal, query, baseMigrationID).Scan(&dbSchema, &version, &connection, &backend)
+		if err != nil {
+			// If migration not found in list, skip it (it might not be registered yet)
+			// Log warning but continue with other migrations
+			fmt.Printf("Warning: Skipped migration %s (base: %s) not found in migrations_list, skipping record\n", migrationID, baseMigrationID)
+			continue
+		}
+
+		// Use schema from migrationID if available, otherwise use schema from migrations_list
+		if schema == "" {
+			schema = dbSchema
+		}
+
+		// Insert into migrations_skipped using base migration ID (required for foreign key)
+		insertSQL := fmt.Sprintf(`
+			INSERT INTO %s (migration_id, schema, version, connection, backend, executed_by, execution_method, execution_context, skipped_at, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, skippedTableName)
+
+		_, err = t.pool.Exec(ctxVal, insertSQL,
+			baseMigrationID, schema, version, connection, backend,
+			executedBy, executionMethod, executionContext)
+		if err != nil {
+			// Log error but continue with other migrations
+			fmt.Printf("Warning: Failed to record skipped migration %s: %v\n", migrationID, err)
+			continue
+		}
+
+		// Keep only the 5 most recent records for this migration_id + schema combination
+		// Delete records older than the 5th most recent
+		// Use baseMigrationID for consistency with the insert above
+		deleteSQL := fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE migration_id = $1 AND schema = $2
+			AND id NOT IN (
+				SELECT id FROM %s
+				WHERE migration_id = $1 AND schema = $2
+				ORDER BY skipped_at DESC
+				LIMIT 5
+			)
+		`, skippedTableName, skippedTableName)
+
+		_, deleteErr := t.pool.Exec(ctxVal, deleteSQL, baseMigrationID, schema)
+		if deleteErr != nil {
+			// Log error but don't fail - this is cleanup
+			fmt.Printf("Warning: Failed to cleanup old skipped migration records for %s (base: %s, schema: %s): %v\n", migrationID, baseMigrationID, schema, deleteErr)
+		}
+	}
+
+	return nil
+}
+
+// GetSkippedMigrations retrieves skipped migrations, optionally filtered by migration_id or recent limit
+func (t *Tracker) GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*state.SkippedMigration, error) {
+	ctxVal := ctx.(context.Context)
+
+	skippedTableName := "migrations_skipped"
+	if t.schema != "" && t.schema != "public" {
+		skippedTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_skipped"))
+	}
+
+	var query string
+	var args []interface{}
+
+	if migrationID != "" {
+		query = fmt.Sprintf(`
+			SELECT id, migration_id, schema, version, connection, backend,
+			       executed_by, execution_method, execution_context, skipped_at, created_at
+			FROM %s
+			WHERE migration_id = $1
+			ORDER BY skipped_at DESC
+			LIMIT $2
+		`, skippedTableName)
+		args = []interface{}{migrationID, limit}
+	} else {
+		query = fmt.Sprintf(`
+			SELECT id, migration_id, schema, version, connection, backend,
+			       executed_by, execution_method, execution_context, skipped_at, created_at
+			FROM %s
+			ORDER BY skipped_at DESC
+			LIMIT $1
+		`, skippedTableName)
+		args = []interface{}{limit}
+	}
+
+	rows, err := t.pool.Query(ctxVal, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query skipped migrations: %w", err)
+	}
+	defer rows.Close()
+
+	var skippedMigrations []*state.SkippedMigration
+	for rows.Next() {
+		var skipped state.SkippedMigration
+		var executedBy, executionMethod, executionContext *string
+		var skippedAt, createdAt *time.Time
+
+		err := rows.Scan(
+			&skipped.ID,
+			&skipped.MigrationID,
+			&skipped.Schema,
+			&skipped.Version,
+			&skipped.Connection,
+			&skipped.Backend,
+			&executedBy,
+			&executionMethod,
+			&executionContext,
+			&skippedAt,
+			&createdAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan skipped migration: %w", err)
+		}
+
+		if executedBy != nil {
+			skipped.ExecutedBy = *executedBy
+		}
+		if executionMethod != nil {
+			skipped.ExecutionMethod = *executionMethod
+		}
+		if executionContext != nil {
+			skipped.ExecutionContext = *executionContext
+		}
+		if skippedAt != nil {
+			skipped.SkippedAt = skippedAt.Format(time.RFC3339)
+		}
+		if createdAt != nil {
+			skipped.CreatedAt = createdAt.Format(time.RFC3339)
+		}
+
+		skippedMigrations = append(skippedMigrations, &skipped)
+	}
+
+	return skippedMigrations, rows.Err()
+}
+
+// IsMigrationApplied checks if a migration has been successfully applied.
+// This only returns true for migrations with status 'applied', not 'pending'.
+// For concurrency control (checking if a migration is pending or applied),
+// use IsMigrationPendingOrApplied instead.
+func (t *Tracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
+	ctxVal := ctx.(context.Context)
+
+	listTableName := "migrations_list"
+	executionsTableName := "migrations_executions"
+	if t.schema != "" && t.schema != "public" {
+		listTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_list"))
+		executionsTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_executions"))
+	}
+
+	// Extract base migration_id and detect schema prefix
+	baseMigrationID := extractBaseMigrationID(migrationID)
+	var schemaName string
+	// If baseMigrationID is different from migrationID, there was a prefix
+	if baseMigrationID != migrationID {
+		// Extract schema name from the prefix
+		parts := strings.Split(migrationID, "_")
+		baseParts := strings.Split(baseMigrationID, "_")
+		if len(parts) > len(baseParts) {
+			// The difference is the prefix, which could be organization ID + schema
+			// For simplicity, use the first part as schema (could be org_id or schema)
+			// This will be validated when querying migrations_executions
+			schemaName = parts[0]
+		}
+	}
+
+	// For dynamic schemas (with schema prefix), check migrations_executions table
+	// This tracks per-schema executions and is more accurate for dynamic schemas
+	// For dynamic schemas, we MUST check executions table per-schema and NOT fall back to migrations_list
+	// because migrations_list tracks globally, not per-schema
+	if schemaName != "" {
+		// First, get version, connection, and backend from migrations_list
+		// We need these to check all 5 fields in migrations_executions
+		var version, connection, backend string
+		getMetadataQuery := fmt.Sprintf(`
+			SELECT version, connection, backend
+			FROM %s
+			WHERE migration_id = $1
+			LIMIT 1
+		`, listTableName)
+		err := t.pool.QueryRow(ctxVal, getMetadataQuery, baseMigrationID).Scan(&version, &connection, &backend)
+		if err != nil {
+			// If migration not found in migrations_list, it's not applied
+			if err == pgx.ErrNoRows {
+				return false, nil
+			}
+			return false, fmt.Errorf("failed to get migration metadata: %w", err)
+		}
+
+		// Check migrations_executions with all 5 fields: migration_id, schema, version, connection, backend
+		// CRITICAL: Only check for 'applied' status, not 'pending'
+		// 'pending' means the migration hasn't executed yet, so it shouldn't be considered applied
+		query := fmt.Sprintf(`
+			SELECT EXISTS(
+				SELECT 1 FROM %s
+				WHERE migration_id = $1
+				AND schema = $2
+				AND version = $3
+				AND connection = $4
+				AND backend = $5
+				AND status = 'applied'
+			)`, executionsTableName)
+		var exists bool
+		err = t.pool.QueryRow(ctxVal, query, baseMigrationID, schemaName, version, connection, backend).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("failed to check migration status in executions table: %w", err)
+		}
+		// For dynamic schemas, only return the result from executions table
+		// Do NOT fall back to migrations_list as it's not schema-specific
+		return exists, nil
+	}
+
+	// For fixed-schema migrations (no schema prefix), check migrations_list table
+	// This handles migrations with fixed schemas defined in the migration itself
+	// CRITICAL: Only check for 'applied' status, not 'pending'
+	query := fmt.Sprintf(`
+		SELECT EXISTS(
+			SELECT 1 FROM %s
+			WHERE migration_id IN ($1, $2)
+			AND status = 'applied'
+		)`, listTableName)
 	var exists bool
-	err := t.pool.QueryRow(ctxVal, query, migrationID).Scan(&exists)
+	err := t.pool.QueryRow(ctxVal, query, migrationID, baseMigrationID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check migration status: %w", err)
+	}
+
+	return exists, nil
+}
+
+// IsMigrationPendingOrApplied checks if a migration is pending or applied.
+// This is used for concurrency control to prevent multiple processes from executing the same migration.
+func (t *Tracker) IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error) {
+	ctxVal := ctx.(context.Context)
+
+	listTableName := "migrations_list"
+	executionsTableName := "migrations_executions"
+	if t.schema != "" && t.schema != "public" {
+		listTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_list"))
+		executionsTableName = fmt.Sprintf("%s.%s", quoteIdentifier(t.schema), quoteIdentifier("migrations_executions"))
+	}
+
+	// Extract base migration_id and detect schema prefix
+	baseMigrationID := extractBaseMigrationID(migrationID)
+	var schemaName string
+	if baseMigrationID != migrationID {
+		parts := strings.Split(migrationID, "_")
+		baseParts := strings.Split(baseMigrationID, "_")
+		if len(parts) > len(baseParts) {
+			schemaName = parts[0]
+		}
+	}
+
+	// For dynamic schemas, check migrations_executions
+	if schemaName != "" {
+		var version, connection, backend string
+		getMetadataQuery := fmt.Sprintf(`
+			SELECT version, connection, backend
+			FROM %s
+			WHERE migration_id = $1
+			LIMIT 1
+		`, listTableName)
+		err := t.pool.QueryRow(ctxVal, getMetadataQuery, baseMigrationID).Scan(&version, &connection, &backend)
+		if err != nil {
+			if err == pgx.ErrNoRows {
+				return false, nil
+			}
+			return false, fmt.Errorf("failed to get migration metadata: %w", err)
+		}
+
+		query := fmt.Sprintf(`
+			SELECT EXISTS(
+				SELECT 1 FROM %s
+				WHERE migration_id = $1
+				AND schema = $2
+				AND version = $3
+				AND connection = $4
+				AND backend = $5
+				AND (status = 'applied' OR status = 'pending')
+			)`, executionsTableName)
+		var exists bool
+		err = t.pool.QueryRow(ctxVal, query, baseMigrationID, schemaName, version, connection, backend).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("failed to check migration status in executions table: %w", err)
+		}
+		return exists, nil
+	}
+
+	// For fixed-schema migrations, check migrations_list
+	query := fmt.Sprintf(`
+		SELECT EXISTS(
+			SELECT 1 FROM %s
+			WHERE migration_id IN ($1, $2)
+			AND (status = 'applied' OR status = 'pending')
+		)`, listTableName)
+	var exists bool
+	err := t.pool.QueryRow(ctxVal, query, migrationID, baseMigrationID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to check migration status: %w", err)
 	}
@@ -1213,8 +1813,9 @@ func (t *Tracker) updateMigrationDependencies(ctx context.Context, migrationID s
 		// Find dependency_id by resolving the dependency target
 		dependencyID, err := t.resolveDependencyID(ctx, dep, listTableName)
 		if err != nil {
-			// Log but continue - dependency might not exist yet
-			fmt.Printf("Warning: Failed to resolve dependency for %s: %v\n", migrationID, err)
+			// Log but continue - dependency might be in a different connection/backend or not yet registered
+			// This is expected for cross-connection dependencies or when dependencies haven't been scanned yet
+			// The dependency will be resolved at execution time via the registry
 			continue
 		}
 
@@ -1256,8 +1857,9 @@ func (t *Tracker) updateMigrationDependencies(ctx context.Context, migrationID s
 		// Find dependency_id by name
 		dependencyID, err := t.findMigrationIDByName(ctx, depName, listTableName)
 		if err != nil {
-			// Log but continue
-			fmt.Printf("Warning: Failed to find dependency %s for %s: %v\n", depName, migrationID, err)
+			// Skip if dependency not found - it might be in a different connection/backend or not yet registered
+			// This is expected for cross-connection dependencies or when dependencies haven't been scanned yet
+			// The dependency will be resolved at execution time via the registry
 			continue
 		}
 
@@ -1411,12 +2013,8 @@ func (t *Tracker) migrateExistingData(ctx context.Context, listTableName, histor
 			continue
 		}
 
-		// Extract base migration_id (remove _rollback suffix if present)
-		baseMigrationID := migrationID
-		isRollback := strings.Contains(migrationID, "_rollback")
-		if isRollback {
-			baseMigrationID = strings.TrimSuffix(migrationID, "_rollback")
-		}
+		// Extract base migration_id (remove _rollback suffix and prefixes)
+		baseMigrationID := extractBaseMigrationID(migrationID)
 
 		// Store record for later processing
 		if migrationRecords[baseMigrationID] == nil {

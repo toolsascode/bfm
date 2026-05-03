@@ -136,7 +136,7 @@ export default function MigrationList() {
   }, [filterOptions.connections, connectionSearchQuery]);
 
   // Status options (fixed list)
-  const statusOptions = ["success", "failed", "pending"];
+  const statusOptions = ["applied", "failed", "pending"];
   const filteredStatuses = useMemo(() => {
     if (!statusSearchQuery.trim()) {
       return statusOptions;

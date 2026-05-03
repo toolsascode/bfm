@@ -24,6 +24,9 @@ service MigrationService {
   // GetMigrationStatus gets the current status of a specific migration
   rpc GetMigrationStatus(GetMigrationStatusRequest) returns (MigrationStatusResponse);
 
+  // IsMigrationApplied checks if a migration has been applied
+  rpc IsMigrationApplied(IsMigrationAppliedRequest) returns (IsMigrationAppliedResponse);
+
   // GetMigrationHistory gets the execution history for a specific migration
   rpc GetMigrationHistory(GetMigrationHistoryRequest) returns (MigrationHistoryResponse);
 
@@ -154,6 +157,16 @@ message MigrationStatusResponse {
   bool applied = 3;
   string applied_at = 4;     // RFC3339 timestamp, optional
   string error_message = 5;  // Optional
+}
+
+// IsMigrationAppliedRequest represents a request to check if a migration is applied
+message IsMigrationAppliedRequest {
+  string migration_id = 1;   // Required: ID of migration to check
+}
+
+// IsMigrationAppliedResponse represents the result of checking if a migration is applied
+message IsMigrationAppliedResponse {
+  bool applied = 1;           // True if migration is applied, false otherwise
 }
 
 // GetMigrationHistoryRequest represents a request to get migration history

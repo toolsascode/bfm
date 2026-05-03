@@ -128,6 +128,11 @@ func (e *Executor) GetConnectionConfig(name string) (*backends.ConnectionConfig,
 	return e.getConnectionConfig(name)
 }
 
+// GetSkippedMigrations retrieves skipped migrations from the state tracker
+func (e *Executor) GetSkippedMigrations(ctx context.Context, migrationID string, limit int) ([]*state.SkippedMigration, error) {
+	return e.stateTracker.GetSkippedMigrations(ctx, migrationID, limit)
+}
+
 // ExecuteSync executes migrations synchronously (bypasses queue, used by worker)
 func (e *Executor) ExecuteSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	return e.executeSync(ctx, target, connectionName, schemaName, dryRun, ignoreDependencies)
@@ -354,9 +359,11 @@ func (e *Executor) resolveDependencies(migrations []*backends.MigrationScript) (
 // expandWithPendingDependencies takes an initial set of migrations and expands it by
 // including any pending dependency migrations referenced via structured dependencies.
 // It uses the state tracker to ensure already-applied dependencies are not re-executed.
-func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations []*backends.MigrationScript) ([]*backends.MigrationScript, error) {
+// Returns the expanded migrations, a map indicating which migrations are dependencies,
+// and a map of dependency ID -> parent migration ID.
+func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations []*backends.MigrationScript) ([]*backends.MigrationScript, map[string]bool, map[string]string, error) {
 	if len(migrations) == 0 {
-		return migrations, nil
+		return migrations, make(map[string]bool), make(map[string]string), nil
 	}
 
 	// Build quick lookup of already selected migrations by ID so we don't duplicate.
@@ -367,8 +374,10 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 
 	resolver := registry.NewDependencyResolver(e.registry, e.stateTracker)
 
-	// Collect additional migrations to include.
+	// Collect additional migrations to include and track which are dependencies
 	var toInclude []*backends.MigrationScript
+	dependencyMap := make(map[string]bool)         // Maps migration ID -> true if it's a dependency
+	dependencyParentMap := make(map[string]string) // Maps dependency ID -> parent migration ID
 
 	for _, migration := range migrations {
 		if len(migration.StructuredDependencies) > 0 {
@@ -379,15 +388,15 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 			// Resolve targets for this dependency (may be cross-connection).
 			targetMigrations, err := resolver.ResolveDependencyTargets(dep)
 			if err != nil {
-				// Surface clear error so callers can see which dependency is invalid.
-				logger.Errorf("Failed to resolve dependency for %s_%s: connection=%s, schema=%s, target=%s, type=%s: %v", migration.Version, migration.Name, dep.Connection, dep.Schema, dep.Target, dep.TargetType, err)
-				return nil, fmt.Errorf("failed to resolve dependency for %s_%s: %w", migration.Version, migration.Name, err)
+				// Requirement 1: If dependencies don't exist, proceed with migration (don't fail)
+				logger.Warnf("Dependency not found for %s_%s: connection=%s, schema=%s, target=%s, type=%s: %v. Proceeding with migration.", migration.Version, migration.Name, dep.Connection, dep.Schema, dep.Target, dep.TargetType, err)
+				continue
 			}
 
 			logger.Debug("Found %d target migration(s) for dependency: connection=%s, schema=%s, target=%s", len(targetMigrations), dep.Connection, dep.Schema, dep.Target)
 
 			if len(targetMigrations) == 0 {
-				logger.Warnf("No target migrations found for dependency: connection=%s, schema=%s, target=%s, type=%s", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
+				logger.Warnf("No target migrations found for dependency: connection=%s, schema=%s, target=%s, type=%s. Proceeding with migration.", dep.Connection, dep.Schema, dep.Target, dep.TargetType)
 				continue
 			}
 
@@ -405,7 +414,7 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 				applied, err := e.stateTracker.IsMigrationApplied(ctx, targetID)
 				if err != nil {
 					logger.Errorf("Error checking if migration %s is applied: %v", targetID, err)
-					return nil, fmt.Errorf("failed to check dependency migration status for %s: %w", targetID, err)
+					return nil, make(map[string]bool), make(map[string]string), fmt.Errorf("failed to check dependency migration status for %s: %w", targetID, err)
 				}
 				logger.Debug("Migration %s applied status: %v", targetID, applied)
 				if applied {
@@ -416,14 +425,17 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 				logger.Infof("Auto-including pending dependency migration: %s (connection=%s, schema=%s) for %s_%s", targetID, target.Connection, target.Schema, migration.Version, migration.Name)
 				selected[targetID] = target
 				toInclude = append(toInclude, target)
+				dependencyMap[targetID] = true // Mark as dependency
+				parentID := e.getMigrationID(migration)
+				dependencyParentMap[targetID] = parentID // Track parent migration
 			}
 		}
 	}
 
 	// If nothing extra was found, return original slice.
 	if len(toInclude) == 0 {
-		logger.Debug("No pending dependency migrations to auto-include (all dependencies already applied or not found)")
-		return migrations, nil
+		logger.Infof("No pending dependency migrations to auto-include (all dependencies already applied or not found)")
+		return migrations, make(map[string]bool), make(map[string]string), nil
 	}
 
 	logger.Infof("Expanded migration set: %d initial + %d auto-included dependencies = %d total", len(migrations), len(toInclude), len(migrations)+len(toInclude))
@@ -433,7 +445,7 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 	expanded = append(expanded, migrations...)
 	expanded = append(expanded, toInclude...)
 
-	return expanded, nil
+	return expanded, dependencyMap, dependencyParentMap, nil
 }
 
 // executeSync executes migrations synchronously
@@ -462,7 +474,11 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 	// Expand with pending dependencies (unless ignore_dependencies is true)
 	var sortedMigrations []*backends.MigrationScript
 	var dependencyResolutionError error
+	var dependencyMap map[string]bool
+	var dependencyParentMap map[string]string
 	if ignoreDependencies {
+		dependencyMap = make(map[string]bool)
+		dependencyParentMap = make(map[string]string)
 		// Skip dependency expansion and validation, just sort by version
 		sort.Slice(migrations, func(i, j int) bool {
 			return migrations[i].Version < migrations[j].Version
@@ -473,10 +489,11 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		// If any of the selected migrations declares structured dependencies, expand the set
 		// with any pending dependency migrations (including cross-connection) so that
 		// dependencies are executed automatically ahead of dependents.
-		migrations, err = e.expandWithPendingDependencies(ctx, migrations)
+		migrations, dependencyMap, dependencyParentMap, err = e.expandWithPendingDependencies(ctx, migrations)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand migrations with dependencies: %w", err)
 		}
+		logger.Infof("After dependency expansion: %d migration(s) ready for execution", len(migrations))
 
 		// Get backend for the target connection (needed for validation)
 		connectionConfig, err := e.getConnectionConfig(connectionName)
@@ -540,6 +557,8 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		for i, m := range sortedMigrations {
 			logger.Infof("  %d. %s_%s (connection=%s, schema=%s)", i+1, m.Version, m.Name, m.Connection, m.Schema)
 		}
+	} else {
+		logger.Warnf("No migrations to execute after dependency expansion and sorting")
 	}
 
 	result := &ExecuteResult{
@@ -553,7 +572,11 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		result.Errors = append(result.Errors, fmt.Sprintf("dependency resolution: %v", dependencyResolutionError))
 	}
 
+	// Track executed dependencies to add to parent migration's execution context
+	executedDependencies := make(map[string][]string) // Maps parent migration ID -> list of executed dependency IDs
+
 	// Process each migration
+	logger.Infof("Starting execution of %d migration(s)", len(sortedMigrations))
 	for _, migration := range sortedMigrations {
 		// Resolve schema name (use provided or from migration)
 		schema := schemaName
@@ -561,17 +584,31 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			schema = migration.Schema
 		}
 
-		// For dynamic schemas (empty Schema in migration), use schema-specific ID
+		// Determine migration ID based on schema requirements
+		// CRITICAL: If schemaName was explicitly provided, ALWAYS use schema-specific ID for per-schema tracking
+		// This ensures migrations are tracked per-schema in migrations_executions, not just globally in migrations_list
 		var migrationID string
-		if migration.Schema == "" && schema != "" {
+		if schemaName != "" && schema != "" {
+			// Schema was explicitly provided in request - ALWAYS use schema-specific ID
+			// This is required even if migration.Schema has a value, because the user wants to execute for a specific schema
+			migrationID = e.getMigrationIDWithSchema(migration, schema)
+			logger.Debug("Using schema-specific migration ID: %s (requested schema: %s, migration.Schema: %s)", migrationID, schema, migration.Schema)
+		} else if migration.Schema == "" {
 			// Dynamic schema mode: track per schema
+			// If schema is still empty, we can't track it properly - this is an error condition
+			if schema == "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("migration %s_%s has dynamic schema but no schema provided in request", migration.Version, migration.Name))
+				continue
+			}
 			migrationID = e.getMigrationIDWithSchema(migration, schema)
 		} else {
 			// Fixed schema mode: use base migration ID
 			migrationID = e.getMigrationID(migration)
 		}
 
-		// Check if already applied
+		logger.Debug("Checking migration status: migrationID=%s, schema=%s, migration.Schema=%s, schemaName=%s", migrationID, schema, migration.Schema, schemaName)
+
+		// Check if already applied using the migration ID (which is schema-specific if schemaName was provided)
 		applied, err := e.stateTracker.IsMigrationApplied(ctx, migrationID)
 		if err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("failed to check migration status for %s: %v", migrationID, err))
@@ -579,6 +616,7 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		}
 
 		if applied {
+			logger.Infof("Migration %s already applied, skipping", migrationID)
 			result.Skipped = append(result.Skipped, migrationID)
 			continue
 		}
@@ -589,10 +627,25 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			continue
 		}
 
+		// Check if this is a dependency migration
+		// NOTE: Only override migrationID for dependencies if schemaName was NOT provided
+		// If schemaName was provided, we need to track per-schema even for dependencies
+		isDependency := dependencyMap != nil && dependencyMap[migrationID]
+		baseMigrationID := e.getMigrationID(migration)
+		isDependency = isDependency || (dependencyMap != nil && dependencyMap[baseMigrationID])
+		if isDependency && schemaName == "" {
+			// Only use base ID for dependencies if no specific schema was requested
+			// This preserves per-schema tracking when schemaName is provided
+			migrationID = baseMigrationID
+			logger.Debug("Migration is a dependency, using base ID: %s", migrationID)
+		}
+
+		logger.Debug("Recording migration with ID: %s (schema: %s, isDependency: %v)", migrationID, schema, isDependency)
+
 		// Extract execution context
 		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
 
-		// Record migration start
+		// Record migration start IMMEDIATELY to prevent concurrent execution
 		// Use migration.Connection (not connectionName) since this migration may be from a different connection
 		record := &state.MigrationRecord{
 			MigrationID:      migrationID,
@@ -607,6 +660,42 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			ExecutedBy:       executedBy,
 			ExecutionMethod:  executionMethod,
 			ExecutionContext: executionContext,
+		}
+
+		// Record as pending immediately to prevent race conditions
+		// For dependencies, use RecordDependencyMigration (requirement 4: no history)
+		// If this fails because another process already marked it as pending/applied, skip execution
+		var recordErr error
+		if isDependency {
+			recordErr = e.stateTracker.RecordDependencyMigration(ctx, record)
+		} else {
+			logger.Debug("Recording migration as pending: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
+			recordErr = e.stateTracker.RecordMigration(ctx, record)
+			if recordErr == nil {
+				logger.Debug("Successfully recorded migration as pending: migrationID=%s, schema=%s - history should be in migrations_history", record.MigrationID, record.Schema)
+			}
+		}
+		if recordErr != nil {
+			// Re-check if migration was applied by another process (concurrency control)
+			// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we want to skip only if actually applied
+			applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
+			if checkErr == nil && applied {
+				result.Skipped = append(result.Skipped, migrationID)
+				continue
+			}
+			logger.Errorf("Failed to record migration start for %s (schema=%s): %v", migrationID, record.Schema, recordErr)
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration start for %s: %v", migrationID, recordErr))
+			continue
+		}
+
+		// Double-check after recording to ensure we didn't race with another process (concurrency control)
+		// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we just recorded it as pending ourselves
+		// We only want to skip if another process marked it as APPLIED while we were recording
+		applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
+		if checkErr == nil && applied {
+			// Another process marked it as applied, skip
+			result.Skipped = append(result.Skipped, migrationID)
+			continue
 		}
 
 		// Get backend for this migration's connection (may differ from target connection for cross-connection dependencies)
@@ -646,7 +735,20 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		// Apply template variable replacement
 		upSQL, err := replaceTemplateVariables(migration.UpSQL, migration, schema)
 		if err != nil {
+			// Migration was already marked as pending, update to failed
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to replace template variables in UpSQL: %v", err)
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in UpSQL: %v", migrationID, err))
+			// Record the failure
+			if isDependency {
+				if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
+				}
+			} else {
+				if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
+				}
+			}
 			continue
 		}
 
@@ -655,7 +757,20 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			var err error
 			downSQL, err = replaceTemplateVariables(migration.DownSQL, migration, schema)
 			if err != nil {
+				// Migration was already marked as pending, update to failed
+				record.Status = "failed"
+				record.ErrorMessage = fmt.Sprintf("failed to replace template variables in DownSQL: %v", err)
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in DownSQL: %v", migrationID, err))
+				// Record the failure
+				if isDependency {
+					if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
+					}
+				} else {
+					if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
+						result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
+					}
+				}
 				continue
 			}
 		}
@@ -682,15 +797,80 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 		} else {
 			record.Status = "success"
 			result.Applied = append(result.Applied, migrationID)
+
+			// Requirement 3: Track executed dependencies for parent migration
+			if isDependency && dependencyParentMap != nil {
+				parentID := dependencyParentMap[baseMigrationID]
+				if parentID == "" {
+					// Try with full migrationID
+					parentID = dependencyParentMap[migrationID]
+				}
+				if parentID != "" {
+					executedDependencies[parentID] = append(executedDependencies[parentID], migrationID)
+					logger.Debug("Tracked dependency %s for parent migration %s", migrationID, parentID)
+				}
+			}
 		}
 
 		// Record migration in state tracker
-		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+		// Requirement 4: Dependencies use RecordDependencyMigration (no history)
+		// CRITICAL: Ensure record.Schema is set correctly for schema-specific migrations
+		// The schema must match the schema used in migrations_executions for ON CONFLICT to work
+		if isDependency {
+			if err := e.stateTracker.RecordDependencyMigration(ctx, record); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration %s: %v", migrationID, err))
+			}
+		} else {
+			// For non-dependencies, add executed dependencies to execution context
+			if len(executedDependencies[migrationID]) > 0 {
+				// Parse existing execution context and add dependencies
+				var execCtx map[string]interface{}
+				if executionContext != "" {
+					if err := json.Unmarshal([]byte(executionContext), &execCtx); err != nil {
+						execCtx = make(map[string]interface{})
+					}
+				} else {
+					execCtx = make(map[string]interface{})
+				}
+				execCtx["executed_dependencies"] = executedDependencies[migrationID]
+				if updatedCtx, err := json.Marshal(execCtx); err == nil {
+					record.ExecutionContext = string(updatedCtx)
+				}
+			}
+			// Ensure schema is set correctly for the update (should already be set from initial record creation)
+			logger.Debug("Updating migration record: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
+			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+				logger.Errorf("Failed to record migration %s (status=%s, schema=%s): %v", migrationID, record.Status, record.Schema, err)
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+			} else {
+				logger.Debug("Successfully recorded migration %s (status=%s, schema=%s) - history should be in migrations_history", migrationID, record.Status, record.Schema)
+			}
+		}
+	}
+
+	// Record skipped migrations if any
+	if len(result.Skipped) > 0 {
+		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
+		if err := e.stateTracker.RecordSkippedMigrations(ctx, result.Skipped, executedBy, executionMethod, executionContext); err != nil {
+			// Log error but don't fail the execution
+			logger.Warnf("Failed to record skipped migrations: %v", err)
 		}
 	}
 
 	result.Success = len(result.Errors) == 0
+
+	// Log execution summary
+	logger.Infof("Migration execution completed: %d applied, %d skipped, %d errors", len(result.Applied), len(result.Skipped), len(result.Errors))
+	if len(result.Applied) > 0 {
+		logger.Infof("Applied migrations: %v", result.Applied)
+	}
+	if len(result.Skipped) > 0 {
+		logger.Infof("Skipped migrations (already applied): %v", result.Skipped)
+	}
+	if len(result.Errors) > 0 {
+		logger.Errorf("Migration errors: %v", result.Errors)
+	}
+
 	return result, nil
 }
 

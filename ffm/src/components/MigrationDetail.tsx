@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { apiClient } from "../services/api";
 import type {
@@ -9,6 +9,7 @@ import type {
   MigrateResponse,
   MigrationListItem,
   MigrationExecution,
+  SkippedMigration,
 } from "../types/api";
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
@@ -228,6 +229,11 @@ export default function MigrationDetail() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPerPage, setHistoryPerPage] = useState(10);
   const [ignoreDependencies, setIgnoreDependencies] = useState(false);
+  const [recentlySkipped, setRecentlySkipped] = useState<SkippedMigration[]>(
+    [],
+  );
+  const [recentlySkippedLoading, setRecentlySkippedLoading] = useState(false);
+  const lastHistoryRef = useRef<MigrationHistoryItem[]>([]);
 
   useEffect(() => {
     if (id) {
@@ -235,10 +241,12 @@ export default function MigrationDetail() {
       loadStatus();
       loadHistory();
       loadExecutions();
+      loadSkippedMigrations();
       const interval = setInterval(() => {
         loadStatus();
         loadHistory();
         loadExecutions();
+        loadSkippedMigrations();
       }, 5000); // Refresh status every 5 seconds
       return () => clearInterval(interval);
     }
@@ -285,6 +293,8 @@ export default function MigrationDetail() {
         const dateB = new Date(b.applied_at).getTime();
         return dateB - dateA;
       });
+
+      lastHistoryRef.current = sortedHistory;
       setHistory(sortedHistory);
     } catch (err) {
       // Silently fail history updates
@@ -301,6 +311,19 @@ export default function MigrationDetail() {
       // Silently fail executions updates
     } finally {
       setExecutionsLoading(false);
+    }
+  };
+
+  const loadSkippedMigrations = async () => {
+    if (!id) return;
+    try {
+      setRecentlySkippedLoading(true);
+      const data = await apiClient.getSkippedMigrations(id, 5);
+      setRecentlySkipped(data.skipped);
+    } catch (err) {
+      // Silently fail skipped migrations updates
+    } finally {
+      setRecentlySkippedLoading(false);
     }
   };
 
@@ -468,6 +491,12 @@ export default function MigrationDetail() {
       const response = await apiClient.migrateUp(migrateRequest);
       setExecutionResult(response);
 
+      // Skipped migrations are now tracked automatically by the backend
+      // Reload skipped migrations after execution
+      if (response.skipped && response.skipped.length > 0) {
+        loadSkippedMigrations();
+      }
+
       if (response.success) {
         if (response.queued) {
           toastService.info(`Migration queued with job ID: ${response.job_id}`);
@@ -488,6 +517,7 @@ export default function MigrationDetail() {
       loadHistory(); // Reload history to get the latest status and applied_at
       loadExecutions();
       loadSchemaExecutions();
+      loadSkippedMigrations();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to execute migration";
@@ -522,7 +552,7 @@ export default function MigrationDetail() {
     // Check if schema/prefix is required
     const needsValue = needsSchemaOrPrefix(migration);
 
-    if (needsValue) {
+    if (needsValue || executions.length > 1) {
       // Show modal to get schema/prefix from user
       setShowSchemaModal(true);
       return;
@@ -642,7 +672,7 @@ export default function MigrationDetail() {
                 Migration ID
               </label>
               <div
-                className="text-gray-800 text-base truncate"
+                className="text-gray-800 text-base"
                 title={migration.migration_id}
               >
                 {migration.migration_id}
@@ -653,7 +683,7 @@ export default function MigrationDetail() {
                 Name
               </label>
               <div
-                className="text-gray-800 text-base font-medium truncate"
+                className="text-gray-800 text-base font-medium"
                 title={migration.name || ""}
               >
                 {migration.name}
@@ -1160,6 +1190,95 @@ export default function MigrationDetail() {
             </div>
           )}
         </div>
+
+        {/* Recently Skipped Migrations */}
+        {recentlySkippedLoading ? (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Recently Skipped Migrations
+            </h2>
+            <div className="text-center py-8 text-gray-500">
+              Loading skipped migrations...
+            </div>
+          </div>
+        ) : recentlySkipped.length > 0 ? (
+          <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-gray-800 mb-4 text-xl font-semibold">
+              Recently Skipped Migrations ({recentlySkipped.length})
+            </h2>
+            <p className="text-gray-600 text-sm mb-4">
+              The following migrations were skipped during recent execution
+              attempts (already applied):
+            </p>
+            <div className="overflow-x-auto max-w-full">
+              <table className="w-full border-collapse min-w-full">
+                <thead>
+                  <tr>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Schema Name
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Execution Method
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Skipped At
+                    </th>
+                    <th className="bg-gray-50 p-3 text-left font-semibold text-gray-800 border-b-2 border-gray-200 text-sm">
+                      Reason
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentlySkipped.map((entry) => (
+                    <tr
+                      key={entry.id}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 border-b border-gray-200">
+                        <div
+                          className="text-gray-800 text-sm font-medium"
+                          title={entry.schema || "Not specified"}
+                        >
+                          {entry.schema || (
+                            <span className="text-gray-400 italic">
+                              Not specified
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span
+                          className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                            entry.execution_method === "manual"
+                              ? "bg-blue-100 text-blue-800"
+                              : entry.execution_method === "api"
+                                ? "bg-purple-100 text-purple-800"
+                                : entry.execution_method === "cli"
+                                  ? "bg-gray-100 text-gray-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                          }`}
+                        >
+                          {entry.execution_method}
+                        </span>
+                      </td>
+                      <td className="p-3 border-b border-gray-200 text-sm text-gray-700">
+                        {format(
+                          new Date(entry.skipped_at),
+                          "yyyy-MM-dd HH:mm:ss",
+                        )}
+                      </td>
+                      <td className="p-3 border-b border-gray-200">
+                        <span className="text-sm text-gray-700">
+                          Already applied
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
 
         {/* Executions Table */}
         <div className="bg-white p-6 rounded-lg shadow-md">
