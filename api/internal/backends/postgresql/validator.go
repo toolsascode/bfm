@@ -76,9 +76,20 @@ func (v *DependencyValidator) validateDependencyWithExecutionSet(ctx context.Con
 		}
 	}
 
+	// Validate dependency migration is applied or in execution set FIRST
+	// This check must happen before table existence check to avoid false failures
+	dependencyAppliedOrInSet := false
+	if err := v.validateMigrationAppliedWithExecutionSet(ctx, dep, executionSetMap); err != nil {
+		return err
+	}
+	// If we get here, the dependency is either applied or in execution set
+	dependencyAppliedOrInSet = true
+
 	// Validate required table exists
 	// Note: If the table is created by a dependency migration in the execution set,
 	// it won't exist yet, so we skip this check if the dependency is in the execution set
+	// Also skip if the dependency is already applied (tables should exist, but if they don't,
+	// that's a data integrity issue that shouldn't block the current migration)
 	if dep.RequiresTable != "" {
 		// First check if the dependency migration is in the execution set
 		targetMigrations, err := v.findMigrationByTarget(dep)
@@ -94,7 +105,9 @@ func (v *DependencyValidator) validateDependencyWithExecutionSet(ctx context.Con
 			}
 
 			// If dependency is in execution set, skip table existence check (it will be created)
-			if !dependencyInExecutionSet {
+			// If dependency is already applied, also skip table existence check (tables should exist,
+			// but if they don't due to data issues, we shouldn't block the current migration)
+			if !dependencyInExecutionSet && !dependencyAppliedOrInSet {
 				schemaToCheck := dep.RequiresSchema
 				if schemaToCheck == "" {
 					// If RequiresSchema is not specified, use the dependency's Schema if available
@@ -118,11 +131,6 @@ func (v *DependencyValidator) validateDependencyWithExecutionSet(ctx context.Con
 				}
 			}
 		}
-	}
-
-	// Validate dependency migration is applied or in execution set
-	if err := v.validateMigrationAppliedWithExecutionSet(ctx, dep, executionSetMap); err != nil {
-		return err
 	}
 
 	return nil

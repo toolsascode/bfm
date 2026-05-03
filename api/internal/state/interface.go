@@ -45,8 +45,15 @@ type StateTracker interface {
 	// GetMigrationList retrieves the list of migrations with their last status
 	GetMigrationList(ctx interface{}, filters *MigrationFilters) ([]*MigrationListItem, error)
 
-	// IsMigrationApplied checks if a migration has been applied
+	// IsMigrationApplied checks if a migration has been successfully applied.
+	// This only returns true for migrations with status 'applied', not 'pending'.
+	// For concurrency control (checking if a migration is pending or applied),
+	// use IsMigrationPendingOrApplied instead.
 	IsMigrationApplied(ctx interface{}, migrationID string) (bool, error)
+
+	// IsMigrationPendingOrApplied checks if a migration is pending or applied.
+	// This is used for concurrency control to prevent multiple processes from executing the same migration.
+	IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error)
 
 	// GetLastMigrationVersion gets the last applied version for a schema/table
 	GetLastMigrationVersion(ctx interface{}, schema, table string) (string, error)
@@ -75,6 +82,16 @@ type StateTracker interface {
 
 	// GetRecentExecutions retrieves recent execution records across all migrations, ordered by created_at DESC
 	GetRecentExecutions(ctx interface{}, limit int) ([]*MigrationExecution, error)
+
+	// RecordSkippedMigrations records skipped migrations for a given execution context
+	RecordSkippedMigrations(ctx interface{}, skippedMigrationIDs []string, executedBy, executionMethod, executionContext string) error
+
+	// GetSkippedMigrations retrieves skipped migrations, optionally filtered by migration_id or recent limit
+	GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*SkippedMigration, error)
+
+	// RecordDependencyMigration records a dependency migration as applied without creating history entries.
+	// Dependencies should only be recorded in the execution history of the migration that depends on them.
+	RecordDependencyMigration(ctx interface{}, migration *MigrationRecord) error
 }
 
 // MigrationDetail represents detailed information about a migration from migrations_list
@@ -94,7 +111,6 @@ type MigrationDetail struct {
 
 // MigrationExecution represents an execution record in migrations_executions
 type MigrationExecution struct {
-	ID          int
 	MigrationID string
 	Schema      string
 	Version     string
@@ -115,4 +131,19 @@ type MigrationFilters struct {
 	Backend    string
 	Status     string
 	Version    string
+}
+
+// SkippedMigration represents a skipped migration record
+type SkippedMigration struct {
+	ID               int
+	MigrationID      string
+	Schema           string
+	Version          string
+	Connection       string
+	Backend          string
+	ExecutedBy       string
+	ExecutionMethod  string
+	ExecutionContext string
+	SkippedAt        string
+	CreatedAt        string
 }
