@@ -101,14 +101,15 @@ func (x *MigrationTarget) GetConnection() string {
 
 // MigrateRequest represents a migration request
 type MigrateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Target        *MigrationTarget       `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
-	Connection    string                 `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
-	Schema        string                 `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`                           // Optional
-	SchemaName    string                 `protobuf:"bytes,4,opt,name=schema_name,json=schemaName,proto3" json:"schema_name,omitempty"` // For dynamic schemas
-	DryRun        bool                   `protobuf:"varint,5,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`            // Optional, default false
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Target             *MigrationTarget       `protobuf:"bytes,1,opt,name=target,proto3" json:"target,omitempty"`
+	Connection         string                 `protobuf:"bytes,2,opt,name=connection,proto3" json:"connection,omitempty"`
+	Schema             string                 `protobuf:"bytes,3,opt,name=schema,proto3" json:"schema,omitempty"`                                                    // Optional
+	SchemaName         string                 `protobuf:"bytes,4,opt,name=schema_name,json=schemaName,proto3" json:"schema_name,omitempty"`                          // For dynamic schemas
+	DryRun             bool                   `protobuf:"varint,5,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`                                     // Optional, default false
+	IgnoreDependencies bool                   `protobuf:"varint,6,opt,name=ignore_dependencies,json=ignoreDependencies,proto3" json:"ignore_dependencies,omitempty"` // Optional, default false
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MigrateRequest) Reset() {
@@ -172,6 +173,13 @@ func (x *MigrateRequest) GetSchemaName() string {
 func (x *MigrateRequest) GetDryRun() bool {
 	if x != nil {
 		return x.DryRun
+	}
+	return false
+}
+
+func (x *MigrateRequest) GetIgnoreDependencies() bool {
+	if x != nil {
+		return x.IgnoreDependencies
 	}
 	return false
 }
@@ -316,12 +324,13 @@ func (x *MigrateProgress) GetProgress() int32 {
 
 // MigrateDownRequest represents a request to execute down migrations
 type MigrateDownRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to rollback
-	Schemas       []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                            // Optional: Array for dynamic schemas
-	DryRun        bool                   `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`               // Optional, default false
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId        string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"`                       // Required: ID of migration to rollback
+	Schemas            []string               `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty"`                                                  // Optional: Array for dynamic schemas
+	DryRun             bool                   `protobuf:"varint,3,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`                                     // Optional, default false
+	IgnoreDependencies bool                   `protobuf:"varint,4,opt,name=ignore_dependencies,json=ignoreDependencies,proto3" json:"ignore_dependencies,omitempty"` // Optional, default false
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *MigrateDownRequest) Reset() {
@@ -371,6 +380,13 @@ func (x *MigrateDownRequest) GetSchemas() []string {
 func (x *MigrateDownRequest) GetDryRun() bool {
 	if x != nil {
 		return x.DryRun
+	}
+	return false
+}
+
+func (x *MigrateDownRequest) GetIgnoreDependencies() bool {
+	if x != nil {
+		return x.IgnoreDependencies
 	}
 	return false
 }
@@ -1023,6 +1039,96 @@ func (x *MigrationStatusResponse) GetErrorMessage() string {
 	return ""
 }
 
+// IsMigrationAppliedRequest represents a request to check if a migration is applied
+type IsMigrationAppliedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MigrationId   string                 `protobuf:"bytes,1,opt,name=migration_id,json=migrationId,proto3" json:"migration_id,omitempty"` // Required: ID of migration to check
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsMigrationAppliedRequest) Reset() {
+	*x = IsMigrationAppliedRequest{}
+	mi := &file_migration_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsMigrationAppliedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsMigrationAppliedRequest) ProtoMessage() {}
+
+func (x *IsMigrationAppliedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsMigrationAppliedRequest.ProtoReflect.Descriptor instead.
+func (*IsMigrationAppliedRequest) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *IsMigrationAppliedRequest) GetMigrationId() string {
+	if x != nil {
+		return x.MigrationId
+	}
+	return ""
+}
+
+// IsMigrationAppliedResponse represents the result of checking if a migration is applied
+type IsMigrationAppliedResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Applied       bool                   `protobuf:"varint,1,opt,name=applied,proto3" json:"applied,omitempty"` // True if migration is applied, false otherwise
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsMigrationAppliedResponse) Reset() {
+	*x = IsMigrationAppliedResponse{}
+	mi := &file_migration_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsMigrationAppliedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsMigrationAppliedResponse) ProtoMessage() {}
+
+func (x *IsMigrationAppliedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_migration_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsMigrationAppliedResponse.ProtoReflect.Descriptor instead.
+func (*IsMigrationAppliedResponse) Descriptor() ([]byte, []int) {
+	return file_migration_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *IsMigrationAppliedResponse) GetApplied() bool {
+	if x != nil {
+		return x.Applied
+	}
+	return false
+}
+
 // GetMigrationHistoryRequest represents a request to get migration history
 type GetMigrationHistoryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1033,7 +1139,7 @@ type GetMigrationHistoryRequest struct {
 
 func (x *GetMigrationHistoryRequest) Reset() {
 	*x = GetMigrationHistoryRequest{}
-	mi := &file_migration_proto_msgTypes[13]
+	mi := &file_migration_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1045,7 +1151,7 @@ func (x *GetMigrationHistoryRequest) String() string {
 func (*GetMigrationHistoryRequest) ProtoMessage() {}
 
 func (x *GetMigrationHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[13]
+	mi := &file_migration_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1058,7 +1164,7 @@ func (x *GetMigrationHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMigrationHistoryRequest.ProtoReflect.Descriptor instead.
 func (*GetMigrationHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{13}
+	return file_migration_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetMigrationHistoryRequest) GetMigrationId() string {
@@ -1079,7 +1185,7 @@ type MigrationHistoryResponse struct {
 
 func (x *MigrationHistoryResponse) Reset() {
 	*x = MigrationHistoryResponse{}
-	mi := &file_migration_proto_msgTypes[14]
+	mi := &file_migration_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1091,7 +1197,7 @@ func (x *MigrationHistoryResponse) String() string {
 func (*MigrationHistoryResponse) ProtoMessage() {}
 
 func (x *MigrationHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[14]
+	mi := &file_migration_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1104,7 +1210,7 @@ func (x *MigrationHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrationHistoryResponse.ProtoReflect.Descriptor instead.
 func (*MigrationHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{14}
+	return file_migration_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *MigrationHistoryResponse) GetMigrationId() string {
@@ -1142,7 +1248,7 @@ type MigrationHistoryItem struct {
 
 func (x *MigrationHistoryItem) Reset() {
 	*x = MigrationHistoryItem{}
-	mi := &file_migration_proto_msgTypes[15]
+	mi := &file_migration_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1260,7 @@ func (x *MigrationHistoryItem) String() string {
 func (*MigrationHistoryItem) ProtoMessage() {}
 
 func (x *MigrationHistoryItem) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[15]
+	mi := &file_migration_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1273,7 @@ func (x *MigrationHistoryItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MigrationHistoryItem.ProtoReflect.Descriptor instead.
 func (*MigrationHistoryItem) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{15}
+	return file_migration_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *MigrationHistoryItem) GetMigrationId() string {
@@ -1265,7 +1371,7 @@ type RollbackMigrationRequest struct {
 
 func (x *RollbackMigrationRequest) Reset() {
 	*x = RollbackMigrationRequest{}
-	mi := &file_migration_proto_msgTypes[16]
+	mi := &file_migration_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1277,7 +1383,7 @@ func (x *RollbackMigrationRequest) String() string {
 func (*RollbackMigrationRequest) ProtoMessage() {}
 
 func (x *RollbackMigrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[16]
+	mi := &file_migration_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1290,7 +1396,7 @@ func (x *RollbackMigrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackMigrationRequest.ProtoReflect.Descriptor instead.
 func (*RollbackMigrationRequest) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{16}
+	return file_migration_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RollbackMigrationRequest) GetMigrationId() string {
@@ -1319,7 +1425,7 @@ type RollbackResponse struct {
 
 func (x *RollbackResponse) Reset() {
 	*x = RollbackResponse{}
-	mi := &file_migration_proto_msgTypes[17]
+	mi := &file_migration_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1437,7 @@ func (x *RollbackResponse) String() string {
 func (*RollbackResponse) ProtoMessage() {}
 
 func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[17]
+	mi := &file_migration_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1450,7 @@ func (x *RollbackResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackResponse.ProtoReflect.Descriptor instead.
 func (*RollbackResponse) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{17}
+	return file_migration_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RollbackResponse) GetSuccess() bool {
@@ -1378,7 +1484,7 @@ type ReindexMigrationsRequest struct {
 
 func (x *ReindexMigrationsRequest) Reset() {
 	*x = ReindexMigrationsRequest{}
-	mi := &file_migration_proto_msgTypes[18]
+	mi := &file_migration_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1390,7 +1496,7 @@ func (x *ReindexMigrationsRequest) String() string {
 func (*ReindexMigrationsRequest) ProtoMessage() {}
 
 func (x *ReindexMigrationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[18]
+	mi := &file_migration_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1403,7 +1509,7 @@ func (x *ReindexMigrationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReindexMigrationsRequest.ProtoReflect.Descriptor instead.
 func (*ReindexMigrationsRequest) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{18}
+	return file_migration_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReindexMigrationsRequest) GetSfmPath() string {
@@ -1426,7 +1532,7 @@ type ReindexResponse struct {
 
 func (x *ReindexResponse) Reset() {
 	*x = ReindexResponse{}
-	mi := &file_migration_proto_msgTypes[19]
+	mi := &file_migration_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1544,7 @@ func (x *ReindexResponse) String() string {
 func (*ReindexResponse) ProtoMessage() {}
 
 func (x *ReindexResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[19]
+	mi := &file_migration_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1557,7 @@ func (x *ReindexResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReindexResponse.ProtoReflect.Descriptor instead.
 func (*ReindexResponse) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{19}
+	return file_migration_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReindexResponse) GetAdded() []string {
@@ -1491,7 +1597,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_migration_proto_msgTypes[20]
+	mi := &file_migration_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1503,7 +1609,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[20]
+	mi := &file_migration_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1516,7 +1622,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{20}
+	return file_migration_proto_rawDescGZIP(), []int{22}
 }
 
 // HealthResponse represents the health status of the service
@@ -1530,7 +1636,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_migration_proto_msgTypes[21]
+	mi := &file_migration_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1542,7 +1648,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_migration_proto_msgTypes[21]
+	mi := &file_migration_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1555,7 +1661,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_migration_proto_rawDescGZIP(), []int{21}
+	return file_migration_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *HealthResponse) GetStatus() string {
@@ -1584,7 +1690,7 @@ const file_migration_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x1e\n" +
 	"\n" +
 	"connection\x18\x05 \x01(\tR\n" +
-	"connection\"\xb6\x01\n" +
+	"connection\"\xe7\x01\n" +
 	"\x0eMigrateRequest\x122\n" +
 	"\x06target\x18\x01 \x01(\v2\x1a.migration.MigrationTargetR\x06target\x12\x1e\n" +
 	"\n" +
@@ -1593,7 +1699,8 @@ const file_migration_proto_rawDesc = "" +
 	"\x06schema\x18\x03 \x01(\tR\x06schema\x12\x1f\n" +
 	"\vschema_name\x18\x04 \x01(\tR\n" +
 	"schemaName\x12\x17\n" +
-	"\adry_run\x18\x05 \x01(\bR\x06dryRun\"w\n" +
+	"\adry_run\x18\x05 \x01(\bR\x06dryRun\x12/\n" +
+	"\x13ignore_dependencies\x18\x06 \x01(\bR\x12ignoreDependencies\"w\n" +
 	"\x0fMigrateResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\aapplied\x18\x02 \x03(\tR\aapplied\x12\x18\n" +
@@ -1603,11 +1710,12 @@ const file_migration_proto_rawDesc = "" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x1a\n" +
-	"\bprogress\x18\x04 \x01(\x05R\bprogress\"j\n" +
+	"\bprogress\x18\x04 \x01(\x05R\bprogress\"\x9b\x01\n" +
 	"\x12MigrateDownRequest\x12!\n" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x18\n" +
 	"\aschemas\x18\x02 \x03(\tR\aschemas\x12\x17\n" +
-	"\adry_run\x18\x03 \x01(\bR\x06dryRun\"\xb1\x01\n" +
+	"\adry_run\x18\x03 \x01(\bR\x06dryRun\x12/\n" +
+	"\x13ignore_dependencies\x18\x04 \x01(\bR\x12ignoreDependencies\"\xb1\x01\n" +
 	"\x15ListMigrationsRequest\x12\x16\n" +
 	"\x06schema\x18\x01 \x01(\tR\x06schema\x12\x14\n" +
 	"\x05table\x18\x02 \x01(\tR\x05table\x12\x1e\n" +
@@ -1672,7 +1780,11 @@ const file_migration_proto_rawDesc = "" +
 	"\aapplied\x18\x03 \x01(\bR\aapplied\x12\x1d\n" +
 	"\n" +
 	"applied_at\x18\x04 \x01(\tR\tappliedAt\x12#\n" +
-	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\"?\n" +
+	"\rerror_message\x18\x05 \x01(\tR\ferrorMessage\">\n" +
+	"\x19IsMigrationAppliedRequest\x12!\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"6\n" +
+	"\x1aIsMigrationAppliedResponse\x12\x18\n" +
+	"\aapplied\x18\x01 \x01(\bR\aapplied\"?\n" +
 	"\x1aGetMigrationHistoryRequest\x12!\n" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"x\n" +
 	"\x18MigrationHistoryResponse\x12!\n" +
@@ -1716,7 +1828,7 @@ const file_migration_proto_rawDesc = "" +
 	"\x06checks\x18\x02 \x03(\v2%.migration.HealthResponse.ChecksEntryR\x06checks\x1a9\n" +
 	"\vChecksEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xc2\x06\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xa5\a\n" +
 	"\x10MigrationService\x12@\n" +
 	"\aMigrate\x12\x19.migration.MigrateRequest\x1a\x1a.migration.MigrateResponse\x12H\n" +
 	"\rStreamMigrate\x12\x19.migration.MigrateRequest\x1a\x1a.migration.MigrateProgress0\x01\x12H\n" +
@@ -1724,6 +1836,7 @@ const file_migration_proto_rawDesc = "" +
 	"\x0eListMigrations\x12 .migration.ListMigrationsRequest\x1a!.migration.ListMigrationsResponse\x12R\n" +
 	"\fGetMigration\x12\x1e.migration.GetMigrationRequest\x1a\".migration.MigrationDetailResponse\x12^\n" +
 	"\x12GetMigrationStatus\x12$.migration.GetMigrationStatusRequest\x1a\".migration.MigrationStatusResponse\x12a\n" +
+	"\x12IsMigrationApplied\x12$.migration.IsMigrationAppliedRequest\x1a%.migration.IsMigrationAppliedResponse\x12a\n" +
 	"\x13GetMigrationHistory\x12%.migration.GetMigrationHistoryRequest\x1a#.migration.MigrationHistoryResponse\x12U\n" +
 	"\x11RollbackMigration\x12#.migration.RollbackMigrationRequest\x1a\x1b.migration.RollbackResponse\x12T\n" +
 	"\x11ReindexMigrations\x12#.migration.ReindexMigrationsRequest\x1a\x1a.migration.ReindexResponse\x12=\n" +
@@ -1741,7 +1854,7 @@ func file_migration_proto_rawDescGZIP() []byte {
 	return file_migration_proto_rawDescData
 }
 
-var file_migration_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_migration_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_migration_proto_goTypes = []any{
 	(*MigrationTarget)(nil),            // 0: migration.MigrationTarget
 	(*MigrateRequest)(nil),             // 1: migration.MigrateRequest
@@ -1756,45 +1869,49 @@ var file_migration_proto_goTypes = []any{
 	(*DependencyResponse)(nil),         // 10: migration.DependencyResponse
 	(*GetMigrationStatusRequest)(nil),  // 11: migration.GetMigrationStatusRequest
 	(*MigrationStatusResponse)(nil),    // 12: migration.MigrationStatusResponse
-	(*GetMigrationHistoryRequest)(nil), // 13: migration.GetMigrationHistoryRequest
-	(*MigrationHistoryResponse)(nil),   // 14: migration.MigrationHistoryResponse
-	(*MigrationHistoryItem)(nil),       // 15: migration.MigrationHistoryItem
-	(*RollbackMigrationRequest)(nil),   // 16: migration.RollbackMigrationRequest
-	(*RollbackResponse)(nil),           // 17: migration.RollbackResponse
-	(*ReindexMigrationsRequest)(nil),   // 18: migration.ReindexMigrationsRequest
-	(*ReindexResponse)(nil),            // 19: migration.ReindexResponse
-	(*HealthRequest)(nil),              // 20: migration.HealthRequest
-	(*HealthResponse)(nil),             // 21: migration.HealthResponse
-	nil,                                // 22: migration.HealthResponse.ChecksEntry
+	(*IsMigrationAppliedRequest)(nil),  // 13: migration.IsMigrationAppliedRequest
+	(*IsMigrationAppliedResponse)(nil), // 14: migration.IsMigrationAppliedResponse
+	(*GetMigrationHistoryRequest)(nil), // 15: migration.GetMigrationHistoryRequest
+	(*MigrationHistoryResponse)(nil),   // 16: migration.MigrationHistoryResponse
+	(*MigrationHistoryItem)(nil),       // 17: migration.MigrationHistoryItem
+	(*RollbackMigrationRequest)(nil),   // 18: migration.RollbackMigrationRequest
+	(*RollbackResponse)(nil),           // 19: migration.RollbackResponse
+	(*ReindexMigrationsRequest)(nil),   // 20: migration.ReindexMigrationsRequest
+	(*ReindexResponse)(nil),            // 21: migration.ReindexResponse
+	(*HealthRequest)(nil),              // 22: migration.HealthRequest
+	(*HealthResponse)(nil),             // 23: migration.HealthResponse
+	nil,                                // 24: migration.HealthResponse.ChecksEntry
 }
 var file_migration_proto_depIdxs = []int32{
 	0,  // 0: migration.MigrateRequest.target:type_name -> migration.MigrationTarget
 	7,  // 1: migration.ListMigrationsResponse.items:type_name -> migration.MigrationListItem
 	10, // 2: migration.MigrationDetailResponse.structured_dependencies:type_name -> migration.DependencyResponse
-	15, // 3: migration.MigrationHistoryResponse.history:type_name -> migration.MigrationHistoryItem
-	22, // 4: migration.HealthResponse.checks:type_name -> migration.HealthResponse.ChecksEntry
+	17, // 3: migration.MigrationHistoryResponse.history:type_name -> migration.MigrationHistoryItem
+	24, // 4: migration.HealthResponse.checks:type_name -> migration.HealthResponse.ChecksEntry
 	1,  // 5: migration.MigrationService.Migrate:input_type -> migration.MigrateRequest
 	1,  // 6: migration.MigrationService.StreamMigrate:input_type -> migration.MigrateRequest
 	4,  // 7: migration.MigrationService.MigrateDown:input_type -> migration.MigrateDownRequest
 	5,  // 8: migration.MigrationService.ListMigrations:input_type -> migration.ListMigrationsRequest
 	8,  // 9: migration.MigrationService.GetMigration:input_type -> migration.GetMigrationRequest
 	11, // 10: migration.MigrationService.GetMigrationStatus:input_type -> migration.GetMigrationStatusRequest
-	13, // 11: migration.MigrationService.GetMigrationHistory:input_type -> migration.GetMigrationHistoryRequest
-	16, // 12: migration.MigrationService.RollbackMigration:input_type -> migration.RollbackMigrationRequest
-	18, // 13: migration.MigrationService.ReindexMigrations:input_type -> migration.ReindexMigrationsRequest
-	20, // 14: migration.MigrationService.Health:input_type -> migration.HealthRequest
-	2,  // 15: migration.MigrationService.Migrate:output_type -> migration.MigrateResponse
-	3,  // 16: migration.MigrationService.StreamMigrate:output_type -> migration.MigrateProgress
-	2,  // 17: migration.MigrationService.MigrateDown:output_type -> migration.MigrateResponse
-	6,  // 18: migration.MigrationService.ListMigrations:output_type -> migration.ListMigrationsResponse
-	9,  // 19: migration.MigrationService.GetMigration:output_type -> migration.MigrationDetailResponse
-	12, // 20: migration.MigrationService.GetMigrationStatus:output_type -> migration.MigrationStatusResponse
-	14, // 21: migration.MigrationService.GetMigrationHistory:output_type -> migration.MigrationHistoryResponse
-	17, // 22: migration.MigrationService.RollbackMigration:output_type -> migration.RollbackResponse
-	19, // 23: migration.MigrationService.ReindexMigrations:output_type -> migration.ReindexResponse
-	21, // 24: migration.MigrationService.Health:output_type -> migration.HealthResponse
-	15, // [15:25] is the sub-list for method output_type
-	5,  // [5:15] is the sub-list for method input_type
+	13, // 11: migration.MigrationService.IsMigrationApplied:input_type -> migration.IsMigrationAppliedRequest
+	15, // 12: migration.MigrationService.GetMigrationHistory:input_type -> migration.GetMigrationHistoryRequest
+	18, // 13: migration.MigrationService.RollbackMigration:input_type -> migration.RollbackMigrationRequest
+	20, // 14: migration.MigrationService.ReindexMigrations:input_type -> migration.ReindexMigrationsRequest
+	22, // 15: migration.MigrationService.Health:input_type -> migration.HealthRequest
+	2,  // 16: migration.MigrationService.Migrate:output_type -> migration.MigrateResponse
+	3,  // 17: migration.MigrationService.StreamMigrate:output_type -> migration.MigrateProgress
+	2,  // 18: migration.MigrationService.MigrateDown:output_type -> migration.MigrateResponse
+	6,  // 19: migration.MigrationService.ListMigrations:output_type -> migration.ListMigrationsResponse
+	9,  // 20: migration.MigrationService.GetMigration:output_type -> migration.MigrationDetailResponse
+	12, // 21: migration.MigrationService.GetMigrationStatus:output_type -> migration.MigrationStatusResponse
+	14, // 22: migration.MigrationService.IsMigrationApplied:output_type -> migration.IsMigrationAppliedResponse
+	16, // 23: migration.MigrationService.GetMigrationHistory:output_type -> migration.MigrationHistoryResponse
+	19, // 24: migration.MigrationService.RollbackMigration:output_type -> migration.RollbackResponse
+	21, // 25: migration.MigrationService.ReindexMigrations:output_type -> migration.ReindexResponse
+	23, // 26: migration.MigrationService.Health:output_type -> migration.HealthResponse
+	16, // [16:27] is the sub-list for method output_type
+	5,  // [5:16] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1811,7 +1928,7 @@ func file_migration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_migration_proto_rawDesc), len(file_migration_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

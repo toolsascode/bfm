@@ -21,12 +21,14 @@ export interface MigrateUpRequest {
   connection: string;
   schemas?: string[]; // Array for dynamic schemas
   dry_run?: boolean;
+  ignore_dependencies?: boolean;
 }
 
 export interface MigrateDownRequest {
   migration_id: string;
   schemas?: string[]; // Array for dynamic schemas
   dry_run?: boolean;
+  ignore_dependencies?: boolean;
 }
 
 export interface MigrateResponse {
@@ -154,4 +156,23 @@ export interface MigrationListFilters {
   backend?: string;
   status?: string;
   version?: string;
+}
+
+export interface SkippedMigration {
+  id: number;
+  migration_id: string;
+  schema: string;
+  version: string;
+  connection: string;
+  backend: string;
+  executed_by: string;
+  execution_method: string;
+  execution_context: string;
+  skipped_at: string;
+  created_at: string;
+}
+
+export interface SkippedMigrationsResponse {
+  migration_id?: string;
+  skipped: SkippedMigration[];
 }
