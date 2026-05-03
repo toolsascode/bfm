@@ -19,11 +19,19 @@ func (f *fakeStateTracker) IsMigrationApplied(_ interface{}, migrationID string)
 	return f.applied[migrationID], nil
 }
 
+func (f *fakeStateTracker) IsMigrationPendingOrApplied(_ interface{}, migrationID string) (bool, error) {
+	// For fake tracker, treat pending/applied the same as applied
+	return f.applied[migrationID], nil
+}
+
 // The remaining methods are not used in these tests; provide empty implementations
 // to satisfy the interface.
 
 func (f *fakeStateTracker) Initialize(_ interface{}) error                                { return nil }
 func (f *fakeStateTracker) RecordMigration(_ interface{}, _ *state.MigrationRecord) error { return nil }
+func (f *fakeStateTracker) RecordDependencyMigration(_ interface{}, _ *state.MigrationRecord) error {
+	return nil
+}
 func (f *fakeStateTracker) GetMigrationHistory(_ interface{}, _ *state.MigrationFilters) ([]*state.MigrationRecord, error) {
 	return nil, nil
 }
@@ -48,6 +56,12 @@ func (f *fakeStateTracker) GetMigrationExecutions(_ interface{}, _ string) ([]*s
 	return nil, nil
 }
 func (f *fakeStateTracker) GetRecentExecutions(_ interface{}, _ int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+func (f *fakeStateTracker) RecordSkippedMigrations(_ interface{}, _ []string, _ string, _ string, _ string) error {
+	return nil
+}
+func (f *fakeStateTracker) GetSkippedMigrations(_ interface{}, _ string, _ int) ([]*state.SkippedMigration, error) {
 	return nil, nil
 }
 func (f *fakeStateTracker) Close() error { return nil }
@@ -131,7 +145,7 @@ func TestExpandWithPendingDependenciesCrossConnection(t *testing.T) {
 
 	ctx := context.Background()
 
-	expanded, err := exec.expandWithPendingDependencies(ctx, []*backends.MigrationScript{coreMigration})
+	expanded, _, _, err := exec.expandWithPendingDependencies(ctx, []*backends.MigrationScript{coreMigration})
 	if err != nil {
 		t.Fatalf("expandWithPendingDependencies returned error: %v", err)
 	}
