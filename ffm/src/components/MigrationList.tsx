@@ -34,6 +34,7 @@ export default function MigrationList() {
   const [forceRollback, setForceRollback] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [ignoreDependencies, setIgnoreDependencies] = useState(false);
 
   useEffect(() => {
     loadMigrations();
@@ -135,7 +136,7 @@ export default function MigrationList() {
   }, [filterOptions.connections, connectionSearchQuery]);
 
   // Status options (fixed list)
-  const statusOptions = ["success", "failed", "pending"];
+  const statusOptions = ["applied", "failed", "pending"];
   const filteredStatuses = useMemo(() => {
     if (!statusSearchQuery.trim()) {
       return statusOptions;
@@ -390,6 +391,7 @@ export default function MigrationList() {
               connection: migration.connection,
               schemas: [executionSchema.trim()],
               dry_run: false,
+              ignore_dependencies: ignoreDependencies,
             });
 
             if (response.success) {
@@ -589,7 +591,16 @@ export default function MigrationList() {
               {selectedMigrations.size !== 1 ? "s" : ""} selected
             </div>
           </div>
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={ignoreDependencies}
+                onChange={(e) => setIgnoreDependencies(e.target.checked)}
+                className="w-4 h-4 text-bfm-blue border-gray-300 rounded focus:ring-bfm-blue"
+              />
+              <span className="text-sm text-white">Ignore dependencies</span>
+            </label>
             <div className="relative flex-1 sm:flex-initial execution-schema-container">
               <div className="relative">
                 <input
@@ -1292,7 +1303,7 @@ export default function MigrationList() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-md overflow-x-auto animate-scale-in transition-all hover:shadow-lg">
+      <div className="bg-white rounded-lg shadow-md overflow-x-auto animate-scale-in transition-all hover:shadow-lg max-w-full">
         <table className="w-full overflow-hidden border-collapse">
           <thead>
             <tr>
@@ -1316,7 +1327,7 @@ export default function MigrationList() {
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Version
               </th>
-              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0 max-w-[290px]">
                 Name
               </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
@@ -1380,7 +1391,10 @@ export default function MigrationList() {
                   <td className="p-4 border-b border-gray-200">
                     {migration.version}
                   </td>
-                  <td className="p-4 border-b border-gray-200">
+                  <td
+                    className="p-4 border-b border-gray-200 max-w-[260px] truncate"
+                    title={migration.name || "-"}
+                  >
                     {migration.name || "-"}
                   </td>
                   <td className="p-4 border-b border-gray-200">
@@ -1389,7 +1403,10 @@ export default function MigrationList() {
                   <td className="p-4 border-b border-gray-200">
                     {migration.backend}
                   </td>
-                  <td className="p-4 border-b border-gray-200">
+                  <td
+                    className="p-4 border-b border-gray-200 max-w-[180px] truncate"
+                    title={migration.schema || "-"}
+                  >
                     <span className="text-gray-500 italic">
                       {migration.schemaCount > 0
                         ? "Multiple"
