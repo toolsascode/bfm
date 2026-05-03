@@ -97,6 +97,7 @@ The frontend communicates with the BFM server via HTTP API:
 - `GET /api/v1/migrations` - List all migrations
 - `GET /api/v1/migrations/:id` - Get migration details
 - `GET /api/v1/migrations/:id/status` - Get migration status
+- `GET /api/v1/migrations/:id/applied` - Check if migration is applied (returns boolean)
 - `POST /api/v1/migrate` - Execute migrations
 - `POST /api/v1/migrations/:id/rollback` - Rollback a migration
 - `GET /api/v1/health` - Health check

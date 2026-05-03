@@ -24,6 +24,9 @@ service MigrationService {
   // GetMigrationStatus gets the current status of a specific migration
   rpc GetMigrationStatus(GetMigrationStatusRequest) returns (MigrationStatusResponse);
 
+  // IsMigrationApplied checks if a migration has been applied
+  rpc IsMigrationApplied(IsMigrationAppliedRequest) returns (IsMigrationAppliedResponse);
+
   // GetMigrationHistory gets the execution history for a specific migration
   rpc GetMigrationHistory(GetMigrationHistoryRequest) returns (MigrationHistoryResponse);
 
@@ -53,6 +56,7 @@ message MigrateRequest {
   string schema = 3;         // Optional
   string schema_name = 4;     // For dynamic schemas
   bool dry_run = 5;          // Optional, default false
+  bool ignore_dependencies = 6; // Optional, default false
 }
 
 // MigrateResponse represents a migration response
@@ -76,6 +80,7 @@ message MigrateDownRequest {
   string migration_id = 1;   // Required: ID of migration to rollback
   repeated string schemas = 2; // Optional: Array for dynamic schemas
   bool dry_run = 3;          // Optional, default false
+  bool ignore_dependencies = 4; // Optional, default false
 }
 
 // ListMigrationsRequest represents a request to list migrations with filters
@@ -152,6 +157,16 @@ message MigrationStatusResponse {
   bool applied = 3;
   string applied_at = 4;     // RFC3339 timestamp, optional
   string error_message = 5;  // Optional
+}
+
+// IsMigrationAppliedRequest represents a request to check if a migration is applied
+message IsMigrationAppliedRequest {
+  string migration_id = 1;   // Required: ID of migration to check
+}
+
+// IsMigrationAppliedResponse represents the result of checking if a migration is applied
+message IsMigrationAppliedResponse {
+  bool applied = 1;           // True if migration is applied, false otherwise
 }
 
 // GetMigrationHistoryRequest represents a request to get migration history

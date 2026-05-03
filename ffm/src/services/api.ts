@@ -13,6 +13,7 @@ import type {
   HealthResponse,
   MigrationListFilters,
   ReindexResponse,
+  SkippedMigrationsResponse,
 } from "../types/api";
 import { toastService } from "./toast";
 
@@ -269,6 +270,31 @@ class BFMApiClient {
   async reindexMigrations(): Promise<ReindexResponse> {
     const response = await this.client.post<ReindexResponse>(
       "/v1/migrations/reindex",
+    );
+    return response.data;
+  }
+
+  async getSkippedMigrations(
+    migrationId: string,
+    limit: number = 5,
+  ): Promise<SkippedMigrationsResponse> {
+    const response = await this.client.get<SkippedMigrationsResponse>(
+      `/v1/migrations/${migrationId}/skipped`,
+      {
+        params: { limit },
+      },
+    );
+    return response.data;
+  }
+
+  async getRecentSkippedMigrations(
+    limit: number = 5,
+  ): Promise<SkippedMigrationsResponse> {
+    const response = await this.client.get<SkippedMigrationsResponse>(
+      "/v1/migrations/skipped/recent",
+      {
+        params: { limit },
+      },
     );
     return response.data;
   }
