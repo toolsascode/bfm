@@ -24,6 +24,10 @@ func (m *mockStateTrackerForValidator) RecordMigration(ctx interface{}, migratio
 	return nil
 }
 
+func (m *mockStateTrackerForValidator) RecordDependencyMigration(ctx interface{}, migration *state.MigrationRecord) error {
+	return nil
+}
+
 func (m *mockStateTrackerForValidator) GetMigrationHistory(ctx interface{}, filters *state.MigrationFilters) ([]*state.MigrationRecord, error) {
 	return nil, nil
 }
@@ -33,6 +37,11 @@ func (m *mockStateTrackerForValidator) GetMigrationList(ctx interface{}, filters
 }
 
 func (m *mockStateTrackerForValidator) IsMigrationApplied(ctx interface{}, migrationID string) (bool, error) {
+	return m.appliedMigrations[migrationID], nil
+}
+
+func (m *mockStateTrackerForValidator) IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error) {
+	// For mock, treat pending/applied the same as applied
 	return m.appliedMigrations[migrationID], nil
 }
 
@@ -68,6 +77,14 @@ func (m *mockStateTrackerForValidator) GetMigrationExecutions(ctx interface{}, m
 	return nil, nil
 }
 func (m *mockStateTrackerForValidator) GetRecentExecutions(ctx interface{}, limit int) ([]*state.MigrationExecution, error) {
+	return nil, nil
+}
+
+func (m *mockStateTrackerForValidator) RecordSkippedMigrations(ctx interface{}, skippedMigrationIDs []string, executedBy, executionMethod, executionContext string) error {
+	return nil
+}
+
+func (m *mockStateTrackerForValidator) GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*state.SkippedMigration, error) {
 	return nil, nil
 }
 
