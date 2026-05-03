@@ -7,7 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/segmentio/kafka-go v0.4.49
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/swaggo/swag v1.16.6
 	go.etcd.io/etcd/client/v3 v3.6.7
