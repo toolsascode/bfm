@@ -284,6 +284,22 @@ cd api && go build -o ../bfm-cli ./cmd/cli
 ./bfm-cli build examples/sfm --verbose
 ```
 
+## Generating Protobuf Code
+
+When modifying the `.proto` files in `api/internal/api/protobuf/`, you need to regenerate the Go code:
+
+```bash
+# Using Makefile (recommended)
+make generate-protobuf
+# or
+make protobuf
+
+# Or manually
+cd api/internal/api/protobuf && bash generate.sh
+```
+
+**Note**: This requires `protoc` (Protocol Buffers compiler) to be installed. See the Makefile for installation instructions if needed.
+
 ## Environment Configuration
 
 For local development, create a `.env` file in the project root or set environment variables:
