@@ -26,6 +26,7 @@ const (
 	MigrationService_ListMigrations_FullMethodName      = "/migration.MigrationService/ListMigrations"
 	MigrationService_GetMigration_FullMethodName        = "/migration.MigrationService/GetMigration"
 	MigrationService_GetMigrationStatus_FullMethodName  = "/migration.MigrationService/GetMigrationStatus"
+	MigrationService_IsMigrationApplied_FullMethodName  = "/migration.MigrationService/IsMigrationApplied"
 	MigrationService_GetMigrationHistory_FullMethodName = "/migration.MigrationService/GetMigrationHistory"
 	MigrationService_RollbackMigration_FullMethodName   = "/migration.MigrationService/RollbackMigration"
 	MigrationService_ReindexMigrations_FullMethodName   = "/migration.MigrationService/ReindexMigrations"
@@ -50,6 +51,8 @@ type MigrationServiceClient interface {
 	GetMigration(ctx context.Context, in *GetMigrationRequest, opts ...grpc.CallOption) (*MigrationDetailResponse, error)
 	// GetMigrationStatus gets the current status of a specific migration
 	GetMigrationStatus(ctx context.Context, in *GetMigrationStatusRequest, opts ...grpc.CallOption) (*MigrationStatusResponse, error)
+	// IsMigrationApplied checks if a migration has been applied
+	IsMigrationApplied(ctx context.Context, in *IsMigrationAppliedRequest, opts ...grpc.CallOption) (*IsMigrationAppliedResponse, error)
 	// GetMigrationHistory gets the execution history for a specific migration
 	GetMigrationHistory(ctx context.Context, in *GetMigrationHistoryRequest, opts ...grpc.CallOption) (*MigrationHistoryResponse, error)
 	// RollbackMigration rolls back a specific migration
@@ -137,6 +140,16 @@ func (c *migrationServiceClient) GetMigrationStatus(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *migrationServiceClient) IsMigrationApplied(ctx context.Context, in *IsMigrationAppliedRequest, opts ...grpc.CallOption) (*IsMigrationAppliedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IsMigrationAppliedResponse)
+	err := c.cc.Invoke(ctx, MigrationService_IsMigrationApplied_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *migrationServiceClient) GetMigrationHistory(ctx context.Context, in *GetMigrationHistoryRequest, opts ...grpc.CallOption) (*MigrationHistoryResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MigrationHistoryResponse)
@@ -195,6 +208,8 @@ type MigrationServiceServer interface {
 	GetMigration(context.Context, *GetMigrationRequest) (*MigrationDetailResponse, error)
 	// GetMigrationStatus gets the current status of a specific migration
 	GetMigrationStatus(context.Context, *GetMigrationStatusRequest) (*MigrationStatusResponse, error)
+	// IsMigrationApplied checks if a migration has been applied
+	IsMigrationApplied(context.Context, *IsMigrationAppliedRequest) (*IsMigrationAppliedResponse, error)
 	// GetMigrationHistory gets the execution history for a specific migration
 	GetMigrationHistory(context.Context, *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error)
 	// RollbackMigration rolls back a specific migration
@@ -230,6 +245,9 @@ func (UnimplementedMigrationServiceServer) GetMigration(context.Context, *GetMig
 }
 func (UnimplementedMigrationServiceServer) GetMigrationStatus(context.Context, *GetMigrationStatusRequest) (*MigrationStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMigrationStatus not implemented")
+}
+func (UnimplementedMigrationServiceServer) IsMigrationApplied(context.Context, *IsMigrationAppliedRequest) (*IsMigrationAppliedResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IsMigrationApplied not implemented")
 }
 func (UnimplementedMigrationServiceServer) GetMigrationHistory(context.Context, *GetMigrationHistoryRequest) (*MigrationHistoryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMigrationHistory not implemented")
@@ -365,6 +383,24 @@ func _MigrationService_GetMigrationStatus_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MigrationService_IsMigrationApplied_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsMigrationAppliedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MigrationServiceServer).IsMigrationApplied(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MigrationService_IsMigrationApplied_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MigrationServiceServer).IsMigrationApplied(ctx, req.(*IsMigrationAppliedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MigrationService_GetMigrationHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMigrationHistoryRequest)
 	if err := dec(in); err != nil {
@@ -463,6 +499,10 @@ var MigrationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMigrationStatus",
 			Handler:    _MigrationService_GetMigrationStatus_Handler,
+		},
+		{
+			MethodName: "IsMigrationApplied",
+			Handler:    _MigrationService_IsMigrationApplied_Handler,
 		},
 		{
 			MethodName: "GetMigrationHistory",
