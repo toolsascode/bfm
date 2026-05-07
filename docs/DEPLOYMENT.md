@@ -140,6 +140,30 @@ Migrations are automatically triggered when:
 - A new environment is created
 - Core/Guard schemas need initialization
 
+### BfM server startup auto-migrate
+
+The API server (`cmd/server`) runs pending **up** migrations per configured connection shortly after startup, then **retries in rounds** until there are no remaining **fixed-schema** migrations to apply, a stall is detected (no progress with no errors), or limits are reached.
+
+- **`BFM_AUTO_MIGRATE`**: enabled by default when unset. Set to `false`, `0`, `off`, or `no` to disable.
+- **`BFM_AUTO_MIGRATE_CONNECTIONS`**: optional comma-separated list of connection names (e.g. `core,guard`). If unset, every connection defined in config is considered, subject to the readiness rules below.
+- **`BFM_AUTO_MIGRATE_RETRY_INTERVAL`**: duration between full rounds over all ready connections (default `5s`). Go duration syntax (e.g. `10s`, `1m`). Set to **`0`** or **`0s`** for **legacy single-pass** behavior (one round only, after the initial startup delay).
+- **`BFM_AUTO_MIGRATE_RETRY_MAX_ROUNDS`**: maximum number of rounds when the retry interval is positive (default `24`). Ignored when the retry interval is zero (only one round runs).
+
+**Readiness (incomplete connections are skipped):** Auto-migrate does not call `ExecuteUp` for a connection if its env config is obviously incomplete for the backend, to avoid useless dials (e.g. etcd logging retries to `:2379` when no endpoints or host+port are set).
+
+- **postgresql**: requires non-empty `Host` (`{CONN}_DB_HOST`).
+- **greptimedb**: requires non-empty `Host`.
+- **etcd**: requires non-empty `{CONN}_ENDPOINTS` (or any extra key whose name matches `endpoints`, case-insensitive), **or** both `Host` and `Port` non-empty.
+- **Other backends**: no extra check (forward compatible).
+
+If you declare `METADATA_BACKEND=etcd` but do not configure etcd endpoints in this environment, that connection is skipped until you set `METADATA_ENDPOINTS` (or host+port) or list only ready connections via `BFM_AUTO_MIGRATE_CONNECTIONS`.
+
+This uses the same `ExecuteUp` path as the HTTP API (synchronous, not the async queue). **Dynamic-schema migrations** (empty schema in the migration definition) still need an explicit schema in a manual/API run; auto-migrate passes an empty schema, so those migrations are **skipped** (info log) until you run migrate up with `schemas` set. They are also **excluded from the pending count** that drives retries, so the loop can finish while the migration list UI still shows those rows as pending. Fixed-schema migrations on the same connection still apply during auto-migrate.
+
+If every round applies nothing, reports no errors, and the fixed-schema pending count does not drop, auto-migrate **stops with a warning** (e.g. backend/connection name mismatch between config and registered migrations); fix configuration and restart or run migrations via the API.
+
+**PostgreSQL naming:** The registry treats **`postgres`** and **`postgresql`** as the same backend when matching config to registered migrations (e.g. config `postgresql` with migration metadata `postgres`). Migration IDs still use whatever backend string is stored on each script.
+
 ### Manual Migration
 
 You can also trigger migrations manually via API:

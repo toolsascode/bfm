@@ -79,6 +79,17 @@ type ReindexResponse struct {
 	Total   int      `json:"total"`
 }
 
+// OrderMigrationBatchRequest requests a dependency-safe execution order for a set of migrations.
+type OrderMigrationBatchRequest struct {
+	MigrationIDs []string `json:"migration_ids" binding:"required"`
+	Connection   string   `json:"connection" binding:"required"`
+}
+
+// OrderMigrationBatchResponse is the ordered list of migration IDs (same strings as input, reordered).
+type OrderMigrationBatchResponse struct {
+	OrderedMigrationIDs []string `json:"ordered_migration_ids"`
+}
+
 // MigrateUpRequest represents a request to execute up migrations
 type MigrateUpRequest struct {
 	Target             *registry.MigrationTarget `json:"target"`

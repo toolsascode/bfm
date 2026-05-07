@@ -40,7 +40,7 @@ func (m *mockRegistry) FindByTarget(target *registry.MigrationTarget) ([]*backen
 	}
 	var results []*backends.MigrationScript
 	for _, migration := range m.migrations {
-		if target.Backend != "" && migration.Backend != target.Backend {
+		if target.Backend != "" && !registry.BackendNamesMatch(target.Backend, migration.Backend) {
 			continue
 		}
 		if target.Connection != "" && migration.Connection != target.Connection {
@@ -78,7 +78,7 @@ func (m *mockRegistry) GetByConnection(connectionName string) []*backends.Migrat
 func (m *mockRegistry) GetByBackend(backendName string) []*backends.MigrationScript {
 	var results []*backends.MigrationScript
 	for _, migration := range m.migrations {
-		if migration.Backend == backendName {
+		if registry.BackendNamesMatch(backendName, migration.Backend) {
 			results = append(results, migration)
 		}
 	}
@@ -364,6 +364,10 @@ func (m *mockStateTracker) RecordSkippedMigrations(ctx interface{}, skippedMigra
 
 func (m *mockStateTracker) GetSkippedMigrations(ctx interface{}, migrationID string, limit int) ([]*state.SkippedMigration, error) {
 	return nil, nil
+}
+
+func (m *mockStateTracker) WithMigrationExecutionLock(_ interface{}, _, _, _ string, fn func() error) error {
+	return fn()
 }
 
 // mockBackend is a mock implementation of backends.Backend
@@ -712,6 +716,160 @@ func TestExecutor_ExecuteSync_AlreadyApplied(t *testing.T) {
 	}
 	if backend.executeCalled {
 		t.Error("ExecuteMigration should not be called for already applied migration")
+	}
+}
+
+func TestExecutor_ExecuteSync_DynamicSchema_NoSchema_ErrorWithoutAutoMigrateContext(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	migration := &backends.MigrationScript{
+		Schema:     "",
+		Version:    "20240101120000",
+		Name:       "dynamic_schema",
+		Connection: "test",
+		Backend:    "postgresql",
+		UpSQL:      "SELECT 1;",
+	}
+	_ = reg.Register(migration)
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	exec.RegisterBackend("postgresql", newMockBackend("postgresql"))
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	result, err := exec.ExecuteSync(context.Background(), target, "test", "", false, false)
+	if err != nil {
+		t.Fatalf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	if result.Success {
+		t.Error("expected Success=false when dynamic schema has no request schema")
+	}
+	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "dynamic schema but no schema provided") {
+		t.Errorf("expected dynamic-schema error, got Errors=%v", result.Errors)
+	}
+}
+
+func TestExecutor_ExecuteSync_DynamicSchema_AutoMigrateContextSkips(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	migration := &backends.MigrationScript{
+		Schema:     "",
+		Version:    "20240101120000",
+		Name:       "dynamic_schema",
+		Connection: "test",
+		Backend:    "postgresql",
+		UpSQL:      "SELECT 1;",
+	}
+	_ = reg.Register(migration)
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	ctx := WithAutoMigrateContext(context.Background())
+	result, err := exec.ExecuteSync(ctx, target, "test", "", false, false)
+	if err != nil {
+		t.Fatalf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	if !result.Success {
+		t.Errorf("expected Success=true with auto-migrate context, Errors=%v", result.Errors)
+	}
+	if len(result.Errors) != 0 {
+		t.Errorf("expected no errors, got %v", result.Errors)
+	}
+	if backend.executeCalled {
+		t.Error("backend should not execute skipped dynamic-schema migration")
+	}
+}
+
+func TestExecutor_ExecuteSync_MixedFixedAndDynamic_AutoMigrateContext_AppliesFixedOnly(t *testing.T) {
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	exec := NewExecutor(reg, tracker)
+
+	fixed := &backends.MigrationScript{
+		Schema:     "public",
+		Version:    "20240101120000",
+		Name:       "fixed_schema",
+		Connection: "test",
+		Backend:    "postgresql",
+		UpSQL:      "CREATE TABLE t1 (id int);",
+	}
+	dynamic := &backends.MigrationScript{
+		Schema:     "",
+		Version:    "20240101130000",
+		Name:       "dynamic_schema",
+		Connection: "test",
+		Backend:    "postgresql",
+		UpSQL:      "SELECT 1;",
+	}
+	_ = reg.Register(fixed)
+	_ = reg.Register(dynamic)
+
+	connections := map[string]*backends.ConnectionConfig{
+		"test": {
+			Backend: "postgresql",
+			Host:    "localhost",
+		},
+	}
+	_ = exec.SetConnections(connections)
+
+	backend := newMockBackend("postgresql")
+	exec.RegisterBackend("postgresql", backend)
+
+	target := &registry.MigrationTarget{
+		Connection: "test",
+		Backend:    "postgresql",
+	}
+
+	ctx := WithAutoMigrateContext(context.Background())
+	result, err := exec.ExecuteSync(ctx, target, "test", "", false, false)
+	if err != nil {
+		t.Fatalf("ExecuteSync() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("ExecuteSync() returned nil result")
+	}
+	if !result.Success {
+		t.Fatalf("expected Success=true, Errors=%v", result.Errors)
+	}
+	if len(result.Applied) != 1 {
+		t.Fatalf("expected 1 applied migration, got Applied=%v", result.Applied)
+	}
+	if !backend.executeCalled || backend.executeMigration == nil || backend.executeMigration.Name != fixed.Name {
+		t.Errorf("expected fixed migration executed, got migration=%v", backend.executeMigration)
 	}
 }
 
@@ -2623,4 +2781,103 @@ func TestExecutor_ReindexMigrations_GetMigrationListError(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error from ReindexMigrations when GetMigrationList fails, got nil")
 	}
+}
+
+func TestExecutor_CountPendingAutoMigratable(t *testing.T) {
+	fixed := &backends.MigrationScript{
+		Version: "1", Name: "a", Backend: "postgresql", Connection: "core", Schema: "core",
+		UpSQL: "SELECT 1",
+	}
+	dynamic := &backends.MigrationScript{
+		Version: "2", Name: "b", Backend: "postgresql", Connection: "core", Schema: "",
+		UpSQL: "SELECT 1",
+	}
+	fixedID := "1_a_postgresql_core"
+
+	t.Run("empty registry", func(t *testing.T) {
+		exec := NewExecutor(newMockRegistry(), newMockStateTracker())
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 0 {
+			t.Fatalf("got n=%d err=%v, want 0 nil", n, err)
+		}
+	})
+
+	t.Run("fixed pending", func(t *testing.T) {
+		reg := newMockRegistry()
+		_ = reg.Register(fixed)
+		exec := NewExecutor(reg, newMockStateTracker())
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 1 {
+			t.Fatalf("got n=%d err=%v, want 1 nil", n, err)
+		}
+	})
+
+	t.Run("fixed applied", func(t *testing.T) {
+		reg := newMockRegistry()
+		_ = reg.Register(fixed)
+		tracker := newMockStateTracker()
+		tracker.appliedMigrations[fixedID] = true
+		exec := NewExecutor(reg, tracker)
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 0 {
+			t.Fatalf("got n=%d err=%v, want 0 nil", n, err)
+		}
+	})
+
+	t.Run("dynamic only does not count", func(t *testing.T) {
+		reg := newMockRegistry()
+		_ = reg.Register(dynamic)
+		exec := NewExecutor(reg, newMockStateTracker())
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 0 {
+			t.Fatalf("got n=%d err=%v, want 0 nil", n, err)
+		}
+	})
+
+	t.Run("mixed counts fixed only", func(t *testing.T) {
+		reg := newMockRegistry()
+		_ = reg.Register(fixed)
+		_ = reg.Register(dynamic)
+		exec := NewExecutor(reg, newMockStateTracker())
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 1 {
+			t.Fatalf("got n=%d err=%v, want 1 nil", n, err)
+		}
+	})
+
+	t.Run("postgres alias matches postgresql target", func(t *testing.T) {
+		reg := newMockRegistry()
+		alias := &backends.MigrationScript{
+			Version: "1", Name: "a", Backend: "postgres", Connection: "core", Schema: "core",
+			UpSQL: "SELECT 1",
+		}
+		_ = reg.Register(alias)
+		exec := NewExecutor(reg, newMockStateTracker())
+		n, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err != nil || n != 1 {
+			t.Fatalf("got n=%d err=%v, want 1 nil", n, err)
+		}
+	})
+
+	t.Run("FindByTarget error", func(t *testing.T) {
+		reg := newMockRegistry()
+		reg.findByTargetError = errors.New("boom")
+		exec := NewExecutor(reg, newMockStateTracker())
+		_, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+
+	t.Run("IsMigrationApplied error", func(t *testing.T) {
+		reg := newMockRegistry()
+		_ = reg.Register(fixed)
+		tracker := newMockStateTracker()
+		tracker.isAppliedError = errors.New("db down")
+		exec := NewExecutor(reg, tracker)
+		_, err := exec.CountPendingAutoMigratable(context.Background(), "core", "postgresql")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }

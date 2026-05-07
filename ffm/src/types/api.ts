@@ -16,6 +16,15 @@ export interface MigrateRequest {
   dry_run?: boolean;
 }
 
+export interface OrderMigrationBatchRequest {
+  migration_ids: string[];
+  connection: string;
+}
+
+export interface OrderMigrationBatchResponse {
+  ordered_migration_ids: string[];
+}
+
 export interface MigrateUpRequest {
   target?: MigrationTarget;
   connection: string;

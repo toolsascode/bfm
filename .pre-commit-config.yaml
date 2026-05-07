@@ -100,7 +100,7 @@ repos:
     hooks:
       - id: eslint
         files: ^ffm/.*\.(js|jsx|ts|tsx)$
-        exclude: ^ffm/(node_modules|dist|build)/
+        exclude: ^ffm/(node_modules|dist|build)/|^ffm/public/runtime-config\.js$
         additional_dependencies:
           - eslint@^8.56.0
           - '@typescript-eslint/parser@^8.47.0'

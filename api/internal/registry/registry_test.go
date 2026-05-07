@@ -220,6 +220,65 @@ func TestInMemoryRegistry_GetByBackend(t *testing.T) {
 	if len(results) != 0 {
 		t.Errorf("Expected 0 migrations for nonexistent backend, got %v", len(results))
 	}
+
+	results = reg.GetByBackend("postgres")
+	if len(results) != 1 || results[0].Name != "migration1" {
+		t.Errorf("GetByBackend(postgres) should match postgresql migration, got %v", len(results))
+	}
+}
+
+func TestBackendNamesMatch(t *testing.T) {
+	tests := []struct {
+		a, b  string
+		match bool
+	}{
+		{"postgresql", "postgresql", true},
+		{"postgres", "postgresql", true},
+		{"PostgreSQL", "postgres", true},
+		{"postgresql", "mysql", false},
+		{"", "", true},
+		{"postgresql", "", false},
+	}
+	for _, tt := range tests {
+		if got := BackendNamesMatch(tt.a, tt.b); got != tt.match {
+			t.Errorf("BackendNamesMatch(%q,%q) = %v, want %v", tt.a, tt.b, got, tt.match)
+		}
+	}
+}
+
+func TestInMemoryRegistry_FindByTarget_PostgresAlias(t *testing.T) {
+	reg := NewInMemoryRegistry()
+	m := &backends.MigrationScript{
+		Version:    "20240101120000",
+		Name:       "core_schema",
+		Connection: "core",
+		Backend:    "postgres",
+		Schema:     "core",
+		UpSQL:      "SELECT 1;",
+	}
+	if err := reg.Register(m); err != nil {
+		t.Fatal(err)
+	}
+	results, err := reg.FindByTarget(&MigrationTarget{
+		Backend:    "postgresql",
+		Connection: "core",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("FindByTarget postgresql+core: got %d migrations, want 1", len(results))
+	}
+	results, err = reg.FindByTarget(&MigrationTarget{
+		Backend:    "postgres",
+		Connection: "core",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("FindByTarget postgres+core: got %d migrations, want 1", len(results))
+	}
 }
 
 func TestInMemoryRegistry_FindByTarget_WithSchema(t *testing.T) {

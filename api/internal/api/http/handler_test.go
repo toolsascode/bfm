@@ -388,6 +388,10 @@ func (m *mockStateTracker) GetSkippedMigrations(ctx interface{}, migrationID str
 	return nil, nil
 }
 
+func (m *mockStateTracker) WithMigrationExecutionLock(_ interface{}, _, _, _ string, fn func() error) error {
+	return fn()
+}
+
 func setupTestRouter(reg *mockRegistry, tracker *mockStateTracker) (*gin.Engine, *executor.Executor) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -915,6 +919,49 @@ func TestHandler_getMigrationStatus(t *testing.T) {
 
 	if response["migration_id"] != migrationID {
 		t.Errorf("Expected migration_id = %v, got %v", migrationID, response["migration_id"])
+	}
+}
+
+func TestHandler_getMigrationStatus_appliedHistoryStatus(t *testing.T) {
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	migrationID := "20240101120000_test_migration_postgresql_core"
+	ts := time.Now().Format(time.RFC3339)
+	// Real DB orders by applied_at DESC, id DESC — completion row first when timestamps tie.
+	tracker.history = []*state.MigrationRecord{
+		{MigrationID: migrationID, Status: "applied", AppliedAt: ts},
+		{MigrationID: migrationID, Status: "pending", AppliedAt: ts},
+	}
+	router, _ := setupTestRouter(reg, tracker)
+
+	req, _ := http.NewRequest("GET", "/api/v1/migrations/"+migrationID+"/status", nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+	if response["applied"] != true {
+		t.Errorf("expected applied=true for applied history row, got %v", response["applied"])
+	}
+	if response["status"] != "applied" {
+		t.Errorf("expected status=applied, got %v", response["status"])
 	}
 }
 

@@ -379,8 +379,37 @@ export default function MigrationList() {
 
       // Execute each group
       for (const [, groupMigrations] of Object.entries(grouped)) {
-        // Execute each migration in the group
-        for (const migration of groupMigrations as MigrationListItem[]) {
+        const group = groupMigrations as MigrationListItem[];
+        let orderedGroup = group;
+        if (!ignoreDependencies && group.length > 0) {
+          try {
+            const orderRes = await apiClient.orderMigrationBatch({
+              migration_ids: group.map((m) => m.migration_id),
+              connection: group[0].connection,
+            });
+            const byId = new Map(
+              group.map((m) => [m.migration_id, m] as const),
+            );
+            orderedGroup = orderRes.ordered_migration_ids.map((id) => {
+              const m = byId.get(id);
+              if (!m) {
+                throw new Error(`ordered migration id not in selection: ${id}`);
+              }
+              return m;
+            });
+          } catch (orderErr) {
+            const msg =
+              orderErr instanceof Error
+                ? orderErr.message
+                : "Failed to compute dependency order";
+            toastService.error(msg);
+            setExecuting(false);
+            return;
+          }
+        }
+
+        // Execute each migration in the group (dependency order when not ignoring deps)
+        for (const migration of orderedGroup) {
           try {
             const response = await apiClient.migrateUp({
               target: {

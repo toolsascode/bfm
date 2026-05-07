@@ -86,6 +86,10 @@ func (m *mockStateTracker) GetSkippedMigrations(ctx interface{}, migrationID str
 	return nil, nil
 }
 
+func (m *mockStateTracker) WithMigrationExecutionLock(_ interface{}, _, _, _ string, fn func() error) error {
+	return fn()
+}
+
 func TestDependencyGraph_AddNode(t *testing.T) {
 	graph := NewDependencyGraph()
 	migration := &backends.MigrationScript{

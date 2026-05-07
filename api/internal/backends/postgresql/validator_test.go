@@ -88,6 +88,10 @@ func (m *mockStateTrackerForValidator) GetSkippedMigrations(ctx interface{}, mig
 	return nil, nil
 }
 
+func (m *mockStateTrackerForValidator) WithMigrationExecutionLock(_ interface{}, _, _, _ string, fn func() error) error {
+	return fn()
+}
+
 func TestDependencyValidator_ValidateDependencies(t *testing.T) {
 	backend := &Backend{} // We'll need to use a real backend or mock differently
 	// For now, we'll test the logic without actual database calls
@@ -265,5 +269,50 @@ func TestDependencyValidator_FindMigrationByTarget(t *testing.T) {
 				t.Errorf("findMigrationByTarget() len = %v, want %v", len(targets), tt.wantLen)
 			}
 		})
+	}
+}
+
+func TestDependencyValidator_RequiresSchema_skippedWhenDependencyInExecutionSet(t *testing.T) {
+	reg := registry.NewInMemoryRegistry()
+	tracker := newMockStateTrackerForValidator()
+	backend := &Backend{} // no DB pool; SchemaExists would error if invoked
+
+	coreSchema := &backends.MigrationScript{
+		Version:    "20250218000000",
+		Name:       "core_schema",
+		Connection: "core",
+		Schema:     "core",
+		Backend:    "postgresql",
+	}
+	if err := reg.Register(coreSchema); err != nil {
+		t.Fatal(err)
+	}
+
+	dependent := &backends.MigrationScript{
+		Version:    "20250218120000",
+		Name:       "phase2_core_environments",
+		Connection: "core",
+		Schema:     "core",
+		Backend:    "postgresql",
+		StructuredDependencies: []backends.Dependency{
+			{
+				Connection:     "core",
+				Schema:         "core",
+				Target:         "20250218000000",
+				TargetType:     "version",
+				RequiresSchema: "core",
+			},
+		},
+	}
+	if err := reg.Register(dependent); err != nil {
+		t.Fatal(err)
+	}
+
+	v := NewDependencyValidator(backend, tracker, reg)
+	execSet := []*backends.MigrationScript{coreSchema, dependent}
+
+	errs := v.ValidateDependenciesWithExecutionSet(context.Background(), dependent, "core", execSet)
+	if len(errs) > 0 {
+		t.Fatalf("expected no errors when dependency is in execution set (schema not created yet), got %v", errs)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,10 +27,23 @@ import (
 type contextKey string
 
 const (
-	executedByKey       contextKey = "executed_by"
-	executionMethodKey  contextKey = "execution_method"
-	executionContextKey contextKey = "execution_context"
+	executedByKey         contextKey = "executed_by"
+	executionMethodKey    contextKey = "execution_method"
+	executionContextKey   contextKey = "execution_context"
+	autoMigrateContextKey contextKey = "bfm_auto_migrate"
 )
+
+// WithAutoMigrateContext marks ctx so executeSync skips migrations with empty Schema
+// when no schema was provided in the request (startup auto-migrate). Manual/API runs
+// without this value still get a clear error for dynamic-schema migrations.
+func WithAutoMigrateContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, autoMigrateContextKey, true)
+}
+
+func isAutoMigrateContext(ctx context.Context) bool {
+	v, ok := ctx.Value(autoMigrateContextKey).(bool)
+	return ok && v
+}
 
 // SetExecutionContext sets execution context in the context
 func SetExecutionContext(ctx context.Context, executedBy, executionMethod string, executionContext map[string]interface{}) context.Context {
@@ -448,6 +462,242 @@ func (e *Executor) expandWithPendingDependencies(ctx context.Context, migrations
 	return expanded, dependencyMap, dependencyParentMap, nil
 }
 
+// runSingleMigrationUp records pending state, runs the migration backend, and records the outcome.
+// Caller must hold WithMigrationExecutionLock for the same (migrationID, schema, connection).
+func (e *Executor) runSingleMigrationUp(
+	ctx context.Context,
+	migration *backends.MigrationScript,
+	migrationID string,
+	schema string,
+	schemaName string,
+	dependencyMap map[string]bool,
+	dependencyParentMap map[string]string,
+	executedDependencies map[string][]string,
+	result *ExecuteResult,
+) {
+	// Check if this is a dependency migration
+	// NOTE: Only override migrationID for dependencies if schemaName was NOT provided
+	// If schemaName was provided, we need to track per-schema even for dependencies
+	isDependency := dependencyMap != nil && dependencyMap[migrationID]
+	baseMigrationID := e.getMigrationID(migration)
+	isDependency = isDependency || (dependencyMap != nil && dependencyMap[baseMigrationID])
+	if isDependency && schemaName == "" {
+		// Only use base ID for dependencies if no specific schema was requested
+		// This preserves per-schema tracking when schemaName is provided
+		migrationID = baseMigrationID
+		logger.Debug("Migration is a dependency, using base ID: %s", migrationID)
+	}
+
+	logger.Debug("Recording migration with ID: %s (schema: %s, isDependency: %v)", migrationID, schema, isDependency)
+
+	// Extract execution context
+	executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
+
+	// Record migration start IMMEDIATELY to prevent concurrent execution
+	// Use migration.Connection (not connectionName) since this migration may be from a different connection
+	record := &state.MigrationRecord{
+		MigrationID:      migrationID,
+		Schema:           schema,
+		Table:            "",
+		Version:          migration.Version,
+		Connection:       migration.Connection,
+		Backend:          migration.Backend,
+		Status:           "pending",
+		AppliedAt:        time.Now().Format(time.RFC3339),
+		ErrorMessage:     "",
+		ExecutedBy:       executedBy,
+		ExecutionMethod:  executionMethod,
+		ExecutionContext: executionContext,
+	}
+
+	// Record as pending immediately to prevent race conditions
+	// For dependencies, use RecordDependencyMigration (requirement 4: no history)
+	// If this fails because another process already marked it as pending/applied, skip execution
+	var recordErr error
+	if isDependency {
+		recordErr = e.stateTracker.RecordDependencyMigration(ctx, record)
+	} else {
+		logger.Debug("Recording migration as pending: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
+		recordErr = e.stateTracker.RecordMigration(ctx, record)
+		if recordErr == nil {
+			logger.Debug("Successfully recorded migration as pending: migrationID=%s, schema=%s - history should be in migrations_history", record.MigrationID, record.Schema)
+		}
+	}
+	if recordErr != nil {
+		// Re-check if migration was applied by another process (concurrency control)
+		// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we want to skip only if actually applied
+		applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
+		if checkErr == nil && applied {
+			result.Skipped = append(result.Skipped, migrationID)
+			return
+		}
+		logger.Errorf("Failed to record migration start for %s (schema=%s): %v", migrationID, record.Schema, recordErr)
+		result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration start for %s: %v", migrationID, recordErr))
+		return
+	}
+
+	// Double-check after recording to ensure we didn't race with another process (concurrency control)
+	// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we just recorded it as pending ourselves
+	// We only want to skip if another process marked it as APPLIED while we were recording
+	applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
+	if checkErr == nil && applied {
+		// Another process marked it as applied, skip
+		result.Skipped = append(result.Skipped, migrationID)
+		return
+	}
+
+	// Get backend for this migration's connection (may differ from target connection for cross-connection dependencies)
+	migrationConnectionConfig, err := e.getConnectionConfig(migration.Connection)
+	if err != nil {
+		record.Status = "failed"
+		record.ErrorMessage = fmt.Sprintf("failed to get connection config for %s: %v", migration.Connection, err)
+		result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+		}
+		return
+	}
+
+	migrationBackend, ok := e.backends[migrationConnectionConfig.Backend]
+	if !ok {
+		record.Status = "failed"
+		record.ErrorMessage = fmt.Sprintf("backend %s not registered for connection %s", migrationConnectionConfig.Backend, migration.Connection)
+		result.Errors = append(result.Errors, fmt.Sprintf("%s: backend %s not registered", migrationID, migrationConnectionConfig.Backend))
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+		}
+		return
+	}
+
+	// Connect to the migration's backend (may be different from target backend)
+	if err := migrationBackend.Connect(migrationConnectionConfig); err != nil {
+		record.Status = "failed"
+		record.ErrorMessage = fmt.Sprintf("failed to connect to backend for %s: %v", migration.Connection, err)
+		result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to connect: %v", migrationID, err))
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+		}
+		return
+	}
+
+	// Apply template variable replacement
+	upSQL, err := replaceTemplateVariables(migration.UpSQL, migration, schema)
+	if err != nil {
+		// Migration was already marked as pending, update to failed
+		record.Status = "failed"
+		record.ErrorMessage = fmt.Sprintf("failed to replace template variables in UpSQL: %v", err)
+		result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in UpSQL: %v", migrationID, err))
+		// Record the failure
+		if isDependency {
+			if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
+			}
+		} else {
+			if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
+			}
+		}
+		return
+	}
+
+	downSQL := migration.DownSQL
+	if downSQL != "" {
+		var err error
+		downSQL, err = replaceTemplateVariables(migration.DownSQL, migration, schema)
+		if err != nil {
+			// Migration was already marked as pending, update to failed
+			record.Status = "failed"
+			record.ErrorMessage = fmt.Sprintf("failed to replace template variables in DownSQL: %v", err)
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in DownSQL: %v", migrationID, err))
+			// Record the failure
+			if isDependency {
+				if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
+				}
+			} else {
+				if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
+				}
+			}
+			return
+		}
+	}
+
+	// Convert executor.MigrationScript to backends.MigrationScript
+	// Use provided schema instead of migration.Schema for dynamic schemas
+	backendMigration := &backends.MigrationScript{
+		Schema:     schema,
+		Version:    migration.Version,
+		Name:       migration.Name,
+		Connection: migration.Connection,
+		Backend:    migration.Backend,
+		UpSQL:      upSQL,
+		DownSQL:    downSQL,
+	}
+
+	// Execute the migration using its own backend
+	err = migrationBackend.ExecuteMigration(ctx, backendMigration)
+	_ = migrationBackend.Close() // Close after execution
+	if err != nil {
+		record.Status = "failed"
+		record.ErrorMessage = err.Error()
+		result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
+	} else {
+		record.Status = "success"
+		// Fresh completion time so history ordering is deterministic (pending row may share the pre-exec timestamp).
+		record.AppliedAt = time.Now().Format(time.RFC3339)
+		result.Applied = append(result.Applied, migrationID)
+
+		// Requirement 3: Track executed dependencies for parent migration
+		if isDependency && dependencyParentMap != nil {
+			parentID := dependencyParentMap[baseMigrationID]
+			if parentID == "" {
+				// Try with full migrationID
+				parentID = dependencyParentMap[migrationID]
+			}
+			if parentID != "" {
+				executedDependencies[parentID] = append(executedDependencies[parentID], migrationID)
+				logger.Debug("Tracked dependency %s for parent migration %s", migrationID, parentID)
+			}
+		}
+	}
+
+	// Record migration in state tracker
+	// Requirement 4: Dependencies use RecordDependencyMigration (no history)
+	// CRITICAL: Ensure record.Schema is set correctly for schema-specific migrations
+	// The schema must match the schema used in migrations_executions for ON CONFLICT to work
+	if isDependency {
+		if err := e.stateTracker.RecordDependencyMigration(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration %s: %v", migrationID, err))
+		}
+	} else {
+		// For non-dependencies, add executed dependencies to execution context
+		if len(executedDependencies[migrationID]) > 0 {
+			// Parse existing execution context and add dependencies
+			var execCtx map[string]interface{}
+			if executionContext != "" {
+				if err := json.Unmarshal([]byte(executionContext), &execCtx); err != nil {
+					execCtx = make(map[string]interface{})
+				}
+			} else {
+				execCtx = make(map[string]interface{})
+			}
+			execCtx["executed_dependencies"] = executedDependencies[migrationID]
+			if updatedCtx, err := json.Marshal(execCtx); err == nil {
+				record.ExecutionContext = string(updatedCtx)
+			}
+		}
+		// Ensure schema is set correctly for the update (should already be set from initial record creation)
+		logger.Debug("Updating migration record: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
+		if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
+			logger.Errorf("Failed to record migration %s (status=%s, schema=%s): %v", migrationID, record.Status, record.Schema, err)
+			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
+		} else {
+			logger.Debug("Successfully recorded migration %s (status=%s, schema=%s) - history should be in migrations_history", migrationID, record.Status, record.Schema)
+		}
+	}
+}
+
 // executeSync executes migrations synchronously
 func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTarget, connectionName string, schemaName string, dryRun bool, ignoreDependencies bool) (*ExecuteResult, error) {
 	// Find migrations matching the target
@@ -597,6 +847,10 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			// Dynamic schema mode: track per schema
 			// If schema is still empty, we can't track it properly - this is an error condition
 			if schema == "" {
+				if isAutoMigrateContext(ctx) {
+					logger.Infof("Skipping migration %s_%s: dynamic schema requires an explicit schema in the request (auto-migrate)", migration.Version, migration.Name)
+					continue
+				}
 				result.Errors = append(result.Errors, fmt.Sprintf("migration %s_%s has dynamic schema but no schema provided in request", migration.Version, migration.Name))
 				continue
 			}
@@ -627,224 +881,21 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 			continue
 		}
 
-		// Check if this is a dependency migration
-		// NOTE: Only override migrationID for dependencies if schemaName was NOT provided
-		// If schemaName was provided, we need to track per-schema even for dependencies
-		isDependency := dependencyMap != nil && dependencyMap[migrationID]
-		baseMigrationID := e.getMigrationID(migration)
-		isDependency = isDependency || (dependencyMap != nil && dependencyMap[baseMigrationID])
-		if isDependency && schemaName == "" {
-			// Only use base ID for dependencies if no specific schema was requested
-			// This preserves per-schema tracking when schemaName is provided
-			migrationID = baseMigrationID
-			logger.Debug("Migration is a dependency, using base ID: %s", migrationID)
+		lockSchema := schema
+		if lockSchema == "" {
+			lockSchema = migration.Schema
 		}
 
-		logger.Debug("Recording migration with ID: %s (schema: %s, isDependency: %v)", migrationID, schema, isDependency)
-
-		// Extract execution context
-		executedBy, executionMethod, executionContext := GetExecutionContext(ctx)
-
-		// Record migration start IMMEDIATELY to prevent concurrent execution
-		// Use migration.Connection (not connectionName) since this migration may be from a different connection
-		record := &state.MigrationRecord{
-			MigrationID:      migrationID,
-			Schema:           schema,
-			Table:            "",
-			Version:          migration.Version,
-			Connection:       migration.Connection,
-			Backend:          migration.Backend,
-			Status:           "pending",
-			AppliedAt:        time.Now().Format(time.RFC3339),
-			ErrorMessage:     "",
-			ExecutedBy:       executedBy,
-			ExecutionMethod:  executionMethod,
-			ExecutionContext: executionContext,
-		}
-
-		// Record as pending immediately to prevent race conditions
-		// For dependencies, use RecordDependencyMigration (requirement 4: no history)
-		// If this fails because another process already marked it as pending/applied, skip execution
-		var recordErr error
-		if isDependency {
-			recordErr = e.stateTracker.RecordDependencyMigration(ctx, record)
-		} else {
-			logger.Debug("Recording migration as pending: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
-			recordErr = e.stateTracker.RecordMigration(ctx, record)
-			if recordErr == nil {
-				logger.Debug("Successfully recorded migration as pending: migrationID=%s, schema=%s - history should be in migrations_history", record.MigrationID, record.Schema)
-			}
-		}
-		if recordErr != nil {
-			// Re-check if migration was applied by another process (concurrency control)
-			// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we want to skip only if actually applied
-			applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
-			if checkErr == nil && applied {
-				result.Skipped = append(result.Skipped, migrationID)
+		if err := e.stateTracker.WithMigrationExecutionLock(ctx, migrationID, lockSchema, migration.Connection, func() error {
+			e.runSingleMigrationUp(ctx, migration, migrationID, schema, schemaName, dependencyMap, dependencyParentMap, executedDependencies, result)
+			return nil
+		}); err != nil {
+			if errors.Is(err, state.ErrMigrationAlreadyInProgress) {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
 				continue
 			}
-			logger.Errorf("Failed to record migration start for %s (schema=%s): %v", migrationID, record.Schema, recordErr)
-			result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration start for %s: %v", migrationID, recordErr))
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: migration lock: %v", migrationID, err))
 			continue
-		}
-
-		// Double-check after recording to ensure we didn't race with another process (concurrency control)
-		// Use IsMigrationApplied (not IsMigrationPendingOrApplied) because we just recorded it as pending ourselves
-		// We only want to skip if another process marked it as APPLIED while we were recording
-		applied, checkErr := e.stateTracker.IsMigrationApplied(ctx, migrationID)
-		if checkErr == nil && applied {
-			// Another process marked it as applied, skip
-			result.Skipped = append(result.Skipped, migrationID)
-			continue
-		}
-
-		// Get backend for this migration's connection (may differ from target connection for cross-connection dependencies)
-		migrationConnectionConfig, err := e.getConnectionConfig(migration.Connection)
-		if err != nil {
-			record.Status = "failed"
-			record.ErrorMessage = fmt.Sprintf("failed to get connection config for %s: %v", migration.Connection, err)
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
-			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
-			}
-			continue
-		}
-
-		migrationBackend, ok := e.backends[migrationConnectionConfig.Backend]
-		if !ok {
-			record.Status = "failed"
-			record.ErrorMessage = fmt.Sprintf("backend %s not registered for connection %s", migrationConnectionConfig.Backend, migration.Connection)
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: backend %s not registered", migrationID, migrationConnectionConfig.Backend))
-			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
-			}
-			continue
-		}
-
-		// Connect to the migration's backend (may be different from target backend)
-		if err := migrationBackend.Connect(migrationConnectionConfig); err != nil {
-			record.Status = "failed"
-			record.ErrorMessage = fmt.Sprintf("failed to connect to backend for %s: %v", migration.Connection, err)
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to connect: %v", migrationID, err))
-			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
-			}
-			continue
-		}
-
-		// Apply template variable replacement
-		upSQL, err := replaceTemplateVariables(migration.UpSQL, migration, schema)
-		if err != nil {
-			// Migration was already marked as pending, update to failed
-			record.Status = "failed"
-			record.ErrorMessage = fmt.Sprintf("failed to replace template variables in UpSQL: %v", err)
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in UpSQL: %v", migrationID, err))
-			// Record the failure
-			if isDependency {
-				if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
-				}
-			} else {
-				if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
-				}
-			}
-			continue
-		}
-
-		downSQL := migration.DownSQL
-		if downSQL != "" {
-			var err error
-			downSQL, err = replaceTemplateVariables(migration.DownSQL, migration, schema)
-			if err != nil {
-				// Migration was already marked as pending, update to failed
-				record.Status = "failed"
-				record.ErrorMessage = fmt.Sprintf("failed to replace template variables in DownSQL: %v", err)
-				result.Errors = append(result.Errors, fmt.Sprintf("%s: failed to replace template variables in DownSQL: %v", migrationID, err))
-				// Record the failure
-				if isDependency {
-					if recordErr := e.stateTracker.RecordDependencyMigration(ctx, record); recordErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration failure %s: %v", migrationID, recordErr))
-					}
-				} else {
-					if recordErr := e.stateTracker.RecordMigration(ctx, record); recordErr != nil {
-						result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration failure %s: %v", migrationID, recordErr))
-					}
-				}
-				continue
-			}
-		}
-
-		// Convert executor.MigrationScript to backends.MigrationScript
-		// Use provided schema instead of migration.Schema for dynamic schemas
-		backendMigration := &backends.MigrationScript{
-			Schema:     schema,
-			Version:    migration.Version,
-			Name:       migration.Name,
-			Connection: migration.Connection,
-			Backend:    migration.Backend,
-			UpSQL:      upSQL,
-			DownSQL:    downSQL,
-		}
-
-		// Execute the migration using its own backend
-		err = migrationBackend.ExecuteMigration(ctx, backendMigration)
-		_ = migrationBackend.Close() // Close after execution
-		if err != nil {
-			record.Status = "failed"
-			record.ErrorMessage = err.Error()
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", migrationID, err))
-		} else {
-			record.Status = "success"
-			result.Applied = append(result.Applied, migrationID)
-
-			// Requirement 3: Track executed dependencies for parent migration
-			if isDependency && dependencyParentMap != nil {
-				parentID := dependencyParentMap[baseMigrationID]
-				if parentID == "" {
-					// Try with full migrationID
-					parentID = dependencyParentMap[migrationID]
-				}
-				if parentID != "" {
-					executedDependencies[parentID] = append(executedDependencies[parentID], migrationID)
-					logger.Debug("Tracked dependency %s for parent migration %s", migrationID, parentID)
-				}
-			}
-		}
-
-		// Record migration in state tracker
-		// Requirement 4: Dependencies use RecordDependencyMigration (no history)
-		// CRITICAL: Ensure record.Schema is set correctly for schema-specific migrations
-		// The schema must match the schema used in migrations_executions for ON CONFLICT to work
-		if isDependency {
-			if err := e.stateTracker.RecordDependencyMigration(ctx, record); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to record dependency migration %s: %v", migrationID, err))
-			}
-		} else {
-			// For non-dependencies, add executed dependencies to execution context
-			if len(executedDependencies[migrationID]) > 0 {
-				// Parse existing execution context and add dependencies
-				var execCtx map[string]interface{}
-				if executionContext != "" {
-					if err := json.Unmarshal([]byte(executionContext), &execCtx); err != nil {
-						execCtx = make(map[string]interface{})
-					}
-				} else {
-					execCtx = make(map[string]interface{})
-				}
-				execCtx["executed_dependencies"] = executedDependencies[migrationID]
-				if updatedCtx, err := json.Marshal(execCtx); err == nil {
-					record.ExecutionContext = string(updatedCtx)
-				}
-			}
-			// Ensure schema is set correctly for the update (should already be set from initial record creation)
-			logger.Debug("Updating migration record: migrationID=%s, schema=%s, status=%s", record.MigrationID, record.Schema, record.Status)
-			if err := e.stateTracker.RecordMigration(ctx, record); err != nil {
-				logger.Errorf("Failed to record migration %s (status=%s, schema=%s): %v", migrationID, record.Status, record.Schema, err)
-				result.Errors = append(result.Errors, fmt.Sprintf("failed to record migration %s: %v", migrationID, err))
-			} else {
-				logger.Debug("Successfully recorded migration %s (status=%s, schema=%s) - history should be in migrations_history", migrationID, record.Status, record.Schema)
-			}
 		}
 	}
 
@@ -872,6 +923,62 @@ func (e *Executor) executeSync(ctx context.Context, target *registry.MigrationTa
 	}
 
 	return result, nil
+}
+
+// OrderMigrationBatch returns migration_ids sorted in dependency order for the given connection.
+// Duplicate IDs are preserved in the output (grouped after their migration's topological position).
+func (e *Executor) OrderMigrationBatch(migrationIDs []string, connection string) ([]string, error) {
+	if len(migrationIDs) == 0 {
+		return nil, nil
+	}
+	if connection == "" {
+		return nil, fmt.Errorf("connection is required")
+	}
+
+	type pair struct {
+		id string
+		m  *backends.MigrationScript
+	}
+	pairs := make([]pair, 0, len(migrationIDs))
+	var unknown []string
+	for _, id := range migrationIDs {
+		m := e.GetMigrationByID(id)
+		if m == nil {
+			unknown = append(unknown, id)
+			continue
+		}
+		if m.Connection != connection {
+			return nil, fmt.Errorf("migration %s belongs to connection %q, expected %q", id, m.Connection, connection)
+		}
+		pairs = append(pairs, pair{id: id, m: m})
+	}
+	if len(unknown) > 0 {
+		return nil, fmt.Errorf("unknown migration_id(s): %s", strings.Join(unknown, ", "))
+	}
+
+	byBase := make(map[string][]string)
+	seenBase := make(map[string]bool)
+	var unique []*backends.MigrationScript
+	for _, p := range pairs {
+		base := e.getMigrationID(p.m)
+		byBase[base] = append(byBase[base], p.id)
+		if !seenBase[base] {
+			seenBase[base] = true
+			unique = append(unique, p.m)
+		}
+	}
+
+	sorted, err := e.resolveDependencies(unique)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]string, 0, len(migrationIDs))
+	for _, m := range sorted {
+		base := e.getMigrationID(m)
+		out = append(out, byBase[base]...)
+	}
+	return out, nil
 }
 
 // GetAllMigrations returns all registered migrations
@@ -1209,6 +1316,36 @@ func (e *Executor) ReindexMigrations(ctx context.Context, sfmPath string) (*Rein
 // IsMigrationApplied checks if a migration has been applied
 func (e *Executor) IsMigrationApplied(ctx context.Context, migrationID string) (bool, error) {
 	return e.stateTracker.IsMigrationApplied(ctx, migrationID)
+}
+
+// CountPendingAutoMigratable returns how many registered migrations for the given
+// connection and backend have a non-empty Schema (fixed-schema) and are not yet
+// applied. Dynamic-schema migrations (empty Schema) are excluded — they cannot be
+// applied by startup auto-migrate without an explicit schema in the request.
+func (e *Executor) CountPendingAutoMigratable(ctx context.Context, connectionName, backend string) (int, error) {
+	target := &registry.MigrationTarget{
+		Backend:    backend,
+		Connection: connectionName,
+	}
+	migrations, err := e.registry.FindByTarget(target)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, m := range migrations {
+		if m == nil || strings.TrimSpace(m.Schema) == "" {
+			continue
+		}
+		id := e.getMigrationID(m)
+		applied, err := e.stateTracker.IsMigrationApplied(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		if !applied {
+			n++
+		}
+	}
+	return n, nil
 }
 
 // ExecuteUp executes up migrations for the given schemas

@@ -64,6 +64,9 @@ func (f *fakeStateTracker) RecordSkippedMigrations(_ interface{}, _ []string, _ 
 func (f *fakeStateTracker) GetSkippedMigrations(_ interface{}, _ string, _ int) ([]*state.SkippedMigration, error) {
 	return nil, nil
 }
+func (f *fakeStateTracker) WithMigrationExecutionLock(_ interface{}, _, _, _ string, fn func() error) error {
+	return fn()
+}
 func (f *fakeStateTracker) Close() error { return nil }
 
 // fakeRegistry provides a minimal Registry for the dependency resolver.
