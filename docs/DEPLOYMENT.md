@@ -166,19 +166,24 @@ If every round applies nothing, reports no errors, and the fixed-schema pending 
 
 ### Manual Migration
 
-You can also trigger migrations manually via API:
+Trigger migrations via the HTTP API (see [MIGRATION.md](./MIGRATION.md)):
 
 ```bash
-curl -X POST http://bfm:7070/api/v1/migrate \
+curl -X POST http://bfm:7070/api/v1/migrations/up \
   -H "Authorization: Bearer $BFM_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "target": {
       "backend": "postgresql",
-      "connection": "core"
+      "connection": "core",
+      "schema": "",
+      "tables": [],
+      "version": ""
     },
     "connection": "core",
-    "schema": "core"
+    "schemas": [],
+    "dry_run": false,
+    "ignore_dependencies": false
   }'
 ```
 
@@ -220,3 +225,112 @@ export BFM_LOG_LEVEL=DEBUG
    - Version control all migration scripts
    - Keep backups of SQL files
    - Document migration dependencies
+
+## Docker image (GHCR) and standalone Compose
+
+### Pull published image
+
+```bash
+docker pull ghcr.io/toolsascode/bfm:latest
+```
+
+### Build production image locally
+
+```bash
+make prod-build
+# or
+docker build -t bfm-production:latest -f docker/Dockerfile .
+```
+
+### Standalone Compose (typical production path)
+
+1. Copy and edit env: `cp .env.example .env` (set `BFM_API_TOKEN`, state DB password, `CORE_*` / other connections).
+2. Start:
+
+```bash
+make standalone-up
+# or
+docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml up -d --build
+```
+
+3. Verify: `curl http://localhost:7070/health`
+4. Logs: `make standalone-logs` or `docker compose -p bfm-standalone -f deploy/docker-compose.standalone.yml logs -f`
+5. Stop: `make standalone-down`
+
+### `docker run` (minimal)
+
+```bash
+docker run -d \
+  --name bfm-production \
+  -p 7070:7070 \
+  -p 9090:9090 \
+  -e BFM_API_TOKEN=your-secure-token \
+  -e BFM_STATE_DB_HOST=postgres \
+  -e BFM_STATE_DB_PASSWORD=your-password \
+  -e CORE_DB_HOST=your-postgres-host \
+  -e CORE_DB_PASSWORD=your-password \
+  -v /path/to/your/sfm:/app/sfm:ro \
+  bfm-production:latest
+```
+
+**Endpoints (defaults):** UI and API `http://localhost:7070`, OpenAPI `http://localhost:7070/api/v1/openapi.yaml`, gRPC `localhost:9090`, health `GET /health`.
+
+The production image includes the API server, optional worker (`BFM_QUEUE_ENABLED=true`), FFM static assets, and `bfm-cli` under `/app/bin/bfm-cli` for `docker exec` use.
+
+## Reference: environment variables (summary)
+
+### Server
+
+| Variable | Description |
+|----------|-------------|
+| `BFM_HTTP_PORT` | HTTP port (default `7070`) |
+| `BFM_GRPC_PORT` | gRPC port (default `9090`) |
+| `BFM_API_TOKEN` | Bearer token (required) |
+
+### State database
+
+| Variable | Description |
+|----------|-------------|
+| `BFM_STATE_BACKEND` | `postgresql` or `mysql` (default `postgresql`) |
+| `BFM_STATE_DB_HOST` | Host (default `localhost`) |
+| `BFM_STATE_DB_PORT` | Port (default `5432`) |
+| `BFM_STATE_DB_USERNAME` | User (default `postgres`) |
+| `BFM_STATE_DB_PASSWORD` | Password (required) |
+| `BFM_STATE_DB_NAME` | Database name (default `migration_state`) |
+| `BFM_STATE_SCHEMA` | Schema (default `public`) |
+
+### Per-connection targets
+
+For each connection name (e.g. `core`), set:
+
+| Pattern | Description |
+|---------|-------------|
+| `{CONNECTION}_BACKEND` | `postgresql`, `greptimedb`, or `etcd` |
+| `{CONNECTION}_DB_HOST` | Host |
+| `{CONNECTION}_DB_PORT` | Port |
+| `{CONNECTION}_DB_USERNAME` | User |
+| `{CONNECTION}_DB_PASSWORD` | Password |
+| `{CONNECTION}_DB_NAME` | Database name |
+| `{CONNECTION}_SCHEMA` | Optional fixed schema |
+
+Example:
+
+```bash
+CORE_BACKEND=postgresql
+CORE_DB_HOST=localhost
+CORE_DB_PORT=5432
+CORE_DB_USERNAME=dashcloud
+CORE_DB_PASSWORD=password
+CORE_DB_NAME=dashcloud
+CORE_SCHEMA=core
+```
+
+## Production practices (checklist)
+
+1. **Security:** Strong API token; secrets in a vault; TLS via reverse proxy; restrict network access to BfM.
+2. **Availability:** Multiple instances behind a load balancer; replicated state DB; monitor `/health`.
+3. **Monitoring:** Centralized logs; track migration success/failure; alert on errors.
+4. **Backup:** Backup state DB; version-control migration sources; test restores.
+5. **Process:** Staging first; use `dry_run` where appropriate; keep migrations idempotent.
+
+For auto-migrate knobs and readiness rules, see the **BfM server startup auto-migrate** section earlier in this file.

@@ -26,6 +26,7 @@ type MigrationScript struct {
 	DownSQL                string
 	Dependencies           []string     // Optional: list of migration names this migration depends on (backward compatibility)
 	StructuredDependencies []Dependency // Optional: structured dependencies with validation requirements
+	Tags                   []string     // Optional: key=value labels for tag-filtered execution
 }
 
 // Backend represents a database backend that can execute migrations

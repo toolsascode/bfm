@@ -6,6 +6,8 @@ export interface MigrationTarget {
   tables?: string[];
   version?: string;
   connection?: string;
+  /** Each string is key=value; combined with AND when filtering migrations */
+  tags?: string[];
 }
 
 export interface MigrateRequest {
@@ -61,6 +63,7 @@ export interface MigrationListItem {
   status: string;
   applied_at?: string;
   error_message?: string;
+  tags?: string[];
 }
 
 export interface MigrationListResponse {
@@ -90,6 +93,7 @@ export interface MigrationDetailResponse {
   down_sql?: string;
   dependencies?: string[];
   structured_dependencies?: Dependency[];
+  tags?: string[];
 }
 
 export interface MigrationStatusResponse {

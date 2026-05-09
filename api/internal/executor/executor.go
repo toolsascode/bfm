@@ -211,6 +211,7 @@ func convertTarget(target *registry.MigrationTarget) *queue.MigrationTarget {
 		Tables:     target.Tables,
 		Version:    target.Version,
 		Connection: target.Connection,
+		Tags:       target.Tags,
 	}
 }
 

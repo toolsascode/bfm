@@ -12,6 +12,7 @@ import (
 	"github.com/toolsascode/bfm/api/internal/api/http/dto"
 	"github.com/toolsascode/bfm/api/internal/auth"
 	"github.com/toolsascode/bfm/api/internal/executor"
+	"github.com/toolsascode/bfm/api/internal/registry"
 	"github.com/toolsascode/bfm/api/internal/state"
 
 	"github.com/gin-gonic/gin"
@@ -180,6 +181,13 @@ func (h *Handler) migrateUp(c *gin.Context) {
 		return
 	}
 
+	if req.Target != nil && len(req.Target.Tags) > 0 {
+		if _, err := registry.ParseTagFilter(req.Target.Tags); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	// Set execution context
 	ctx := h.setExecutionContext(c)
 
@@ -330,7 +338,7 @@ func (h *Handler) listMigrations(c *gin.Context) {
 	// Convert to DTO response (only migrations from database)
 	items := make([]dto.MigrationListItem, 0, len(migrationList))
 	for _, item := range migrationList {
-		items = append(items, dto.MigrationListItem{
+		listItem := dto.MigrationListItem{
 			MigrationID:  item.MigrationID,
 			Schema:       item.Schema,
 			Table:        item.Table,
@@ -342,7 +350,11 @@ func (h *Handler) listMigrations(c *gin.Context) {
 			Status:       item.LastStatus,
 			AppliedAt:    item.LastAppliedAt,
 			ErrorMessage: item.LastErrorMessage,
-		})
+		}
+		if regMig := h.executor.GetMigrationByID(item.MigrationID); regMig != nil && len(regMig.Tags) > 0 {
+			listItem.Tags = append([]string(nil), regMig.Tags...)
+		}
+		items = append(items, listItem)
 	}
 
 	response := dto.MigrationListResponse{
@@ -493,6 +505,11 @@ func (h *Handler) getMigration(c *gin.Context) {
 		responseMigrationID = migrationID
 	}
 
+	var tagCopy []string
+	if len(migration.Tags) > 0 {
+		tagCopy = append([]string(nil), migration.Tags...)
+	}
+
 	response := dto.MigrationDetailResponse{
 		MigrationID:            responseMigrationID,
 		Schema:                 schemaValue,
@@ -506,6 +523,7 @@ func (h *Handler) getMigration(c *gin.Context) {
 		DownSQL:                migration.DownSQL,
 		Dependencies:           dependencies,
 		StructuredDependencies: structuredDeps,
+		Tags:                   tagCopy,
 	}
 
 	c.JSON(http.StatusOK, response)

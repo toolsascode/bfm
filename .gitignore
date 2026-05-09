@@ -106,3 +106,4 @@ prompt.md
 api/internal/api/http/docs.go
 api/internal/api/http/swagger.yaml
 api/internal/api/http/swagger.json
+ffm/public/runtime-config.js

@@ -44,6 +44,12 @@ func (s *Server) Migrate(ctx context.Context, req *MigrateRequest) (*MigrateResp
 		return nil, status.Error(codes.InvalidArgument, "request and target are required")
 	}
 
+	if len(req.Target.Tags) > 0 {
+		if _, err := registry.ParseTagFilter(req.Target.Tags); err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "%v", err)
+		}
+	}
+
 	// Convert protobuf target to registry target
 	target := &registry.MigrationTarget{
 		Backend:    req.Target.Backend,
@@ -51,6 +57,7 @@ func (s *Server) Migrate(ctx context.Context, req *MigrateRequest) (*MigrateResp
 		Tables:     req.Target.Tables,
 		Version:    req.Target.Version,
 		Connection: req.Target.Connection,
+		Tags:       req.Target.Tags,
 	}
 
 	// Resolve schema (use schema_name if provided for dynamic schemas)
@@ -96,12 +103,13 @@ func (s *Server) StreamMigrate(req *MigrateRequest, stream MigrationService_Stre
 		Tables:     req.Target.Tables,
 		Version:    req.Target.Version,
 		Connection: req.Target.Connection,
+		Tags:       req.Target.Tags,
 	}
 
 	// Get migrations matching target
 	migrations, err := s.executor.GetRegistry().FindByTarget(target)
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to find migrations: %v", err)
+		return status.Errorf(codes.InvalidArgument, "failed to find migrations: %v", err)
 	}
 
 	// Sort migrations by version
@@ -282,7 +290,7 @@ func (s *Server) ListMigrations(ctx context.Context, req *ListMigrationsRequest)
 	// Convert to protobuf response
 	items := make([]*MigrationListItem, 0, len(migrationList))
 	for _, item := range migrationList {
-		items = append(items, &MigrationListItem{
+		pbItem := &MigrationListItem{
 			MigrationId:  item.MigrationID,
 			Schema:       item.Schema,
 			Table:        item.Table,
@@ -294,7 +302,11 @@ func (s *Server) ListMigrations(ctx context.Context, req *ListMigrationsRequest)
 			Status:       item.LastStatus,
 			AppliedAt:    item.LastAppliedAt,
 			ErrorMessage: item.LastErrorMessage,
-		})
+		}
+		if regMig := s.executor.GetMigrationByID(item.MigrationID); regMig != nil && len(regMig.Tags) > 0 {
+			pbItem.Tags = append([]string(nil), regMig.Tags...)
+		}
+		items = append(items, pbItem)
 	}
 
 	response := &ListMigrationsResponse{
@@ -357,6 +369,11 @@ func (s *Server) GetMigration(ctx context.Context, req *GetMigrationRequest) (*M
 		})
 	}
 
+	var tagCopy []string
+	if len(migration.Tags) > 0 {
+		tagCopy = append([]string(nil), migration.Tags...)
+	}
+
 	response := &MigrationDetailResponse{
 		MigrationId:            req.MigrationId,
 		Schema:                 schemaValue,
@@ -370,6 +387,7 @@ func (s *Server) GetMigration(ctx context.Context, req *GetMigrationRequest) (*M
 		DownSql:                migration.DownSQL,
 		Dependencies:           migration.Dependencies,
 		StructuredDependencies: structuredDeps,
+		Tags:                   tagCopy,
 	}
 
 	return response, nil

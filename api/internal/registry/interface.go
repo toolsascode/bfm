@@ -23,11 +23,12 @@ func normalizedBackendName(backend string) string {
 
 // MigrationTarget specifies which migrations to execute (moved here to avoid import cycle)
 type MigrationTarget struct {
-	Backend    string   // Backend type filter
-	Schema     string   // Schema filter (optional)
-	Tables     []string // Table filters (optional, empty = all)
-	Version    string   // Version filter (optional, empty = latest)
-	Connection string   // Connection name filter
+	Backend    string   `json:"backend"`        // Backend type filter
+	Schema     string   `json:"schema"`         // Schema filter (optional)
+	Tables     []string `json:"tables"`         // Table filters (optional, empty = all)
+	Version    string   `json:"version"`        // Version filter (optional, empty = latest)
+	Connection string   `json:"connection"`     // Connection name filter
+	Tags       []string `json:"tags,omitempty"` // Optional key=value filters (AND); empty = no tag filter
 }
 
 // Registry manages migration script registration and lookup
@@ -80,6 +81,15 @@ func (r *inMemoryRegistry) Register(migration *backends.MigrationScript) error {
 func (r *inMemoryRegistry) FindByTarget(target *MigrationTarget) ([]*backends.MigrationScript, error) {
 	var results []*backends.MigrationScript
 
+	var requiredTags map[string]string
+	if target != nil && len(target.Tags) > 0 {
+		var err error
+		requiredTags, err = ParseTagFilter(target.Tags)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for _, migration := range r.migrations {
 		if target.Backend != "" && !BackendNamesMatch(target.Backend, migration.Backend) {
 			continue
@@ -107,6 +117,9 @@ func (r *inMemoryRegistry) FindByTarget(target *MigrationTarget) ([]*backends.Mi
 			}
 		}
 		if target.Version != "" && migration.Version != target.Version {
+			continue
+		}
+		if len(requiredTags) > 0 && !MatchesTagFilter(migration.Tags, requiredTags) {
 			continue
 		}
 		results = append(results, migration)

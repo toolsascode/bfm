@@ -47,6 +47,7 @@ message MigrationTarget {
   repeated string tables = 3; // Table filters (optional, empty = all)
   string version = 4;        // Version filter (optional, empty = latest)
   string connection = 5;     // Connection name filter
+  repeated string tags = 6;  // Optional key=value filters (AND semantics)
 }
 
 // MigrateRequest represents a migration request
@@ -112,6 +113,7 @@ message MigrationListItem {
   string status = 9;
   string applied_at = 10;    // RFC3339 timestamp
   string error_message = 11;
+  repeated string tags = 12; // key=value labels from registry (optional)
 }
 
 // GetMigrationRequest represents a request to get a specific migration
@@ -133,6 +135,7 @@ message MigrationDetailResponse {
   string down_sql = 10;      // Contains SQL for SQL backends or JSON for NoSQL backends
   repeated string dependencies = 11;  // List of migration names this migration depends on
   repeated DependencyResponse structured_dependencies = 12;
+  repeated string tags = 13;          // key=value labels from registry (optional)
 }
 
 // DependencyResponse represents a structured dependency

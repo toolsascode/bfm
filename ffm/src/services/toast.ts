@@ -43,7 +43,7 @@ class ToastService {
   }
 
   error(message: string, duration?: number) {
-    if (process.env.NODE_ENV === "development") {
+    if (import.meta.env.DEV) {
       console.log("ToastService.error called with:", message);
     }
     return this.show(message, "error", duration || 7000);

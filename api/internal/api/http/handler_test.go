@@ -585,6 +585,39 @@ func TestHandler_migrateUp(t *testing.T) {
 	}
 }
 
+func TestHandler_migrateUp_InvalidTags(t *testing.T) {
+	originalToken := os.Getenv("BFM_API_TOKEN")
+	defer func() {
+		if originalToken != "" {
+			_ = os.Setenv("BFM_API_TOKEN", originalToken)
+		} else {
+			_ = os.Unsetenv("BFM_API_TOKEN")
+		}
+	}()
+	_ = os.Setenv("BFM_API_TOKEN", "test-token")
+	reg := newMockRegistry()
+	tracker := newMockStateTracker()
+	router, _ := setupTestRouter(reg, tracker)
+
+	body, _ := json.Marshal(dto.MigrateUpRequest{
+		Target: &registry.MigrationTarget{
+			Backend:    "postgresql",
+			Connection: "test",
+			Tags:       []string{"not-a-valid-tag"},
+		},
+		Connection: "test",
+		Schemas:    []string{},
+	})
+	req, _ := http.NewRequest("POST", "/api/v1/migrations/up", bytes.NewBuffer(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandler_migrateUp_PartialContent(t *testing.T) {
 	// Save original token
 	originalToken := os.Getenv("BFM_API_TOKEN")

@@ -51,6 +51,11 @@ jobs:
           export PATH="${PATH}:$(go env GOPATH)/bin"
           cd internal/api/protobuf && ./generate.sh
 
+      # handler.go uses //go:embed swagger.yaml; file is gitignored locally but required for typecheck
+      - name: Prepare OpenAPI embed for lint
+        working-directory: api
+        run: cp docs/swagger.yaml internal/api/http/swagger.yaml
+
       - name: Install golangci-lint
         run: |
           export PATH="${PATH}:$(go env GOPATH)/bin"

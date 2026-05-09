@@ -1,5 +1,7 @@
 <!-- markdownlint-disable MD041 -->
 
+**Documentation map:** For **API-first** how-tos, prefer **[TAGS.md](./TAGS.md)** (tag-filtered migrate) and **[MIGRATION.md](./MIGRATION.md)** (migrate up, dependencies, dynamic schema, `order-batch`). This file is a **checklist** (IDs, registry vs DB, curl patterns, troubleshooting).
+
 ## Executing migrations (one, many, or all)
 
 This guide focuses on **running a specific migration** (or a subset / all), and on the
@@ -192,6 +194,10 @@ If you really want “all”, do it intentionally:
 
 - pick one connection at a time (multiple calls), or
 - ensure your target filter is explicit.
+
+## Tag-filtered execution (`target.tags`)
+
+See **[TAGS.md](./TAGS.md)** for HTTP/gRPC examples, AND semantics, dynamic schema + tags, and declaring tags in source. The FFM UI supports tag input and **Execute by tags** when Backend and Connection filters are set.
 
 ## Dry-run and dependency behavior
 

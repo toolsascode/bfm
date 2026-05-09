@@ -970,6 +970,13 @@ const docTemplate = `{
                 "table": {
                     "type": "string"
                 },
+                "tags": {
+                    "description": "key=value from registry",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "up_sql": {
                     "description": "Contains SQL for SQL backends or JSON for NoSQL backends",
                     "type": "string"
@@ -1011,6 +1018,13 @@ const docTemplate = `{
                 },
                 "table": {
                     "type": "string"
+                },
+                "tags": {
+                    "description": "key=value from registry",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "version": {
                     "type": "string"
@@ -1086,6 +1100,13 @@ const docTemplate = `{
                 },
                 "tables": {
                     "description": "Table filters (optional, empty = all)",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tags": {
+                    "description": "Optional key=value filters (AND); empty = no tag filter",
                     "type": "array",
                     "items": {
                         "type": "string"

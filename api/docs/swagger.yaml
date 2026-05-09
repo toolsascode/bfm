@@ -95,6 +95,11 @@ definitions:
         type: array
       table:
         type: string
+      tags:
+        description: key=value from registry
+        items:
+          type: string
+        type: array
       up_sql:
         description: Contains SQL for SQL backends or JSON for NoSQL backends
         type: string
@@ -123,6 +128,11 @@ definitions:
         type: string
       table:
         type: string
+      tags:
+        description: key=value from registry
+        items:
+          type: string
+        type: array
       version:
         type: string
     type: object
@@ -173,6 +183,11 @@ definitions:
         type: string
       tables:
         description: Table filters (optional, empty = all)
+        items:
+          type: string
+        type: array
+      tags:
+        description: Optional key=value filters (AND); empty = no tag filter
         items:
           type: string
         type: array
