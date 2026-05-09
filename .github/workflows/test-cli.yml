@@ -51,6 +51,11 @@ jobs:
         run: |
           cd internal/api/protobuf && ./generate.sh
 
+      # Same as lint.yml / Docker: //go:embed swagger.yaml next to handler.go
+      - name: Prepare OpenAPI embed
+        working-directory: api
+        run: cp docs/swagger.yaml internal/api/http/swagger.yaml
+
       - name: Run tests
         working-directory: api
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...

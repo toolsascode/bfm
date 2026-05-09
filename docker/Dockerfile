@@ -33,6 +33,10 @@ WORKDIR /build/internal/api/protobuf
 RUN ./generate.sh
 WORKDIR /build
 
+# handler.go uses //go:embed swagger.yaml next to that package; the canonical spec is api/docs/swagger.yaml
+# (same copy as scripts/generate-openapi.sh; gitignored locally so it must be created in the image).
+RUN cp docs/swagger.yaml internal/api/http/swagger.yaml
+
 # Build the application binaries
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bfm-server ./cmd/server && \
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bfm-worker ./cmd/worker && \
