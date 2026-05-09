@@ -13,6 +13,7 @@ import type {
 } from "../types/api";
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
+import { parseExecutionTags } from "../utils/migrationTags";
 
 function historyStatusIndicatesApplied(s: string): boolean {
   return s === "success" || s === "applied";
@@ -233,6 +234,7 @@ export default function MigrationDetail() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPerPage, setHistoryPerPage] = useState(10);
   const [ignoreDependencies, setIgnoreDependencies] = useState(false);
+  const [migrateExtraTags, setMigrateExtraTags] = useState("");
   const [recentlySkipped, setRecentlySkipped] = useState<SkippedMigration[]>(
     [],
   );
@@ -475,6 +477,13 @@ export default function MigrationDetail() {
     setExecutionResult(null);
 
     try {
+      const tagParse = parseExecutionTags(migrateExtraTags);
+      if (!tagParse.ok) {
+        setExecutionError(tagParse.error);
+        setIsExecuting(false);
+        return;
+      }
+
       // Determine schema to use
       // For SQL: use user-provided schema or migration.schema
       // For NoSQL: schema might represent prefix, but it's handled server-side via env vars
@@ -487,6 +496,7 @@ export default function MigrationDetail() {
           backend: migration.backend,
           connection: migration.connection,
           version: migration.version,
+          ...(tagParse.tags.length > 0 ? { tags: tagParse.tags } : {}),
         },
         schemas: schemaToUse ? [schemaToUse] : [],
         ignore_dependencies: ignoreDependencies,
@@ -735,6 +745,23 @@ export default function MigrationDetail() {
                 {migration.connection}
               </div>
             </div>
+            {migration.tags && migration.tags.length > 0 && (
+              <div className="flex flex-col col-span-full">
+                <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
+                  Tags
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {migration.tags.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-block px-2 py-1 bg-slate-100 text-slate-800 rounded text-xs font-medium"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex flex-col">
               <label className="text-gray-500 text-xs mb-1 uppercase tracking-wide">
                 Applied
@@ -1110,6 +1137,27 @@ export default function MigrationDetail() {
               </span>
             )}
           </p>
+          <div className="mb-4 max-w-xl">
+            <label
+              htmlFor="migrate-extra-tags"
+              className="text-gray-600 text-sm font-medium block mb-1"
+            >
+              Optional tag filter (key=value, comma-separated)
+            </label>
+            <input
+              id="migrate-extra-tags"
+              type="text"
+              value={migrateExtraTags}
+              onChange={(e) => setMigrateExtraTags(e.target.value)}
+              placeholder="e.g. env=prod, feature=billing"
+              className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-800 focus:outline-none focus:border-bfm-blue focus:ring-2 focus:ring-bfm-blue/20"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Leave empty to run this version only. If set, the server matches
+              migrations that satisfy every key=value (AND). Must match this
+              migration&apos;s tags or execution may no-op.
+            </p>
+          </div>
           <button
             onClick={handleExecute}
             disabled={isActuallyApplied || isExecuting}
@@ -1456,12 +1504,21 @@ export default function MigrationDetail() {
                                       migration.schema ||
                                       "";
                                     try {
+                                      const tagParse =
+                                        parseExecutionTags(migrateExtraTags);
+                                      if (!tagParse.ok) {
+                                        toastService.error(tagParse.error);
+                                        return;
+                                      }
                                       const migrateRequest: MigrateUpRequest = {
                                         connection: execution.connection,
                                         target: {
                                           backend: execution.backend,
                                           connection: execution.connection,
                                           version: execution.version,
+                                          ...(tagParse.tags.length > 0
+                                            ? { tags: tagParse.tags }
+                                            : {}),
                                         },
                                         schemas: schemaToUse
                                           ? [schemaToUse]

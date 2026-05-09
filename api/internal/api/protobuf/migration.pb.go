@@ -30,6 +30,7 @@ type MigrationTarget struct {
 	Tables        []string               `protobuf:"bytes,3,rep,name=tables,proto3" json:"tables,omitempty"`         // Table filters (optional, empty = all)
 	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`       // Version filter (optional, empty = latest)
 	Connection    string                 `protobuf:"bytes,5,opt,name=connection,proto3" json:"connection,omitempty"` // Connection name filter
+	Tags          []string               `protobuf:"bytes,6,rep,name=tags,proto3" json:"tags,omitempty"`             // Optional key=value filters (AND semantics)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -97,6 +98,13 @@ func (x *MigrationTarget) GetConnection() string {
 		return x.Connection
 	}
 	return ""
+}
+
+func (x *MigrationTarget) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
 }
 
 // MigrateRequest represents a migration request
@@ -543,6 +551,7 @@ type MigrationListItem struct {
 	Status        string                 `protobuf:"bytes,9,opt,name=status,proto3" json:"status,omitempty"`
 	AppliedAt     string                 `protobuf:"bytes,10,opt,name=applied_at,json=appliedAt,proto3" json:"applied_at,omitempty"` // RFC3339 timestamp
 	ErrorMessage  string                 `protobuf:"bytes,11,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Tags          []string               `protobuf:"bytes,12,rep,name=tags,proto3" json:"tags,omitempty"` // key=value labels from registry (optional)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -654,6 +663,13 @@ func (x *MigrationListItem) GetErrorMessage() string {
 	return ""
 }
 
+func (x *MigrationListItem) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
 // GetMigrationRequest represents a request to get a specific migration
 type GetMigrationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -714,6 +730,7 @@ type MigrationDetailResponse struct {
 	DownSql                string                 `protobuf:"bytes,10,opt,name=down_sql,json=downSql,proto3" json:"down_sql,omitempty"` // Contains SQL for SQL backends or JSON for NoSQL backends
 	Dependencies           []string               `protobuf:"bytes,11,rep,name=dependencies,proto3" json:"dependencies,omitempty"`      // List of migration names this migration depends on
 	StructuredDependencies []*DependencyResponse  `protobuf:"bytes,12,rep,name=structured_dependencies,json=structuredDependencies,proto3" json:"structured_dependencies,omitempty"`
+	Tags                   []string               `protobuf:"bytes,13,rep,name=tags,proto3" json:"tags,omitempty"` // key=value labels from registry (optional)
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -828,6 +845,13 @@ func (x *MigrationDetailResponse) GetDependencies() []string {
 func (x *MigrationDetailResponse) GetStructuredDependencies() []*DependencyResponse {
 	if x != nil {
 		return x.StructuredDependencies
+	}
+	return nil
+}
+
+func (x *MigrationDetailResponse) GetTags() []string {
+	if x != nil {
+		return x.Tags
 	}
 	return nil
 }
@@ -1682,7 +1706,7 @@ var File_migration_proto protoreflect.FileDescriptor
 
 const file_migration_proto_rawDesc = "" +
 	"\n" +
-	"\x0fmigration.proto\x12\tmigration\"\x95\x01\n" +
+	"\x0fmigration.proto\x12\tmigration\"\xa9\x01\n" +
 	"\x0fMigrationTarget\x12\x18\n" +
 	"\abackend\x18\x01 \x01(\tR\abackend\x12\x16\n" +
 	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x16\n" +
@@ -1690,7 +1714,8 @@ const file_migration_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x1e\n" +
 	"\n" +
 	"connection\x18\x05 \x01(\tR\n" +
-	"connection\"\xe7\x01\n" +
+	"connection\x12\x12\n" +
+	"\x04tags\x18\x06 \x03(\tR\x04tags\"\xe7\x01\n" +
 	"\x0eMigrateRequest\x122\n" +
 	"\x06target\x18\x01 \x01(\v2\x1a.migration.MigrationTargetR\x06target\x12\x1e\n" +
 	"\n" +
@@ -1727,7 +1752,7 @@ const file_migration_proto_rawDesc = "" +
 	"\aversion\x18\x06 \x01(\tR\aversion\"b\n" +
 	"\x16ListMigrationsResponse\x122\n" +
 	"\x05items\x18\x01 \x03(\v2\x1c.migration.MigrationListItemR\x05items\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"\xc2\x02\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\xd6\x02\n" +
 	"\x11MigrationListItem\x12!\n" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
 	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
@@ -1743,9 +1768,10 @@ const file_migration_proto_rawDesc = "" +
 	"\n" +
 	"applied_at\x18\n" +
 	" \x01(\tR\tappliedAt\x12#\n" +
-	"\rerror_message\x18\v \x01(\tR\ferrorMessage\"8\n" +
+	"\rerror_message\x18\v \x01(\tR\ferrorMessage\x12\x12\n" +
+	"\x04tags\x18\f \x03(\tR\x04tags\"8\n" +
 	"\x13GetMigrationRequest\x12!\n" +
-	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"\x9a\x03\n" +
+	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\"\xae\x03\n" +
 	"\x17MigrationDetailResponse\x12!\n" +
 	"\fmigration_id\x18\x01 \x01(\tR\vmigrationId\x12\x16\n" +
 	"\x06schema\x18\x02 \x01(\tR\x06schema\x12\x14\n" +
@@ -1761,7 +1787,8 @@ const file_migration_proto_rawDesc = "" +
 	"\bdown_sql\x18\n" +
 	" \x01(\tR\adownSql\x12\"\n" +
 	"\fdependencies\x18\v \x03(\tR\fdependencies\x12V\n" +
-	"\x17structured_dependencies\x18\f \x03(\v2\x1d.migration.DependencyResponseR\x16structuredDependencies\"\xd5\x01\n" +
+	"\x17structured_dependencies\x18\f \x03(\v2\x1d.migration.DependencyResponseR\x16structuredDependencies\x12\x12\n" +
+	"\x04tags\x18\r \x03(\tR\x04tags\"\xd5\x01\n" +
 	"\x12DependencyResponse\x12\x1e\n" +
 	"\n" +
 	"connection\x18\x01 \x01(\tR\n" +

@@ -342,3 +342,90 @@ CORE_SCHEMA=core
   - Use `make dev-bfm` and `make dev-ffm` for local development
   - Requires Air and Node.js installed locally
   - Faster startup time, no Docker overhead
+
+## Installing the BfM CLI
+
+The CLI generates `.go` files from `sfm/` SQL/JSON. API usage does not require the CLI on production servers unless you generate migrations in-container.
+
+### Go install
+
+```shell
+go install github.com/toolsascode/bfm@latest
+```
+
+### GitHub releases
+
+- [Latest release](https://github.com/toolsascode/bfm/releases/latest)
+
+```shell
+curl -fLSs https://raw.githubusercontent.com/toolsascode/bfm/main/scripts/install.sh | bash
+```
+
+### Homebrew (macOS)
+
+```shell
+brew install toolsascode/tap/bfm
+```
+
+### Build from repo
+
+```bash
+make build-cli
+# or
+cd api && go build -o ../bfm-cli ./cmd/cli
+```
+
+### Common commands
+
+```bash
+./bfm-cli version
+./bfm-cli build examples/sfm --verbose
+./bfm-cli build examples/sfm --dry-run
+```
+
+### SFM layout
+
+```
+{sfm_path}/{backend}/{connection}/{version}_{name}.up.sql
+{sfm_path}/{backend}/{connection}/{version}_{name}.down.sql
+```
+
+Etcd-style JSON migrations use `.up.json` / `.down.json` instead of `.sql`.
+
+## Migration script template variables
+
+At execution time, BfM can substitute template variables in SQL/JSON (Go `text/template`):
+
+| Variable | Meaning |
+|----------|---------|
+| `{{.Connection}}` | Connection name |
+| `{{.Schema}}` | Schema from execution context |
+| `{{.Backend}}` | Backend name |
+| `{{.Version}}` | Migration version string |
+
+**SQL example:**
+
+```sql
+CREATE TABLE {{.Schema}}.users (
+  id SERIAL PRIMARY KEY,
+  connection_name VARCHAR(100) DEFAULT '{{.Connection}}'
+);
+```
+
+**JSON (etcd) example:**
+
+```json
+[
+  {
+    "operation": "put",
+    "key": "/{{.Connection}}/{{.Schema}}/config",
+    "value": { "backend": "{{.Backend}}", "version": "{{.Version}}" }
+  }
+]
+```
+
+## Migrating from another migration system (outline)
+
+1. Export or recreate DDL as versioned SQL under `sfm/{backend}/{connection}/`.
+2. Run `bfm-cli build` (or your CI equivalent) and ship the generated `.go` files in the server build.
+3. Run `POST /api/v1/migrations/reindex` if needed so listing matches disk; execute via [MIGRATION.md](./MIGRATION.md).

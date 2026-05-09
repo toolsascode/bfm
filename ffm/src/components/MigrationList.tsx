@@ -2,8 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { apiClient } from "../services/api";
 import { toastService } from "../services/toast";
-import type { MigrationListItem, MigrationListFilters } from "../types/api";
+import type {
+  MigrationListItem,
+  MigrationListFilters,
+  MigrationTarget,
+} from "../types/api";
 import { format } from "date-fns";
+import { parseExecutionTags } from "../utils/migrationTags";
 
 export default function MigrationList() {
   const [migrations, setMigrations] = useState<MigrationListItem[]>([]);
@@ -35,6 +40,7 @@ export default function MigrationList() {
   const [rollingBack, setRollingBack] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [ignoreDependencies, setIgnoreDependencies] = useState(false);
+  const [executionTagsInput, setExecutionTagsInput] = useState("");
 
   useEffect(() => {
     loadMigrations();
@@ -268,6 +274,8 @@ export default function MigrationList() {
     }
     const query = searchQuery.toLowerCase();
     return flattenedMigrations.filter((migration) => {
+      const tagMatch =
+        migration.tags?.some((t) => t.toLowerCase().includes(query)) ?? false;
       return (
         migration.migration_id.toLowerCase().includes(query) ||
         migration.version.toLowerCase().includes(query) ||
@@ -276,7 +284,8 @@ export default function MigrationList() {
         migration.backend.toLowerCase().includes(query) ||
         (migration.connection &&
           migration.connection.toLowerCase().includes(query)) ||
-        (migration.schema && migration.schema.toLowerCase().includes(query))
+        (migration.schema && migration.schema.toLowerCase().includes(query)) ||
+        tagMatch
       );
     });
   }, [flattenedMigrations, searchQuery]);
@@ -296,6 +305,7 @@ export default function MigrationList() {
   useEffect(() => {
     setSelectedMigrations(new Set());
     setExecutionSchema("");
+    setExecutionTagsInput("");
   }, [filters]);
 
   // Handle individual migration selection
@@ -352,6 +362,12 @@ export default function MigrationList() {
 
     if (!executionSchema.trim()) {
       toastService.error("Please enter or select a schema for execution");
+      return;
+    }
+
+    const tagParse = parseExecutionTags(executionTagsInput);
+    if (!tagParse.ok) {
+      toastService.error(tagParse.error);
       return;
     }
 
@@ -416,6 +432,7 @@ export default function MigrationList() {
                 backend: migration.backend,
                 connection: migration.connection,
                 version: migration.version,
+                ...(tagParse.tags.length > 0 ? { tags: tagParse.tags } : {}),
               },
               connection: migration.connection,
               schemas: [executionSchema.trim()],
@@ -461,11 +478,74 @@ export default function MigrationList() {
       // Clear selection and reload
       setSelectedMigrations(new Set());
       setExecutionSchema("");
+      setExecutionTagsInput("");
       await loadMigrations();
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to execute migrations";
       toastService.error(errorMsg);
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  /** Run all pending migrations matching Backend + Connection filters and tag AND-filter (dependency order on server). */
+  const handleExecuteByTags = async () => {
+    const tagParse = parseExecutionTags(executionTagsInput);
+    if (!tagParse.ok) {
+      toastService.error(tagParse.error);
+      return;
+    }
+    if (tagParse.tags.length === 0) {
+      toastService.error(
+        "Enter at least one key=value tag to use Execute by tags",
+      );
+      return;
+    }
+    if (!filters.backend?.trim() || !filters.connection?.trim()) {
+      toastService.error(
+        "Select Backend and Connection filters before Execute by tags",
+      );
+      return;
+    }
+    if (!executionSchema.trim()) {
+      toastService.error("Please enter or select a schema for execution");
+      return;
+    }
+
+    const target: MigrationTarget = {
+      backend: filters.backend,
+      connection: filters.connection,
+      schema: filters.schema?.trim() || "",
+      tables: [],
+      version: "",
+      tags: tagParse.tags,
+    };
+
+    setExecuting(true);
+    try {
+      const response = await apiClient.migrateUp({
+        target,
+        connection: filters.connection,
+        schemas: [executionSchema.trim()],
+        dry_run: false,
+        ignore_dependencies: ignoreDependencies,
+      });
+      if (response.success) {
+        toastService.success(
+          `Tag run finished. Applied: ${response.applied.length}, skipped: ${response.skipped.length}`,
+        );
+      } else {
+        toastService.warning(
+          `Tag run finished with issues. Errors: ${response.errors.length}`,
+        );
+      }
+      setSelectedMigrations(new Set());
+      await loadMigrations();
+    } catch (err) {
+      toastService.error(
+        err instanceof Error ? err.message : "Execute by tags failed",
+      );
     } finally {
       setExecuting(false);
     }
@@ -747,12 +827,40 @@ export default function MigrationList() {
                 </div>
               )}
             </div>
+            <div className="flex flex-col gap-1 w-full sm:w-auto min-w-[200px]">
+              <input
+                type="text"
+                placeholder="Tags: env=prod, tier=gold (optional)"
+                value={executionTagsInput}
+                onChange={(e) => setExecutionTagsInput(e.target.value)}
+                className="w-full px-3 py-2 border border-white/30 rounded text-sm bg-white/10 text-white placeholder-white/50 focus:outline-none focus:border-white/50"
+                title="Comma-separated key=value pairs; AND filter. Optional for Execute Selected; required for Execute by tags."
+              />
+              <span className="text-[10px] text-white/70 leading-tight">
+                AND: every pair must match. Keys normalized to lowercase on
+                server.
+              </span>
+            </div>
             <button
               onClick={handleExecuteSelected}
               disabled={executing || !executionSchema.trim()}
               className="px-4 py-2 bg-white text-bfm-blue rounded text-sm font-medium transition-colors hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {executing ? "Executing..." : "Execute Selected"}
+            </button>
+            <button
+              type="button"
+              onClick={handleExecuteByTags}
+              disabled={
+                executing ||
+                !executionSchema.trim() ||
+                !filters.backend?.trim() ||
+                !filters.connection?.trim()
+              }
+              className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-medium transition-colors hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Runs all pending migrations for the selected Backend and Connection that match the tags (and optional Schema filter)."
+            >
+              {executing ? "…" : "Execute by tags"}
             </button>
             <button
               onClick={() => setRollbackModalOpen(true)}
@@ -1365,6 +1473,9 @@ export default function MigrationList() {
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Backend
               </th>
+              <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0 max-w-[140px]">
+                Tags
+              </th>
               <th className="bg-gray-50 p-4 text-left font-semibold text-gray-800 border-b-2 border-gray-200 sticky top-0">
                 Schema
               </th>
@@ -1388,7 +1499,7 @@ export default function MigrationList() {
           <tbody>
             {paginatedMigrations.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center text-gray-500 py-8">
+                <td colSpan={12} className="text-center text-gray-500 py-8">
                   No migrations found
                 </td>
               </tr>
@@ -1431,6 +1542,28 @@ export default function MigrationList() {
                   </td>
                   <td className="p-4 border-b border-gray-200">
                     {migration.backend}
+                  </td>
+                  <td className="p-4 border-b border-gray-200 max-w-[140px] align-top">
+                    {migration.tags && migration.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {migration.tags.slice(0, 4).map((t) => (
+                          <span
+                            key={t}
+                            className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-[10px] font-medium max-w-[120px] truncate"
+                            title={t}
+                          >
+                            {t}
+                          </span>
+                        ))}
+                        {migration.tags.length > 4 ? (
+                          <span className="text-[10px] text-gray-500">
+                            +{migration.tags.length - 4}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-sm">—</span>
+                    )}
                   </td>
                   <td
                     className="p-4 border-b border-gray-200 max-w-[180px] truncate"

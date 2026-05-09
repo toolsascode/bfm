@@ -20,17 +20,18 @@ type MigrationListResponse struct {
 
 // MigrationListItem represents a single migration in the list
 type MigrationListItem struct {
-	MigrationID  string `json:"migration_id"`
-	Schema       string `json:"schema"`
-	Table        string `json:"table"`
-	Version      string `json:"version"`
-	Name         string `json:"name"`
-	Connection   string `json:"connection"`
-	Backend      string `json:"backend"`
-	Applied      bool   `json:"applied"`
-	Status       string `json:"status"`
-	AppliedAt    string `json:"applied_at,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	MigrationID  string   `json:"migration_id"`
+	Schema       string   `json:"schema"`
+	Table        string   `json:"table"`
+	Version      string   `json:"version"`
+	Name         string   `json:"name"`
+	Connection   string   `json:"connection"`
+	Backend      string   `json:"backend"`
+	Applied      bool     `json:"applied"`
+	Status       string   `json:"status"`
+	AppliedAt    string   `json:"applied_at,omitempty"`
+	ErrorMessage string   `json:"error_message,omitempty"`
+	Tags         []string `json:"tags,omitempty"` // key=value from registry
 }
 
 // DependencyResponse represents a structured dependency
@@ -57,6 +58,7 @@ type MigrationDetailResponse struct {
 	DownSQL                string               `json:"down_sql,omitempty"`                // Contains SQL for SQL backends or JSON for NoSQL backends
 	Dependencies           []string             `json:"dependencies,omitempty"`            // List of migration names this migration depends on (backward compatibility)
 	StructuredDependencies []DependencyResponse `json:"structured_dependencies,omitempty"` // Structured dependencies with validation requirements
+	Tags                   []string             `json:"tags,omitempty"`                    // key=value from registry
 }
 
 // RollbackRequest represents a request to rollback a migration

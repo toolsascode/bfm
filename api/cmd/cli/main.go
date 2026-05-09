@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -29,6 +31,9 @@ var (
 	dryRun    bool
 	outputDir string
 )
+
+// bfm-tags line in .up.sql / .up.json (first lines of file): -- bfm-tags: env=prod, feature=x
+var bfmTagsLineRe = regexp.MustCompile(`(?i)^\s*--\s*bfm-tags:\s*(.+)\s*$`)
 
 var rootCmd = &cobra.Command{
 	Use:   "bfm",
@@ -255,6 +260,16 @@ func buildMigrations(sfmPath string) error {
 			dirPath = filepath.Join(sfmPath, migration.Backend, migration.Connection)
 		}
 
+		srcUpPath := filepath.Join(sfmPath, migration.Backend, migration.Connection, migration.UpFile)
+		tags, err := readBFMTagsFromUpFile(srcUpPath)
+		if err != nil {
+			return fmt.Errorf("bfm-tags: %w", err)
+		}
+		tagsGo := formatTagsForGoInit(tags)
+		if verbose && len(tags) > 0 {
+			fmt.Printf("  %s: bfm-tags %v\n", srcUpPath, tags)
+		}
+
 		// Generate .go filename
 		goFileName := fmt.Sprintf("%s_%s.go", migration.Version, migration.Name)
 		goFilePath := filepath.Join(dirPath, goFileName)
@@ -285,6 +300,7 @@ func buildMigrations(sfmPath string) error {
 			Name         string
 			Connection   string
 			Backend      string
+			TagsGo       string
 		}{
 			PackageName:  migration.PackageName,
 			UpFileName:   migration.UpFile,
@@ -293,6 +309,7 @@ func buildMigrations(sfmPath string) error {
 			Name:         migration.Name,
 			Connection:   migration.Connection,
 			Backend:      migration.Backend,
+			TagsGo:       tagsGo,
 		})
 
 		_ = file.Close()
@@ -316,6 +333,53 @@ func buildMigrations(sfmPath string) error {
 	}
 
 	return nil
+}
+
+func readBFMTagsFromUpFile(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	const maxScanLines = 80
+	for lineNum := 0; lineNum < maxScanLines && scanner.Scan(); lineNum++ {
+		line := scanner.Text()
+		m := bfmTagsLineRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		parts := strings.Split(m[1], ",")
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			eq := strings.Index(p, "=")
+			if eq <= 0 || strings.TrimSpace(p[:eq]) == "" {
+				return nil, fmt.Errorf("%s: invalid bfm-tags entry %q (expected key=value)", path, p)
+			}
+			out = append(out, p)
+		}
+		return out, nil
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func formatTagsForGoInit(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	parts := make([]string, len(tags))
+	for i, t := range tags {
+		parts[i] = strconv.Quote(t)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // sanitizePackageName converts a connection name to a valid Go package name

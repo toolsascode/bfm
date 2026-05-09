@@ -75,7 +75,7 @@ class BFMApiClient {
           const data = error.response.data as any;
 
           // Log for debugging - show full error details
-          if (process.env.NODE_ENV === "development") {
+          if (import.meta.env.DEV) {
             console.group("🔴 API Error Response");
             console.error("Status:", error.response.status);
             console.error("Data Type:", typeof data);
@@ -113,7 +113,7 @@ class BFMApiClient {
           }
 
           // Log extracted error message for debugging
-          if (process.env.NODE_ENV === "development") {
+          if (import.meta.env.DEV) {
             console.log("Extracted Error Message:", errorMessage);
           }
         }
@@ -136,7 +136,7 @@ class BFMApiClient {
           // For 500 errors, show the actual error message if available
           const messageToShow =
             errorMessage || "Server error. Please try again later.";
-          if (process.env.NODE_ENV === "development") {
+          if (import.meta.env.DEV) {
             console.log("Showing error toast:", messageToShow);
           }
           toastService.error(messageToShow);

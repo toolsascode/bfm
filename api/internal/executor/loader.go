@@ -17,6 +17,9 @@ import (
 	"github.com/toolsascode/bfm/api/migrations"
 )
 
+// bfmTagsLineRe matches the optional tag declaration line at the top of .up.sql / .up.json sources.
+var bfmTagsLineRe = regexp.MustCompile(`(?i)^\s*--\s*bfm-tags:\s*(.+)\s*$`)
+
 // Loader loads migration scripts from the SFM directory
 type Loader struct {
 	sfmPath      string
@@ -367,6 +370,66 @@ func extractSchemaFromGoFile(goFilePath string) string {
 	return ""
 }
 
+// extractTagsFromGoFile extracts Tags ([]string) from a .go migration file when present.
+func extractTagsFromGoFile(goFilePath string) []string {
+	goContent, err := os.ReadFile(goFilePath)
+	if err != nil {
+		return nil
+	}
+	content := string(goContent)
+	tagsRegex := regexp.MustCompile(`Tags:\s*\[\]string\s*\{([^}]*)\}`)
+	matches := tagsRegex.FindStringSubmatch(content)
+	if len(matches) < 2 {
+		return nil
+	}
+	tagsStr := strings.TrimSpace(matches[1])
+	if tagsStr == "" {
+		return nil
+	}
+	itemRe := regexp.MustCompile(`["` + "`" + `]([^"` + "`" + `]+)["` + "`" + `]`)
+	tagMatches := itemRe.FindAllStringSubmatch(tagsStr, -1)
+	var tags []string
+	for _, match := range tagMatches {
+		if len(match) >= 2 {
+			t := strings.TrimSpace(match[1])
+			if t != "" {
+				tags = append(tags, t)
+			}
+		}
+	}
+	return tags
+}
+
+// parseBFMTagsFromUpSQL returns tag pairs from the first -- bfm-tags: line in the up migration body (see CLI build).
+func parseBFMTagsFromUpSQL(upSQL string) ([]string, error) {
+	lines := strings.Split(upSQL, "\n")
+	n := len(lines)
+	if n > 80 {
+		n = 80
+	}
+	for _, line := range lines[:n] {
+		m := bfmTagsLineRe.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		parts := strings.Split(m[1], ",")
+		var out []string
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			eq := strings.Index(p, "=")
+			if eq <= 0 || strings.TrimSpace(p[:eq]) == "" {
+				return nil, fmt.Errorf("invalid bfm-tags entry %q (expected key=value)", p)
+			}
+			out = append(out, p)
+		}
+		return out, nil
+	}
+	return nil, nil
+}
+
 // extractDependenciesFromGoFile extracts the Dependencies field value from a .go migration file
 func extractDependenciesFromGoFile(goFilePath string) []string {
 	// Read the .go file
@@ -556,6 +619,15 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 	// Extract structured dependencies from .go file if they exist
 	structuredDependencies := extractStructuredDependenciesFromGoFile(goFilePath)
 
+	tags := extractTagsFromGoFile(goFilePath)
+	if len(tags) == 0 {
+		var tagErr error
+		tags, tagErr = parseBFMTagsFromUpSQL(string(upSQL))
+		if tagErr != nil {
+			return fmt.Errorf("bfm-tags in %s: %w", upFile, tagErr)
+		}
+	}
+
 	// Create and register migration
 	migration := &backends.MigrationScript{
 		Schema:                 schema, // Use schema from .go file if available, otherwise empty (dynamic)
@@ -567,6 +639,7 @@ func (l *Loader) loadMigrationFromFile(goFilePath, backend, connection, version,
 		DownSQL:                string(downSQL),
 		Dependencies:           dependencies,
 		StructuredDependencies: structuredDependencies,
+		Tags:                   tags,
 	}
 
 	if err := l.registry.Register(migration); err != nil {

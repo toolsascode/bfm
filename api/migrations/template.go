@@ -25,6 +25,7 @@ func init() {
 		DownSQL:      downSQL,
 		Dependencies: []string{ {{.Dependencies}} },
 		StructuredDependencies: []migrations.Dependency{},
+		Tags:         []string{ {{.TagsGo}} },
 	}
 	migrations.GlobalRegistry.Register(migration)
 }

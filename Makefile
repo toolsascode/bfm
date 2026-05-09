@@ -369,7 +369,7 @@ COMPOSE_DEV_FILE := deploy/docker-compose.dev.yml
 
 dev-docker: dev-docker-build ## Start all services in Docker with hot-reload
 	@echo "$(GREEN)Starting development environment with hot-reload in Docker...$(NC)"
-	docker compose -f $(COMPOSE_DEV_FILE) up -d
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) up -d
 	@echo "$(GREEN)Development environment ready!$(NC)"
 	@echo ""
 	@echo "  BFM Server:    http://localhost:7070"
@@ -382,28 +382,28 @@ dev-docker: dev-docker-build ## Start all services in Docker with hot-reload
 
 dev-docker-build: ## Build development Docker images
 	@echo "$(GREEN)Building development images...$(NC)"
-	docker compose -f $(COMPOSE_DEV_FILE) build
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) build
 
 dev-docker-down: ## Stop development Docker services
 	@echo "$(YELLOW)Stopping development services...$(NC)"
-	docker compose -f $(COMPOSE_DEV_FILE) down
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) down
 
 dev-docker-logs: ## Show logs from development services
-	docker compose -f $(COMPOSE_DEV_FILE) logs -f
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) logs -f
 
 dev-docker-logs-bfm: ## Show logs from BFM server (dev)
-	docker compose -f $(COMPOSE_DEV_FILE) logs -f bfm-server
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) logs -f bfm-server
 
 dev-docker-logs-ffm: ## Show logs from FFM frontend (dev)
-	docker compose -f $(COMPOSE_DEV_FILE) logs -f ffm
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) logs -f ffm
 
 dev-docker-ps: ## Show status of development services
 	@echo "$(GREEN)Development Service Status:$(NC)"
-	@docker compose -f $(COMPOSE_DEV_FILE) ps
+	@docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) ps
 
 dev-docker-restart: ## Restart development services
 	@echo "$(YELLOW)Restarting development services...$(NC)"
-	docker compose -f $(COMPOSE_DEV_FILE) restart
+	docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) restart
 	@make dev-docker-ps
 
 dev-docker-clean: ## Stop and remove development containers and volumes
@@ -411,7 +411,7 @@ dev-docker-clean: ## Stop and remove development containers and volumes
 	@read -p "Are you sure? [y/N] " -n 1 -r; \
 	echo; \
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
-		docker compose -f $(COMPOSE_DEV_FILE) down -v; \
+		docker compose -p bfm-dev -f $(COMPOSE_DEV_FILE) down -v; \
 		echo "$(GREEN)Cleanup complete!$(NC)"; \
 	fi
 

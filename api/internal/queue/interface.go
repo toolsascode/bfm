@@ -22,6 +22,7 @@ type MigrationTarget struct {
 	Tables     []string `json:"tables,omitempty"`
 	Version    string   `json:"version,omitempty"`
 	Connection string   `json:"connection,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
 }
 
 // JobResult represents the result of a migration job
