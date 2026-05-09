@@ -411,14 +411,21 @@ export default function Dashboard() {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(
-                  value: number | undefined,
-                  name: string | undefined,
-                ) => {
-                  if (value === undefined) return [name || "", ""];
+                formatter={(value, name) => {
+                  const num =
+                    typeof value === "number"
+                      ? value
+                      : typeof value === "string"
+                        ? Number(value)
+                        : Array.isArray(value)
+                          ? Number(value[0])
+                          : NaN;
+                  if (value === undefined || Number.isNaN(num)) {
+                    return [name ?? "", ""];
+                  }
                   return [
-                    `${value} (${((value / total) * 100).toFixed(1)}%)`,
-                    name || "",
+                    `${num} (${((num / total) * 100).toFixed(1)}%)`,
+                    name ?? "",
                   ];
                 }}
               />

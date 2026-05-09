@@ -24,7 +24,7 @@ services:
   # PostgreSQL for state tracking
   postgres:
     <<: *logging
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: bfm-postgres
     ports:
       - "5433:5432"
@@ -39,7 +39,8 @@ services:
       -c shared_buffers=256MB
       -c effective_cache_size=1GB
     volumes:
-      - bfm-postgres-data:/var/lib/postgresql/data
+      # PG 18+: mount the parent dir (versioned data lives under e.g. data/18/docker); see docker-library/postgres#1259
+      - bfm-postgres-data:/var/lib/postgresql
     networks:
       - bfm-network
     restart: unless-stopped

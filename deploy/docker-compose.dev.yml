@@ -19,7 +19,7 @@ services:
   # PostgreSQL for state tracking
   postgres:
     <<: *logging
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: bfm-postgres-dev
     ports:
       - "5433:5432"
@@ -34,7 +34,8 @@ services:
       -c shared_buffers=256MB
       -c effective_cache_size=1GB
     volumes:
-      - bfm-postgres-data-dev:/var/lib/postgresql/data
+      # PG 18+: mount the parent dir (versioned data lives under e.g. data/18/docker); see docker-library/postgres#1259
+      - bfm-postgres-data-dev:/var/lib/postgresql
     networks:
       - bfm-network-dev
     restart: unless-stopped
@@ -63,6 +64,8 @@ services:
       - BFM_GRPC_PORT=9090
       - BFM_API_TOKEN=${BFM_API_TOKEN:-SFXfytYJr3RfrjPMgEkhTEukOGpjhtLEmmJFYv+7GHQ=}
       - BFM_SFM_PATH=${BFM_SFM_PATH:-/sfm}
+      - BFM_AUTO_MIGRATE=${BFM_AUTO_MIGRATE:-true}
+      # - BFM_AUTO_MIGRATE_CONNECTIONS=${BFM_AUTO_MIGRATE_CONNECTIONS:-core,guard,organization}
 
       # State Database Configuration
       - BFM_STATE_BACKEND=postgresql

@@ -13,7 +13,7 @@ Backend For Migrations (BfM)
 
 </p>
 
-BfM is a comprehensive database migration system that supports multiple backends (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs.
+BfM is a comprehensive database migration system that supports multiple backends (PostgreSQL, GreptimeDB, Etcd) with HTTP and Protobuf APIs. It centralizes migrations so that in scalable deployments many applications do not run the same migrations concurrently. It also supports dynamic schema creation, which fits workloads that use many schemas and need to create them on demand.
 
 ## Features
 

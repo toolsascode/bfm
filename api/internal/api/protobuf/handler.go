@@ -410,7 +410,7 @@ func (s *Server) GetMigrationStatus(ctx context.Context, req *GetMigrationStatus
 		// Find the latest successful, non-rollback record
 		var latestSuccessRecord *state.MigrationRecord
 		for _, record := range relatedRecords {
-			if !strings.Contains(record.MigrationID, "_rollback") && record.Status == "success" {
+			if !strings.Contains(record.MigrationID, "_rollback") && state.HistoryStatusIndicatesApplied(record.Status) {
 				latestSuccessRecord = record
 				break
 			}
@@ -451,7 +451,8 @@ func (s *Server) GetMigrationStatus(ctx context.Context, req *GetMigrationStatus
 			statusVal = "rolled_back"
 			errorMessage = latestRollbackRecord.ErrorMessage
 		} else {
-			applied = !strings.Contains(latestRecord.MigrationID, "_rollback")
+			applied = !strings.Contains(latestRecord.MigrationID, "_rollback") &&
+				state.HistoryStatusIndicatesApplied(latestRecord.Status)
 			statusVal = latestRecord.Status
 			appliedAt = latestRecord.AppliedAt
 			errorMessage = latestRecord.ErrorMessage

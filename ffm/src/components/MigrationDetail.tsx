@@ -14,6 +14,10 @@ import type {
 import { format } from "date-fns";
 import { toastService } from "../services/toast";
 
+function historyStatusIndicatesApplied(s: string): boolean {
+  return s === "success" || s === "applied";
+}
+
 // Confirmation Modal Component
 function ConfirmModal({
   isOpen,
@@ -394,7 +398,7 @@ export default function MigrationDetail() {
     // Migration is applied if the latest record is not a rollback
     return (
       !latestRecord.migration_id.includes("_rollback") &&
-      latestRecord.status === "success"
+      historyStatusIndicatesApplied(latestRecord.status)
     );
   }, [history, migration?.applied]);
 
@@ -407,7 +411,7 @@ export default function MigrationDetail() {
     const latestSuccessRecord = history.find(
       (record) =>
         !record.migration_id.includes("_rollback") &&
-        record.status === "success",
+        historyStatusIndicatesApplied(record.status),
     );
     return latestSuccessRecord?.applied_at || null;
   }, [history, status?.applied_at]);
@@ -426,7 +430,7 @@ export default function MigrationDetail() {
       const latestSuccessRecord = history.find(
         (record) =>
           !record.migration_id.includes("_rollback") &&
-          record.status === "success",
+          historyStatusIndicatesApplied(record.status),
       );
       if (latestSuccessRecord) {
         // Compare timestamps - if success record is more recent, use it

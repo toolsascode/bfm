@@ -40,6 +40,7 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 		})
 
 		api.POST("/migrations/up", h.authenticate, h.migrateUp)
+		api.POST("/migrations/order-batch", h.authenticate, h.orderMigrationBatch)
 		api.POST("/migrations/down", h.authenticate, h.migrateDown)
 		api.GET("/migrations", h.authenticate, h.listMigrations)
 		api.GET("/migrations/:id", h.authenticate, h.getMigration)
@@ -211,6 +212,23 @@ func (h *Handler) migrateUp(c *gin.Context) {
 	}
 
 	c.JSON(statusCode, response)
+}
+
+// orderMigrationBatch returns migration_ids sorted by dependency order for batch execution.
+func (h *Handler) orderMigrationBatch(c *gin.Context) {
+	var req dto.OrderMigrationBatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ordered, err := h.executor.OrderMigrationBatch(req.MigrationIDs, req.Connection)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.OrderMigrationBatchResponse{OrderedMigrationIDs: ordered})
 }
 
 // migrateDown handles down migration requests
@@ -539,7 +557,7 @@ func (h *Handler) getMigrationStatus(c *gin.Context) {
 		// Find the latest successful, non-rollback record
 		var latestSuccessRecord *state.MigrationRecord
 		for _, record := range relatedRecords {
-			if !strings.Contains(record.MigrationID, "_rollback") && record.Status == "success" {
+			if !strings.Contains(record.MigrationID, "_rollback") && state.HistoryStatusIndicatesApplied(record.Status) {
 				latestSuccessRecord = record
 				break // Records are sorted DESC, so first match is most recent
 			}
@@ -586,7 +604,8 @@ func (h *Handler) getMigrationStatus(c *gin.Context) {
 			errorMessage = latestRollbackRecord.ErrorMessage
 		} else {
 			// Use latest record (could be failed, pending, etc.)
-			applied = !strings.Contains(latestRecord.MigrationID, "_rollback")
+			applied = !strings.Contains(latestRecord.MigrationID, "_rollback") &&
+				state.HistoryStatusIndicatesApplied(latestRecord.Status)
 			status = latestRecord.Status
 			appliedAt = latestRecord.AppliedAt
 			errorMessage = latestRecord.ErrorMessage

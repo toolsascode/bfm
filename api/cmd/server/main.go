@@ -66,6 +66,9 @@ func main() {
 		logger.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
 	// Initialize state tracker
 	stateConnStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
@@ -180,6 +183,8 @@ func main() {
 	reindexer.Start()
 	defer reindexer.Stop()
 	logger.Infof("Background reindexer started with interval: %v", reindexInterval)
+
+	startAutoMigrateBackground(rootCtx, exec, cfg)
 
 	// Set Gin mode - use BFM_APP_MODE env var if set, otherwise default to release mode
 	if ginMode := os.Getenv("BFM_APP_MODE"); ginMode != "" {
@@ -329,6 +334,8 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	rootCancel()
 
 	logger.Info("Shutting down servers...")
 

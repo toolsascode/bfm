@@ -774,7 +774,7 @@ func (t *Tracker) GetMigrationHistory(ctx interface{}, filters *state.MigrationF
 		}
 	}
 
-	query += " ORDER BY applied_at DESC"
+	query += " ORDER BY applied_at DESC, id DESC"
 
 	rows, err := t.pool.Query(ctxVal, query, args...)
 	if err != nil {
@@ -1381,7 +1381,9 @@ func (t *Tracker) IsMigrationApplied(ctx interface{}, migrationID string) (bool,
 }
 
 // IsMigrationPendingOrApplied checks if a migration is pending or applied.
-// This is used for concurrency control to prevent multiple processes from executing the same migration.
+// For base migration IDs, migrations_list "pending" means registered-not-applied, not in-flight; this
+// matches IsMigrationApplied (applied only). For schema-specific IDs, migrations_executions may hold
+// status pending while a run is in progress.
 func (t *Tracker) IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error) {
 	ctxVal := ctx.(context.Context)
 
@@ -1403,54 +1405,42 @@ func (t *Tracker) IsMigrationPendingOrApplied(ctx interface{}, migrationID strin
 		}
 	}
 
-	// For dynamic schemas, check migrations_executions
-	if schemaName != "" {
-		var version, connection, backend string
-		getMetadataQuery := fmt.Sprintf(`
-			SELECT version, connection, backend
-			FROM %s
-			WHERE migration_id = $1
-			LIMIT 1
-		`, listTableName)
-		err := t.pool.QueryRow(ctxVal, getMetadataQuery, baseMigrationID).Scan(&version, &connection, &backend)
-		if err != nil {
-			if err == pgx.ErrNoRows {
-				return false, nil
-			}
-			return false, fmt.Errorf("failed to get migration metadata: %w", err)
-		}
-
-		query := fmt.Sprintf(`
-			SELECT EXISTS(
-				SELECT 1 FROM %s
-				WHERE migration_id = $1
-				AND schema = $2
-				AND version = $3
-				AND connection = $4
-				AND backend = $5
-				AND (status = 'applied' OR status = 'pending')
-			)`, executionsTableName)
-		var exists bool
-		err = t.pool.QueryRow(ctxVal, query, baseMigrationID, schemaName, version, connection, backend).Scan(&exists)
-		if err != nil {
-			return false, fmt.Errorf("failed to check migration status in executions table: %w", err)
-		}
-		return exists, nil
+	// Fixed-schema / base ID: list "pending" is not an execution lock; align with applied-only check.
+	if schemaName == "" {
+		return t.IsMigrationApplied(ctx, migrationID)
 	}
 
-	// For fixed-schema migrations, check migrations_list
+	// Schema-specific: check migrations_executions for applied or in-flight pending.
+	var version, connection, backend string
+	getMetadataQuery := fmt.Sprintf(`
+		SELECT version, connection, backend
+		FROM %s
+		WHERE migration_id = $1
+		LIMIT 1
+	`, listTableName)
+	err := t.pool.QueryRow(ctxVal, getMetadataQuery, baseMigrationID).Scan(&version, &connection, &backend)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get migration metadata: %w", err)
+	}
+
 	query := fmt.Sprintf(`
 		SELECT EXISTS(
 			SELECT 1 FROM %s
-			WHERE migration_id IN ($1, $2)
+			WHERE migration_id = $1
+			AND schema = $2
+			AND version = $3
+			AND connection = $4
+			AND backend = $5
 			AND (status = 'applied' OR status = 'pending')
-		)`, listTableName)
+		)`, executionsTableName)
 	var exists bool
-	err := t.pool.QueryRow(ctxVal, query, migrationID, baseMigrationID).Scan(&exists)
+	err = t.pool.QueryRow(ctxVal, query, baseMigrationID, schemaName, version, connection, backend).Scan(&exists)
 	if err != nil {
-		return false, fmt.Errorf("failed to check migration status: %w", err)
+		return false, fmt.Errorf("failed to check migration status in executions table: %w", err)
 	}
-
 	return exists, nil
 }
 

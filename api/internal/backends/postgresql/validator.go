@@ -65,14 +65,28 @@ func (v *DependencyValidator) ValidateDependenciesWithExecutionSet(ctx context.C
 // validateDependencyWithExecutionSet validates a single structured dependency,
 // considering migrations in the execution set as satisfied dependencies
 func (v *DependencyValidator) validateDependencyWithExecutionSet(ctx context.Context, dep backends.Dependency, currentSchema string, executionSetMap map[string]bool) error {
-	// Validate required schema exists
+	// Validate required schema exists in the database, unless the dependency migration
+	// is scheduled in this execution run — that migration typically creates the schema,
+	// so SchemaExists would falsely fail during bootstrap (empty DB).
 	if dep.RequiresSchema != "" {
-		exists, err := v.backend.SchemaExists(ctx, dep.RequiresSchema)
-		if err != nil {
-			return fmt.Errorf("failed to check schema existence: %w", err)
+		skipSchemaExistence := false
+		if targetMigrations, err := v.findMigrationByTarget(dep); err == nil {
+			for _, tm := range targetMigrations {
+				migrationID := fmt.Sprintf("%s_%s_%s_%s", tm.Version, tm.Name, tm.Backend, tm.Connection)
+				if executionSetMap != nil && executionSetMap[migrationID] {
+					skipSchemaExistence = true
+					break
+				}
+			}
 		}
-		if !exists {
-			return fmt.Errorf("required schema '%s' does not exist", dep.RequiresSchema)
+		if !skipSchemaExistence {
+			exists, err := v.backend.SchemaExists(ctx, dep.RequiresSchema)
+			if err != nil {
+				return fmt.Errorf("failed to check schema existence: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("required schema '%s' does not exist", dep.RequiresSchema)
+			}
 		}
 	}
 

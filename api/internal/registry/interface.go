@@ -2,9 +2,24 @@ package registry
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/toolsascode/bfm/api/internal/backends"
 )
+
+// BackendNamesMatch reports whether two backend strings refer to the same engine.
+// Config and migration sources may use "postgres" or "postgresql" interchangeably.
+func BackendNamesMatch(a, b string) bool {
+	return normalizedBackendName(a) == normalizedBackendName(b)
+}
+
+func normalizedBackendName(backend string) string {
+	b := strings.ToLower(strings.TrimSpace(backend))
+	if b == "postgres" {
+		return "postgresql"
+	}
+	return b
+}
 
 // MigrationTarget specifies which migrations to execute (moved here to avoid import cycle)
 type MigrationTarget struct {
@@ -66,7 +81,7 @@ func (r *inMemoryRegistry) FindByTarget(target *MigrationTarget) ([]*backends.Mi
 	var results []*backends.MigrationScript
 
 	for _, migration := range r.migrations {
-		if target.Backend != "" && migration.Backend != target.Backend {
+		if target.Backend != "" && !BackendNamesMatch(target.Backend, migration.Backend) {
 			continue
 		}
 		if target.Connection != "" && migration.Connection != target.Connection {
@@ -121,7 +136,7 @@ func (r *inMemoryRegistry) GetByConnection(connectionName string) []*backends.Mi
 func (r *inMemoryRegistry) GetByBackend(backendName string) []*backends.MigrationScript {
 	var results []*backends.MigrationScript
 	for _, migration := range r.migrations {
-		if migration.Backend == backendName {
+		if BackendNamesMatch(backendName, migration.Backend) {
 			results = append(results, migration)
 		}
 	}

@@ -2,6 +2,8 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 import type {
   MigrateRequest,
   MigrateUpRequest,
+  OrderMigrationBatchRequest,
+  OrderMigrationBatchResponse,
   MigrateDownRequest,
   MigrateResponse,
   MigrationListResponse,
@@ -238,6 +240,16 @@ class BFMApiClient {
   async migrateUp(request: MigrateUpRequest): Promise<MigrateResponse> {
     const response = await this.client.post<MigrateResponse>(
       "/v1/migrations/up",
+      request,
+    );
+    return response.data;
+  }
+
+  async orderMigrationBatch(
+    request: OrderMigrationBatchRequest,
+  ): Promise<OrderMigrationBatchResponse> {
+    const response = await this.client.post<OrderMigrationBatchResponse>(
+      "/v1/migrations/order-batch",
       request,
     );
     return response.data;

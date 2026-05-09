@@ -52,8 +52,14 @@ type StateTracker interface {
 	IsMigrationApplied(ctx interface{}, migrationID string) (bool, error)
 
 	// IsMigrationPendingOrApplied checks if a migration is pending or applied.
-	// This is used for concurrency control to prevent multiple processes from executing the same migration.
+	// For schema-specific IDs, a row in migrations_executions with status pending may indicate
+	// an in-flight run. For base IDs, migrations_list "pending" only means registered-not-applied;
+	// cross-process exclusion is enforced via WithMigrationExecutionLock.
 	IsMigrationPendingOrApplied(ctx interface{}, migrationID string) (bool, error)
+
+	// WithMigrationExecutionLock runs fn while holding an exclusive lock for this migration
+	// execution key. If another session holds the lock, returns ErrMigrationAlreadyInProgress.
+	WithMigrationExecutionLock(ctx interface{}, migrationID, schema, connection string, fn func() error) error
 
 	// GetLastMigrationVersion gets the last applied version for a schema/table
 	GetLastMigrationVersion(ctx interface{}, schema, table string) (string, error)
