@@ -3,7 +3,7 @@ module github.com/toolsascode/bfm/api
 go 1.25.4
 
 require (
-	github.com/apache/pulsar-client-go v0.18.0
+	github.com/apache/pulsar-client-go v0.19.0
 	github.com/gin-gonic/gin v1.10.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/segmentio/kafka-go v0.4.49
